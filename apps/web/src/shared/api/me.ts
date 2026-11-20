@@ -21,11 +21,12 @@ export interface MeState {
 }
 
 /** The signed-in Member (GET /api/auth/me). Guards and shells read it from here. */
-export function useMe(): MeState {
+export function useMe(options: { enabled?: boolean } = {}): MeState {
   const query = useQuery({
     queryKey: meQueryKey,
     queryFn: () => api('/auth/me', { schema: me }),
     retry: false,
+    enabled: options.enabled ?? true,
   });
   const signedOut = query.isError && isSignedOut(query.error);
   return {

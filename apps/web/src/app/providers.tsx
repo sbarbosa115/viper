@@ -5,6 +5,7 @@ import { ApiError } from '../shared/api/client';
 import { t } from '../shared/i18n';
 import { ToastProvider } from '../shared/ui';
 import '../styles/index.css';
+import { GoogleAnalytics } from './analytics';
 import { createAppRouter } from './router';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -45,6 +46,7 @@ export function Providers() {
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <RouterProvider router={router} />
+          <GoogleAnalytics router={router} />
         </ToastProvider>
       </QueryClientProvider>
     </ErrorBoundary>

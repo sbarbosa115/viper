@@ -3,7 +3,7 @@
 | Field   | Value |
 |---------|-------|
 | Status  | Built |
-| Version | 0.3 |
+| Version | 0.4 |
 | Date    | 2026-11-20 |
 | Persona | Sam (small B2B supplier owner), Staff (the founder) |
 | Tests assumption | A-1 lead accuracy, A-2 cost per lead, A-3 chat → good plan, A-4 run reliability |
@@ -844,6 +844,7 @@ Decisions made during the build (2026-11-19 to 2026-11-20):
 | 0.1 | 2026-11-19 | Initial draft (includes founder answers: 50 trial credits, no refunds, open sign-up, no Removal list, resumable runs, Stripe Tax, legal pages) |
 | 0.2 | 2026-11-19 | Approved. Public landing page with sign-up/log-in card and SEO (FR-34, FR-35); app moved to `/app`; run attempts with handoff, lease and sweeper (FR-36); Research flow settings for Staff with platform ceilings (FR-37); "taking longer" message (FR-38); AJ-8, AJ-9; Docker-only local runtime; mocks linked in §6b |
 | 0.3 | 2026-11-20 | Built (W0–W5). Build decisions recorded in §13 and §17: Plan creation needs a verified email and is capped at 30/day; two-factor lock and code replay guard; cards-only Checkout with async payment events; "No new leads" email; waived cost stays waived; partial delivery on budget exhaustion; lease default 5 min and seeded Step time limits; fast model on Steps 2, 6–8; chat drops the price and website turns. AJ-5, AJ-7 and AJ-9 wording fixed to match the tested behaviour |
+| 0.4 | 2026-11-20 | FR-9 completed: the SPA reads `GET /api/public/config` (now `Cache-Control: public, max-age=60`) and sends GA page views with the path only; the SPA CSP allows Google's tag. Removed from Deferred |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |
@@ -1078,7 +1079,7 @@ Built 2026-11-19 to 2026-11-20 by /build-requirement on branch `feat/first-versi
 | FR-6 Acting as | api/identity/application/staff.test.ts, domain/domain.test.ts, http/identity.http.test.ts; web/backoffice/customers/test/customers.test.tsx; `apps/web/src/app/shell.test.tsx` (no banner, menu item) · e2e AJ-6 |
 | FR-7 Audit log | api/platform/application/audit-log.test.ts, domain/audit-action.test.ts, http/audit-trail.test.ts, infrastructure/platform-repositories.int.test.ts; `apps/api/src/composition.int.test.ts`; web/backoffice/audit/test/audit.test.tsx · e2e AJ-6, AJ-7 |
 | FR-8 Platform settings | api/platform/domain/settings.test.ts, application/settings-use-cases.test.ts, settings-reader.test.ts, infrastructure/secret-box.test.ts, connectivity/provider-checks.test.ts, connectivity/service-checks.test.ts, smtp-email-sender.test.ts, smtp-mailpit.int.test.ts; web/backoffice/settings/test/settings.test.tsx · e2e AJ-7 |
-| FR-9 Analytics | Server events: api/platform/domain/event-properties.test.ts, platform-repositories.int.test.ts (DbAnalyticsTracker). GA page views on the public site: `apps/api/src/site/site.http.test.ts`, `apps/web/src/site/client.test.ts`. GA page views inside the SPA (`/app`) are **not built** (see Deferred) · unit only |
+| FR-9 Analytics | Server events: api/platform/domain/event-properties.test.ts, platform-repositories.int.test.ts (DbAnalyticsTracker). GA page views on the public site: `apps/api/src/site/site.http.test.ts`, `apps/web/src/site/client.test.ts`. GA page views inside the SPA (`/app`; path only, none on back-office routes or while Acting as): `apps/web/src/app/analytics.test.tsx`, `apps/web/src/shared/analytics/ga.test.ts`; public config: api/platform/http/platform.routes.test.ts, application/settings-use-cases.test.ts, contracts/platform.test.ts · unit only |
 | FR-10 Credit wallet | api/billing/domain/domain.test.ts, application/billing.test.ts, http/billing.routes.test.ts, infrastructure/kysely-billing.int.test.ts (concurrency); web/credits/test/credits.test.tsx · e2e AJ-3, AJ-4 |
 | FR-11 Trial credits | api/billing/application/billing.test.ts, infrastructure/kysely-billing.int.test.ts, billing-worker.int.test.ts (event delivered twice) · e2e AJ-1 |
 | FR-12 Stripe packs | api/billing/application/billing.test.ts (webhook ×3, async events), infrastructure/stripe-payment-gateway.test.ts (signed payloads, cards only), http/billing.routes.test.ts; web/credits/test/credits.test.tsx · e2e AJ-3 |
@@ -1143,7 +1144,6 @@ Sign-off: the founder chose autopilot, so there were no per-wave demos or sign-o
 Recorded in §13 ("Decisions made during the build"), with the matching FR text updated: Claude metered as Tools (ADR 0019); fast model on Steps 2, 6, 7, 8; partial delivery when the budget runs out; chat drops the price and website turns; no Acting-as banner; lease default 5 min (minimum 5) and seeded Step time limits 2/12/1/4/12/6/5/6/10/2 = 60 min, with provider calls outside transactions (ADR 0017 amended); Plan creation needs a verified email, 30 per Business per day; waived cost stays waived; "No new leads this time" email; two-factor lock and code replay guard; cards-only Checkout with async payment events; client IP from `do-connecting-ip`; SPA CSP meta without frame-ancestors; single environment with manual approved deploys (ADR 0018); legal drafts with a "Draft for founder review" badge.
 
 ### Deferred and known items
-- **GA page views inside the SPA (FR-9) are not built.** Only the server-rendered public site loads gtag; `/app` sends no page views, and its CSP meta (`script-src 'self'`) would block gtag anyway. Server-side product events work.
 - Lighthouse (NFR-10, FR-34) isn't run; AJ-8 checks LCP and CLS in Playwright only.
 - The Audit log's Target column cuts long targets short (Tool keys show truncated; full value on hover).
 - Apify actors (`compass/crawler-google-places`, `apify/instagram-profile-scraper`, `tri_angle/yelp-scraper`) need the founder's approval (§14).

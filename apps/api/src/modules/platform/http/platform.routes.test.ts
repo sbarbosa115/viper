@@ -47,6 +47,28 @@ describe('FR-9: GET /api/public/config', () => {
       youtubeVideoId: null,
     });
   });
+
+  test('returns the saved measurement ID, no secrets, cached briefly', async () => {
+    const fakes = platformRouteFakes();
+    const { app: staff } = await appWith(staffActor(), fakes);
+    await staff.inject({ method: 'PUT', url: '/api/staff/settings/ai', payload: aiBody });
+    await staff.inject({
+      method: 'PUT',
+      url: '/api/staff/settings/analytics',
+      payload: { gaMeasurementId: 'G-ABC1234' },
+    });
+    const { app } = await appWith(undefined, fakes);
+    const res = await app.inject({ method: 'GET', url: '/api/public/config' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=60');
+    expect(Object.keys(res.json()).sort()).toEqual([
+      'gaMeasurementId',
+      'supportEmail',
+      'youtubeVideoId',
+    ]);
+    expect(res.json()).toMatchObject({ gaMeasurementId: 'G-ABC1234' });
+    expect(res.body).not.toContain('SECRET');
+  });
 });
 
 describe('FR-8: GET /api/staff/settings', () => {

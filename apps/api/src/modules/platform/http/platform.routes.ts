@@ -32,7 +32,12 @@ export function platformRoutes(app: FastifyInstance, deps: PlatformRouteDeps): v
   api.get(
     routePath(getPublicConfig),
     { schema: { tags: ['platform'], response: { 200: getPublicConfig.response } } },
-    () => deps.getPublicConfig.execute(),
+    async (_req, reply) => {
+      const config = await deps.getPublicConfig.execute();
+      // Public values only; the settings reader caches for 60 s, so browsers may too.
+      void reply.header('Cache-Control', 'public, max-age=60');
+      return config;
+    },
   );
 
   api.get(

@@ -20,6 +20,13 @@ describe('contracts: platform', () => {
     );
   });
 
+  test('FR-9: public config drops anything that is not public', () => {
+    const config = { gaMeasurementId: null, supportEmail: null, youtubeVideoId: null };
+    expect(getPublicConfig.response.parse({ ...config, anthropicApiKey: 'sk-ant-x' })).toEqual(
+      config,
+    );
+  });
+
   test('FR-8: settings expose secrets only as { set, last4, updatedAt }', () => {
     expect(getSettings.response.parse(ex.platformSettings)).toEqual(ex.platformSettings);
     const leaked = {

@@ -4,7 +4,7 @@ _Last updated: 2026-11-20._ How Llyner Leads runs on DigitalOcean App Platform, 
 
 **Start small:** one environment (production), deployed by hand after the founder approves each release. A staging app can be added later as a second copy of `.do/app.yaml`.
 
-> Divergence to resolve: `docs/architecture/stack.md` still describes a staging app and automatic staging deploys. The founder has since chosen one environment and manual deploys only. Update stack.md (with an ADR) when this setup is accepted.
+> `docs/architecture/stack.md` matches this setup: one environment and manual, approved deploys (ADR 0018).
 
 ## What runs where
 | Piece | What | Size | Spec |
