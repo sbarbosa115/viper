@@ -1,0 +1,44 @@
+{
+  "name": "viper",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "e2e"
+  ],
+  "scripts": {
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -b",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "test": "vitest run",
+    "test:unit": "vitest run --project api-unit --project web --project contracts",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@types/node": "24.19.2",
+    "@vitejs/plugin-react": "6.2.1",
+    "@vitest/coverage-v8": "5.1.0",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.4.2",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  },
+  "overrides": {
+    "basic-ftp": "6.2.6"
+  }
+}

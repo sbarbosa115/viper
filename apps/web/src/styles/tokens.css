@@ -1,0 +1,48 @@
+/* Midnight tokens (DESIGN.md section 9). Never hard-code colours in components. */
+:root {
+  --bg: #0a0a0f;
+  --bg-sunken: #0d0d13;
+  --surface: #13131a;
+  --surface-raised: #1c1c26;
+  --line: #1f1f29;
+  --line-strong: #24242e;
+  --line-control: #2e2e3a;
+  --text: #ededf2;
+  --text-2: #d4d4de;
+  --text-muted: #9a9aa8;
+  --text-faint: #80808e;
+  --accent: #bef264;
+  --accent-hover: #d9f99d;
+  --accent-ink: #0a0a0f;
+  --accent-tint: rgba(190, 242, 100, 0.12);
+  --accent-tint-weak: rgba(190, 242, 100, 0.06);
+  --accent-line: rgba(190, 242, 100, 0.4);
+  --warn: #fbbf24;
+  --danger: #fca5a5;
+  --reserved: #84cc16;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --font-family-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --shadow-overlay: 0 40px 80px rgba(0, 0, 0, 0.5);
+  --rail-width: 72px;
+  --header-height: 56px;
+  --staff-nav-width: 220px;
+  --page-gutter: 28px;
+
+  /* shadcn/ui aliases */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-ink);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface);
+  --muted-foreground: var(--text-muted);
+  --border: var(--line-strong);
+  --input: var(--line-control);
+  --ring: var(--accent);
+  --destructive: var(--danger);
+  --radius: 10px;
+}

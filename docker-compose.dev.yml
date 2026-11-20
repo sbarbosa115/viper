@@ -1,0 +1,52 @@
+x-node: &node
+  image: node:24-slim
+  user: '${UID:-1000}:${GID:-1000}'
+  working_dir: /app
+  environment: &node-env { HOME: /tmp }
+  volumes: ['.:/app']
+
+x-app-env: &app-env
+  <<: *node-env
+  NODE_ENV: development
+  DATABASE_URL: 'mysql://root:test@db:3306/app_dev'
+  REDIS_URL: 'redis://valkey:6379'
+  SESSION_SECRET: 'dev-session-secret-dev-session-secret-0000'
+  APP_URL: 'http://localhost:5173'
+  TOOLS_MODE: fake
+
+services:
+  db:
+    image: mysql:8.4
+    environment: { MYSQL_ROOT_PASSWORD: test, MYSQL_DATABASE: app_dev }
+    volumes: ['dbdata:/var/lib/mysql']
+    healthcheck:
+      test: ['CMD-SHELL', "mysql -h127.0.0.1 -uroot -ptest -e 'SELECT 1' app_dev"]
+      interval: 2s
+      retries: 45
+  valkey:
+    image: valkey/valkey:8
+    healthcheck: { test: ['CMD', 'valkey-cli', 'ping'], interval: 2s, retries: 30 }
+  mailpit:
+    image: axllent/mailpit:v1.29
+    ports: ['8025:8025']
+  api:
+    <<: *node
+    command: sh -c "npm run migrate -w apps/api && npm run dev -w apps/api"
+    environment: { <<: *app-env, PORT: '3000' }
+    depends_on:
+      db: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+  worker:
+    <<: *node
+    command: npm run dev:worker -w apps/api
+    environment: *app-env
+    depends_on: [api]
+  web:
+    <<: *node
+    command: npm run dev -w apps/web -- --host 0.0.0.0
+    environment: { <<: *node-env, API_PROXY_TARGET: 'http://api:3000' }
+    ports: ['5173:5173']
+    depends_on: [api]
+
+volumes:
+  dbdata:

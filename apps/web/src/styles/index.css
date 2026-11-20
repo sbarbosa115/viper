@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './theme.css';
+
+/* Unlayered so it wins over any earlier body rule. */
+html,
+body {
+  background: var(--bg);
+  color: var(--text-2);
+  font-family: var(--font-family-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+html body {
+  margin: 0;
+  font-family: var(--font-family-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-tint);
+}
+
+@keyframes viper-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes viper-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes viper-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.viper-spin {
+  animation: viper-spin 0.9s linear infinite;
+}
+.viper-fade {
+  animation: viper-fade 140ms ease-out;
+}
+.viper-pulse {
+  animation: viper-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viper-fade,
+  .viper-pulse {
+    animation: none;
+  }
+  .viper-spin {
+    animation-duration: 3s;
+  }
+}

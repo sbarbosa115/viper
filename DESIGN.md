@@ -164,7 +164,7 @@ Define tokens once in `apps/web/src/styles/tokens.css` and map them for Tailwind
   --accent-tint: rgba(190,242,100,0.12);  --accent-tint-weak: rgba(190,242,100,0.06);
   --accent-line: rgba(190,242,100,0.40);
   --warn: #FBBF24;  --danger: #FCA5A5;  --reserved: #84CC16;
-  --font-sans: "Geist", system-ui, sans-serif;  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-family-sans: "Geist", system-ui, sans-serif;  --font-family-mono: "Geist Mono", ui-monospace, monospace;
   /* shadcn/ui aliases */
   --background: var(--bg);  --foreground: var(--text);
   --card: var(--surface);  --card-foreground: var(--text);
@@ -181,7 +181,7 @@ Define tokens once in `apps/web/src/styles/tokens.css` and map them for Tailwind
   --color-fg: var(--text);  --color-fg-2: var(--text-2);  --color-muted: var(--text-muted);
   --color-accent: var(--accent);  --color-accent-ink: var(--accent-ink);
   --color-warn: var(--warn);  --color-danger: var(--danger);
-  --font-sans: var(--font-sans);  --font-mono: var(--font-mono);
+  --font-sans: var(--font-family-sans);  --font-mono: var(--font-family-mono);
 }
 ```
 

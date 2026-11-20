@@ -1,0 +1,13 @@
+{
+  "name": "@app/contracts",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

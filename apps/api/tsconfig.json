@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "outDir": "../../.build/tsc/api",
+    "tsBuildInfoFile": "../../.build/tsc/api/.tsbuildinfo"
+  },
+  "include": ["src", "migrations", "test"],
+  "references": [{ "path": "../../packages/contracts" }]
+}

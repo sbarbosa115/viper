@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "apps/api" },
+    { "path": "apps/web" },
+    { "path": "e2e" },
+    { "path": "tsconfig.root.json" }
+  ]
+}

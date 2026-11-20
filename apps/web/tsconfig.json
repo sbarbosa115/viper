@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node", "@testing-library/jest-dom"],
+    "outDir": "../../.build/tsc/web",
+    "tsBuildInfoFile": "../../.build/tsc/web/.tsbuildinfo"
+  },
+  "include": ["src", "vite.config.ts"],
+  "references": [{ "path": "../../packages/contracts" }]
+}

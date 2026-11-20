@@ -1,0 +1,32 @@
+/* Tailwind v4 theme: maps the Midnight tokens to utilities (bg-surface, text-fg-2, border-line...). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sunken: var(--bg-sunken);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-line-control: var(--line-control);
+  --color-fg: var(--text);
+  --color-fg-2: var(--text-2);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-tint-weak: var(--accent-tint-weak);
+  --color-accent-line: var(--accent-line);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-reserved: var(--reserved);
+  --color-overlay: var(--overlay);
+  --font-sans: var(--font-family-sans);
+  --font-mono: var(--font-family-mono);
+  --radius-tag: 6px;
+  --radius-sm: 8px;
+  --radius-control: 10px;
+  --radius-row: 12px;
+  --radius-card: 16px;
+  --shadow-overlay: var(--shadow-overlay);
+}

@@ -1,0 +1,29 @@
+x-node: &node
+  image: node:24-slim
+  user: '${UID:-1000}:${GID:-1000}'
+  working_dir: /app
+  environment: &node-env { HOME: /tmp }
+  volumes: ['.:/app']
+
+services:
+  db:
+    image: mysql:8.4
+    environment: { MYSQL_ROOT_PASSWORD: test, MYSQL_DATABASE: app_test }
+    tmpfs: /var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', "mysql -h127.0.0.1 -uroot -ptest -e 'SELECT 1' app_test"]
+      interval: 2s
+      retries: 45
+  valkey:
+    image: valkey/valkey:8
+    healthcheck: { test: ['CMD', 'valkey-cli', 'ping'], interval: 2s, retries: 30 }
+  tests:
+    <<: *node
+    environment:
+      <<: *node-env
+      NODE_ENV: test
+      DATABASE_URL_TEST: 'mysql://root:test@db:3306/app_test'
+      REDIS_URL: 'redis://valkey:6379'
+    depends_on:
+      db: { condition: service_healthy }
+      valkey: { condition: service_healthy }

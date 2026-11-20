@@ -1,0 +1,9 @@
+services:
+  node:
+    image: node:24-slim
+    user: '${UID:-1000}:${GID:-1000}'
+    working_dir: /app
+    environment: { npm_config_cache: /npm-cache, HOME: /tmp }
+    volumes: ['.:/app', 'npm-cache:/npm-cache']
+volumes:
+  npm-cache: { name: viper-npm-cache }

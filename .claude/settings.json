@@ -22,6 +22,8 @@
       "Bash(git switch:*)",
       "Bash(git rev-parse:*)",
       "Bash(git tag:*)",
+      "Bash(git push origin feat/first-version)",
+      "Bash(git push origin feat/first-version:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(grep:*)",
@@ -33,7 +35,10 @@
       "Read(/home/sbarb/Development/viper/**)"
     ],
     "ask": [
-      "Bash(git push:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin --delete:*)",
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
       "Bash(doctl:*)",

@@ -1,0 +1,57 @@
+x-node: &node
+  image: node:24-slim
+  user: '${UID:-1000}:${GID:-1000}'
+  working_dir: /app
+  environment: &node-env { HOME: /tmp }
+  volumes: ['.:/app']
+
+x-app-env: &app-env
+  <<: *node-env
+  NODE_ENV: test
+  ENABLE_TEST_HOOKS: '1'
+  DATABASE_URL: 'mysql://root:test@db:3306/app_test'
+  REDIS_URL: 'redis://valkey:6379'
+  SESSION_SECRET: 'e2e-session-secret-e2e-session-secret-0000'
+  APP_URL: 'http://web:4173'
+  TOOLS_MODE: fake
+
+services:
+  db:
+    image: mysql:8.4
+    environment: { MYSQL_ROOT_PASSWORD: test, MYSQL_DATABASE: app_test }
+    tmpfs: /var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', "mysql -h127.0.0.1 -uroot -ptest -e 'SELECT 1' app_test"]
+      interval: 2s
+      retries: 45
+  valkey:
+    image: valkey/valkey:8
+    healthcheck: { test: ['CMD', 'valkey-cli', 'ping'], interval: 2s, retries: 30 }
+  mailpit:
+    image: axllent/mailpit:v1.29
+  api:
+    <<: *node
+    command: sh -c "npm run migrate -w apps/api && npm run dev -w apps/api"
+    environment: { <<: *app-env, PORT: '3000' }
+    depends_on:
+      db: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+  worker:
+    <<: *node
+    command: npm run dev:worker -w apps/api
+    environment: *app-env
+    depends_on: [api]
+  web:
+    <<: *node
+    command: sh -c "npm run build -w apps/web && npm run preview -w apps/web -- --host 0.0.0.0 --port 4173"
+    environment: { <<: *node-env, API_PROXY_TARGET: 'http://api:3000' }
+    depends_on: [api]
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.65.0-noble
+    user: '${UID:-1000}:${GID:-1000}'
+    working_dir: /app
+    volumes: ['.:/app']
+    environment:
+      { HOME: /tmp, BASE_URL: 'http://web:4173', MAILPIT_URL: 'http://mailpit:8025', CI: '${CI:-}' }
+    depends_on: [web]
+    command: npx playwright test --config e2e/playwright.config.ts

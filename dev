@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Every Node command runs in Docker. The host needs only Docker, bash and git.
+set -euo pipefail
+cd "$(dirname "$0")"
+export UID GID="$(id -g)"
+tools="docker compose -f docker-compose.tools.yml run --rm node"
+dev="docker compose -f docker-compose.dev.yml"
+cmd="${1:-help}"; shift || true
+# A new named volume is root-owned; hand it to the current user once.
+if ! docker volume inspect viper-npm-cache >/dev/null 2>&1; then
+  docker volume create viper-npm-cache >/dev/null
+  docker run --rm -u 0 -v viper-npm-cache:/npm-cache node:24-slim chown "$UID:$GID" /npm-cache
+fi
+case "$cmd" in
+  install)   $tools npm ci ;;                                   # after clone or lockfile change
+  add)       $tools npm install "$@" ;;                         # ./dev add zod -w apps/api
+  remove)    $tools npm uninstall "$@" ;;
+  npm|npx|node) $tools "$cmd" "$@" ;;                           # ./dev npm view zod version
+  shell)     $tools bash ;;
+  lint)      $tools npm run lint -- "$@" ;;                     # ./dev lint apps/api/src/modules/orders
+  format)    $tools npm run format ;;
+  typecheck) $tools npm run typecheck ;;
+  build)     $tools npm run build ;;
+  test)      scripts/test-docker.sh "$@" ;;                     # Vitest with MySQL + Valkey; paths optional
+  e2e)       scripts/test-e2e.sh "$@" ;;                        # Playwright against the full stack; specs optional
+  check)     ./dev lint && ./dev typecheck && ./dev test && ./dev e2e && ./dev build ;;
+  up)        $dev up -d "$@" ;;                                 # app on http://localhost:5173, mail on :8025
+  down)      $dev down ;;
+  logs)      $dev logs -f "$@" ;;
+  migrate)   $dev exec api npm run migrate -w apps/api ;;
+  seed)      $dev exec api npm run seed -w apps/api ;;
+  *) echo "usage: ./dev install|add|remove|npm|npx|node|shell|lint|format|typecheck|build|test|e2e|check|up|down|logs|migrate|seed"; exit 1 ;;
+esac

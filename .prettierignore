@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.build
+.npm-cache
+playwright-report
+test-results
+package-lock.json
+docs
+.claude
+.idea
+DESIGN.md
+CLAUDE.md
