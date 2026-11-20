@@ -1,0 +1,18 @@
+{
+  "organization": {
+    "id": "fixture0000000000000001",
+    "name": "Golden Crust Bakehouse",
+    "website_url": "http://www.golden-crust-bakehouse.example",
+    "linkedin_url": "http://www.linkedin.com/company/golden-crust-fixture",
+    "facebook_url": null,
+    "primary_phone": { "number": "+1 512-555-0103", "source": "Account" },
+    "phone": "+1 512-555-0103",
+    "primary_domain": "golden-crust-bakehouse.example",
+    "industry": "food & beverages",
+    "estimated_num_employees": 14,
+    "short_description": "Golden Crust Bakehouse is a neighborhood bakery in Austin, Texas.",
+    "city": "Austin",
+    "state": "Texas",
+    "country": "United States"
+  }
+}

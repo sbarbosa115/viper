@@ -53,6 +53,10 @@ describe('ScriptedLlmClient', () => {
       text: 'Your profile is complete. Who would you like to find?',
       quickReplies: ['Bakeries near you', 'Cafés'],
     });
-    expect((await llm.complete(req('planning.draft'))).text).toBe('OK');
+    // Plan drafts are answered by the fake plan draft (shared fake-mode dispatcher).
+    const draft = await llm.complete(
+      req('planning.draft', '', 'Goal: Bakeries within 3 miles that could buy our cane sugar'),
+    );
+    expect(draft.toolCall).toBeDefined();
   });
 });

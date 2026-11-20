@@ -1,0 +1,16 @@
+{
+  "person": {
+    "id": "fixture0000000000000002",
+    "first_name": "Lena",
+    "last_name": "Park",
+    "name": "Lena Park",
+    "linkedin_url": "http://www.linkedin.com/in/lena-park-fixture",
+    "title": "Owner & Head Baker",
+    "email_status": "verified",
+    "email": "lena@golden-crust-bakehouse.example",
+    "organization": {
+      "name": "Golden Crust Bakehouse",
+      "primary_domain": "golden-crust-bakehouse.example"
+    }
+  }
+}

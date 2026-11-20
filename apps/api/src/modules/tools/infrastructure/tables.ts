@@ -1,5 +1,10 @@
 import type { Generated } from 'kysely';
-import type { Bool, Decimal, Json, Timestamp } from '../../../shared/infrastructure/db/schema.js';
+import type {
+  Decimal,
+  DefaultedBool,
+  Json,
+  Timestamp,
+} from '../../../shared/infrastructure/db/schema.js';
 
 export interface ToolsTable {
   key: string;
@@ -9,7 +14,7 @@ export interface ToolsTable {
   provider_cost_micros_per_unit: number;
   /** DECIMAL(10,3). */
   credits_per_unit: Decimal;
-  enabled: Generated<Bool>;
+  enabled: DefaultedBool;
   max_units_per_call: number;
   updated_at: Timestamp;
 }
@@ -21,7 +26,7 @@ export interface ToolCallsTable {
   step_key: string | null;
   attempt_n: number | null;
   /** Answered from a stored call on a later attempt (0 credits). */
-  reused: Generated<Bool>;
+  reused: DefaultedBool;
   business_id: string;
   tool_key: string;
   /** sha-256 of the canonical input, hex. */

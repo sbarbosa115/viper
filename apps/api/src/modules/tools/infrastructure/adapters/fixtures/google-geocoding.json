@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "address_components": [],
+      "formatted_address": "1200 E 6th St, Austin, TX 78702, USA",
+      "geometry": {
+        "location": { "lat": 30.2624, "lng": -97.7262 },
+        "location_type": "ROOFTOP",
+        "viewport": {
+          "northeast": { "lat": 30.2637, "lng": -97.7248 },
+          "southwest": { "lat": 30.261, "lng": -97.7275 }
+        }
+      },
+      "place_id": "ChIJfixtureGeocode1200E6th",
+      "types": ["street_address"]
+    }
+  ],
+  "status": "OK"
+}

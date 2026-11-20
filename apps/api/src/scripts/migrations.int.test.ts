@@ -49,6 +49,7 @@ const prdTables = [
   'run_attempts',
   'run_handoffs',
   'run_messages',
+  'research_run_emails',
   'tools',
   'tool_calls',
   'sources',

@@ -1,0 +1,24 @@
+[
+  {
+    "inputUrl": "https://www.instagram.com/crumbandcobakery",
+    "id": "5550000001",
+    "username": "crumbandcobakery",
+    "url": "https://www.instagram.com/crumbandcobakery",
+    "fullName": "Crumb & Co Bakery",
+    "biography": "Scratch bakery on East 6th. Sourdough, croissants, custom cakes. Open daily 7–3.",
+    "externalUrl": "https://crumb-and-co-bakery.example/",
+    "followersCount": 4821,
+    "followsCount": 512,
+    "hasChannel": false,
+    "highlightReelCount": 6,
+    "isBusinessAccount": true,
+    "joinedRecently": false,
+    "businessCategoryName": "Bakery",
+    "private": false,
+    "verified": false,
+    "profilePicUrl": "https://instagram.fixture.example/pic.jpg",
+    "igtvVideoCount": 0,
+    "postsCount": 377,
+    "latestPosts": []
+  }
+]

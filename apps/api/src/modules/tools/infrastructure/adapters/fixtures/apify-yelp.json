@@ -1,0 +1,28 @@
+[
+  {
+    "bizId": "fixture-biz-0001",
+    "name": "Pecan Street Pastry",
+    "directUrl": "https://www.yelp.com/biz/pecan-street-pastry-austin",
+    "phone": "(512) 555-0106",
+    "website": "https://pecan-street-pastry.example",
+    "priceRange": "$$",
+    "aggregatedRating": 4.5,
+    "reviewCount": 233,
+    "categories": ["Bakeries", "Desserts"],
+    "address": {
+      "addressLine1": "322 E 11th St",
+      "city": "Austin",
+      "regionCode": "TX",
+      "postalCode": "78701",
+      "formattedAddress": "322 E 11th St, Austin, TX 78701"
+    },
+    "reviews": [
+      {
+        "text": "The almond croissant is the best in town and they make everything in house.",
+        "rating": 5,
+        "date": "2026-10-01"
+      },
+      { "text": "Great kolaches, a little pricey.", "rating": 4, "date": "2026-09-14" }
+    ]
+  }
+]

@@ -1,0 +1,44 @@
+{
+  "data": {
+    "domain": "crumb-and-co-bakery.example",
+    "disposable": false,
+    "webmail": false,
+    "accept_all": false,
+    "pattern": "{first}",
+    "organization": "Crumb & Co Bakery",
+    "emails": [
+      {
+        "value": "hello@crumb-and-co-bakery.example",
+        "type": "generic",
+        "confidence": 94,
+        "sources": [
+          {
+            "domain": "crumb-and-co-bakery.example",
+            "uri": "http://crumb-and-co-bakery.example/contact",
+            "extracted_on": "2026-08-02",
+            "still_on_page": true
+          }
+        ],
+        "first_name": null,
+        "last_name": null,
+        "position": null,
+        "verification": { "date": "2026-10-11", "status": "valid" }
+      },
+      {
+        "value": "Maya@crumb-and-co-bakery.example",
+        "type": "personal",
+        "confidence": 88,
+        "sources": [],
+        "first_name": "Maya",
+        "last_name": "Torres",
+        "position": "Owner"
+      }
+    ]
+  },
+  "meta": {
+    "results": 2,
+    "limit": 10,
+    "offset": 0,
+    "params": { "domain": "crumb-and-co-bakery.example" }
+  }
+}

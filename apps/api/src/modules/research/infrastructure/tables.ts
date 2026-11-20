@@ -1,5 +1,5 @@
 import type { Generated } from 'kysely';
-import type { Bool, Json, Timestamp } from '../../../shared/infrastructure/db/schema.js';
+import type { DefaultedBool, Json, Timestamp } from '../../../shared/infrastructure/db/schema.js';
 
 /**
  * JSON column payloads are owned by the research module; they stay `unknown`-valued records
@@ -22,8 +22,8 @@ export interface ResearchFlowsTable {
   settings: Json<JsonObject>;
   /** `[{ key, name, goal, tools, budgetPct, timeLimitMinutes, required }]`. */
   steps: Json<JsonObject[]>;
-  is_template: Generated<Bool>;
-  is_default: Generated<Bool>;
+  is_template: DefaultedBool;
+  is_default: DefaultedBool;
   business_id: string | null;
   created_by: string | null;
   created_at: Timestamp;
@@ -43,14 +43,22 @@ export interface ResearchRunsTable {
   started_by_member_id: string;
   started_by_staff_id: string | null;
   attempts: Generated<number>;
+  /** Attempts this run may use: the flow's max attempts plus one per resume (null = the flow's). */
+  attempt_limit: number | null;
   active_seconds: Generated<number>;
+  /** Active seconds already counted when the current limits window began (resume). */
+  active_offset_seconds: Generated<number>;
+  /** Tools disabled for this run and failures in a row (runner state across steps). */
+  run_state: Json<JsonObject> | null;
   next_attempt_at: Timestamp | null;
   cancel_requested_at: Timestamp | null;
-  budget_reached: Generated<Bool>;
-  time_reached: Generated<Bool>;
+  budget_reached: DefaultedBool;
+  time_reached: DefaultedBool;
   failure_code: string | null;
   queued_at: Timestamp;
   started_at: Timestamp | null;
+  /** Where the total-time limit counts from: the first start, or the latest resume. */
+  window_started_at: Timestamp | null;
   finished_at: Timestamp | null;
   credits_reserved: number;
   credits_spent: Generated<number>;
@@ -117,7 +125,16 @@ export interface RunMessagesTable {
   created_at: Timestamp;
 }
 
+/** One row per (outbox event, recipient): run emails are sent once (FR-22). */
+export interface ResearchRunEmailsTable {
+  event_id: string;
+  recipient: 'owner' | 'support';
+  run_id: string;
+  sent_at: Timestamp;
+}
+
 export interface ResearchTables {
+  research_run_emails: ResearchRunEmailsTable;
   research_flows: ResearchFlowsTable;
   research_runs: ResearchRunsTable;
   run_steps: RunStepsTable;

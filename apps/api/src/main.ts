@@ -23,6 +23,7 @@ redis.on('error', (err: Error) => logger.warn({ err }, 'valkey connection error'
 const composed = composeApp(config, {
   db,
   logger,
+  redis,
   features: new EnvFeatures(process.env),
   health: {
     database: () => sql`SELECT 1`.execute(db),

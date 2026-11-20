@@ -38,6 +38,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       valkey: { condition: service_healthy }
+      mailpit: { condition: service_started }
   worker:
     <<: *node
     command: npm run dev:worker -w apps/api
@@ -55,5 +56,5 @@ services:
     volumes: ['.:/app']
     environment:
       { HOME: /tmp, BASE_URL: 'http://web:4173', MAILPIT_URL: 'http://mailpit:8025', CI: '${CI:-}' }
-    depends_on: [web]
+    depends_on: [web, worker]
     command: npx playwright test --config e2e/playwright.config.ts

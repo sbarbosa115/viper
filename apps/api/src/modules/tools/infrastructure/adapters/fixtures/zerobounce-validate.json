@@ -1,0 +1,16 @@
+{
+  "address": "hello@crumb-and-co-bakery.example",
+  "status": "valid",
+  "sub_status": "",
+  "free_email": false,
+  "did_you_mean": null,
+  "account": "hello",
+  "domain": "crumb-and-co-bakery.example",
+  "domain_age_days": "4423",
+  "smtp_provider": "google",
+  "mx_found": "true",
+  "mx_record": "aspmx.l.google.com",
+  "firstname": null,
+  "lastname": null,
+  "processed_at": "2026-11-19 10:00:00.000"
+}

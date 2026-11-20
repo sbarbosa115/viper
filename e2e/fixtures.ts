@@ -50,4 +50,32 @@ export async function availableCredits(page: Page): Promise<number> {
   return ((await res.json()) as { available: number }).available;
 }
 
+/** Waits for the verification email sent to `email` in Mailpit and returns its app link. */
+export async function fetchVerificationLink(mailpitUrl: string, email: string): Promise<string> {
+  let body = '';
+  await expect
+    .poll(
+      async () => {
+        const list = await fetch(
+          `${mailpitUrl}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`,
+        );
+        const { messages } = (await list.json()) as { messages: { ID: string }[] };
+        const id = messages[0]?.ID;
+        if (!id) return false;
+        const msg = (await (await fetch(`${mailpitUrl}/api/v1/message/${id}`)).json()) as {
+          Text: string;
+          HTML: string;
+        };
+        body = `${msg.Text}\n${msg.HTML}`;
+        return body.includes('verify-email?token=');
+      },
+      { message: `verification email for ${email}`, timeout: 30_000 },
+    )
+    .toBe(true);
+  const match = /(https?:\/\/[^\s"'<>]*\/app\/verify-email\?token=[^\s"'<>]+)/.exec(body);
+  if (!match?.[1]) throw new Error('no verification link in the email');
+  const url = new URL(match[1].replace(/&amp;/g, '&'));
+  return `${url.pathname}${url.search}`;
+}
+
 export { expect };

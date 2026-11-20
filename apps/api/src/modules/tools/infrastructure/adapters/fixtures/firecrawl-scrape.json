@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "markdown": "# Crumb & Co Bakery\n\nScratch bakery on East 6th since 2014. Sourdough, croissants and custom cakes.\n\n## Contact\n\nCall (512) 555-0101 or email [hello@crumb-and-co-bakery.example](mailto:hello@crumb-and-co-bakery.example).\n\nOwned by Maya Torres.",
+    "metadata": {
+      "title": "Crumb & Co Bakery | Austin, TX",
+      "description": "Scratch bakery on East 6th.",
+      "language": "en",
+      "sourceURL": "https://crumb-and-co-bakery.example/",
+      "url": "https://crumb-and-co-bakery.example/",
+      "statusCode": 200,
+      "contentType": "text/html; charset=utf-8"
+    }
+  }
+}

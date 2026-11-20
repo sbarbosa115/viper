@@ -1,0 +1,43 @@
+{
+  "places": [
+    {
+      "id": "ChIJfixture0001crumbco",
+      "displayName": { "text": "Crumb & Co Bakery", "languageCode": "en" },
+      "formattedAddress": "137 E 6th St, Austin, TX 78701, USA",
+      "location": { "latitude": 30.267812, "longitude": -97.741203 },
+      "primaryType": "bakery",
+      "primaryTypeDisplayName": { "text": "Bakery", "languageCode": "en-US" },
+      "types": ["bakery", "cafe", "food", "store", "point_of_interest", "establishment"],
+      "nationalPhoneNumber": "(512) 555-0101",
+      "websiteUri": "https://crumb-and-co-bakery.example/",
+      "rating": 4.6,
+      "userRatingCount": 312,
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000001",
+      "businessStatus": "OPERATIONAL"
+    },
+    {
+      "id": "ChIJfixture0002eastsourdough",
+      "displayName": { "text": "Eastside Sourdough", "languageCode": "en" },
+      "formattedAddress": "174 E Cesar Chavez St, Austin, TX 78702, USA",
+      "location": { "latitude": 30.259101, "longitude": -97.731455 },
+      "primaryType": "bakery",
+      "primaryTypeDisplayName": { "text": "Bakery", "languageCode": "en-US" },
+      "types": ["bakery", "food", "establishment"],
+      "nationalPhoneNumber": "(512) 555-0102",
+      "rating": 4.4,
+      "userRatingCount": 88,
+      "googleMapsUri": "https://maps.google.com/?cid=1000000000000000002",
+      "businessStatus": "OPERATIONAL"
+    },
+    {
+      "id": "ChIJfixture0003closed",
+      "displayName": { "text": "Old Mill Bakery", "languageCode": "en" },
+      "formattedAddress": "900 Manor Rd, Austin, TX 78722, USA",
+      "location": { "latitude": 30.2861, "longitude": -97.7189 },
+      "primaryType": "bakery",
+      "types": ["bakery"],
+      "businessStatus": "CLOSED_PERMANENTLY"
+    }
+  ],
+  "nextPageToken": "AeCrKXsFixturePageToken2"
+}

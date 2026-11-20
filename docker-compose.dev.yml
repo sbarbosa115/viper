@@ -13,6 +13,8 @@ x-app-env: &app-env
   SESSION_SECRET: 'dev-session-secret-dev-session-secret-0000'
   APP_URL: 'http://localhost:5173'
   TOOLS_MODE: fake
+  # Test-only routes (fake Stripe, Tool failures, research stop-after) for local journeys.
+  ENABLE_TEST_HOOKS: '1'
 
 services:
   db:

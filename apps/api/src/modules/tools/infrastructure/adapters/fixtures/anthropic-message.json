@@ -1,0 +1,23 @@
+{
+  "id": "msg_fixture0001",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    { "type": "text", "text": "Here are the search terms." },
+    {
+      "type": "tool_use",
+      "id": "toolu_fixture0001",
+      "name": "search_terms",
+      "input": { "terms": ["bakery", "pastry shop", "cafe that bakes"] }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1850,
+    "output_tokens": 120,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}

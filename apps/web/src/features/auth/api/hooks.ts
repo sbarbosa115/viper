@@ -10,7 +10,7 @@ import {
   type SignupBody,
 } from '@app/contracts/identity';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { creditsQueryKey, meQueryKey } from '../../../shared/api/me';
+import { meQueryKey, readCredits, refreshCreditsUntilChanged } from '../../../shared/api/me';
 import { api } from '../../../shared/api/client';
 
 /** Seeds the signed-in Member so guards and the shell see the session without another request. */
@@ -41,7 +41,10 @@ export function useLogout() {
   });
 }
 
-/** Opens the emailed link once per token; success refreshes the Member and the wallet. */
+/**
+ * Opens the emailed link once per token; success refreshes the Member and keeps re-reading the
+ * wallet for up to 10 s, because the trial grant lands a moment later (outbox and worker).
+ */
 export function useVerifyEmail(token: string | null) {
   const client = useQueryClient();
   return useQuery({
@@ -51,13 +54,14 @@ export function useVerifyEmail(token: string | null) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     queryFn: async () => {
+      const before = await readCredits(client);
       const result = await api('/auth/verify-email', {
         method: 'POST',
         body: { token },
         schema: verifyEmail.response,
       });
       await client.invalidateQueries({ queryKey: meQueryKey });
-      await client.invalidateQueries({ queryKey: creditsQueryKey });
+      void refreshCreditsUntilChanged(client, before);
       return result;
     },
   });

@@ -4,7 +4,7 @@ import {
   type LlmRequest,
   type LlmResponse,
 } from '../../application/llm-client.js';
-import { fakeWelcomeChat } from './fake-welcome-chat.js';
+import { fakeModeAnswer } from './fake-mode.js';
 
 /** One queued answer: a response (missing fields get defaults), an error to throw, or a function. */
 export type ScriptedStep =
@@ -33,11 +33,11 @@ export class ScriptedLlmClient implements LlmClient {
   constructor(private readonly fallback?: (request: LlmRequest) => Partial<LlmResponse>) {}
 
   /**
-   * Dev and e2e with TOOLS_MODE=fake: walks the welcome chat deterministically for a sugar
-   * distributor (see fake-welcome-chat.ts) and answers other purposes with a short text.
+   * Dev and e2e with TOOLS_MODE=fake: drafts Plans from a Goal (fake-plan-draft.ts) and walks the
+   * welcome chat deterministically for a sugar distributor (fake-welcome-chat.ts).
    */
   static fakeMode(): ScriptedLlmClient {
-    return new ScriptedLlmClient(fakeWelcomeChat);
+    return new ScriptedLlmClient(fakeModeAnswer);
   }
 
   /** A response that calls a tool (structured output). */

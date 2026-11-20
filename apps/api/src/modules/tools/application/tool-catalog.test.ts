@@ -1,0 +1,293 @@
+import { tool as toolContract } from '@app/contracts/tools';
+import { describe, expect, test } from 'vitest';
+import {
+  ForbiddenError,
+  NotFoundError,
+  UnauthenticatedError,
+  ValidationError,
+} from '../../../shared/domain/errors.js';
+import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
+import { SequentialIdGenerator } from '../../../shared/infrastructure/time/uuid7.js';
+import {
+  BUSINESS,
+  catalogSnapshots,
+  FakeSettings,
+  InMemoryToolCallRepository,
+  InMemoryToolRepository,
+  NOW,
+  ownerActor,
+  RUN,
+  staffActor,
+} from '../test/fakes.js';
+import { LlmUsageMeter, thousandTokenUnits } from './llm-usage-meter.js';
+import type { ToolCallRecord } from './ports.js';
+import { ListTools, ToolQueries, UpdateTool, type ToolAudit } from './tool-catalog.js';
+
+class RecordingAudit implements ToolAudit {
+  readonly entries: Parameters<ToolAudit['record']>[0][] = [];
+  record(entry: Parameters<ToolAudit['record']>[0]): Promise<void> {
+    this.entries.push(entry);
+    return Promise.resolve();
+  }
+}
+
+function fixture() {
+  const tools = new InMemoryToolRepository(catalogSnapshots());
+  const calls = new InMemoryToolCallRepository();
+  const settings = new FakeSettings();
+  const clock = new FixedClock(NOW);
+  const audit = new RecordingAudit();
+  const deps = { tools, calls, settings, clock };
+  return {
+    ...deps,
+    audit,
+    list: new ListTools(deps),
+    update: new UpdateTool({ ...deps, audit }),
+    queries: new ToolQueries(deps),
+  };
+}
+
+let seq = 0;
+function call(overrides: Partial<ToolCallRecord>): ToolCallRecord {
+  seq += 1;
+  return {
+    id: `00000000-0000-7000-8000-${seq.toString().padStart(12, '0')}`,
+    runId: RUN,
+    stepKey: 'maps',
+    attemptN: 1,
+    reused: false,
+    businessId: BUSINESS,
+    toolKey: 'google.places-text-search',
+    inputHash: 'a'.repeat(64),
+    input: {},
+    output: null,
+    units: 1,
+    millicredits: 9_000,
+    providerCostMicros: 35_000,
+    status: 'ok',
+    error: null,
+    durationMs: 5,
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+describe('FR-23: list Tools (Staff)', () => {
+  test('lists every Tool with margin, configured and 24 h health; parses against the contract', async () => {
+    const f = fixture();
+    f.settings.credentials.hunter = { apiKey: null };
+    const hourAgo = new Date(NOW.getTime() - 3_600_000);
+    await f.calls.add([
+      call({ createdAt: hourAgo }),
+      call({ status: 'error', error: 'PROVIDER_ERROR: 503', createdAt: hourAgo }),
+      call({
+        status: 'error',
+        error: 'PROVIDER_ERROR: old',
+        createdAt: new Date(NOW.getTime() - 25 * 3_600_000),
+      }),
+      call({ reused: true, millicredits: 0 }),
+      call({ status: 'skipped' }),
+      call({}),
+    ]);
+    const { items } = await f.list.execute({ actor: staffActor });
+    for (const item of items) toolContract.parse(item);
+    expect(items).toHaveLength(18);
+    const places = items.find((t) => t.key === 'google.places-text-search');
+    expect(places).toMatchObject({
+      unit: 'request',
+      creditsPerUnit: 9,
+      providerCostMicrosPerUnit: 35_000,
+      marginPct: 61.1,
+      enabled: true,
+      configured: true,
+      health: {
+        calls24h: 3,
+        errorRate24h: 33.3,
+        lastErrorAt: hourAgo.toISOString(),
+        lastError: 'PROVIDER_ERROR: 503',
+      },
+    });
+    expect(items.find((t) => t.key === 'hunter.domain-search')?.configured).toBe(false);
+    expect(items.find((t) => t.key === 'osm.overpass')?.configured).toBe(true);
+    expect(items.find((t) => t.key === 'zerobounce.validate')?.health).toEqual({
+      calls24h: 0,
+      errorRate24h: null,
+      lastErrorAt: null,
+      lastError: null,
+    });
+  });
+
+  test('Claude Tools are configured by the Anthropic key', async () => {
+    const f = fixture();
+    f.settings.anthropicApiKey = null;
+    const { items } = await f.list.execute({ actor: staffActor });
+    expect(items.find((t) => t.key === 'claude.fast')?.configured).toBe(false);
+  });
+
+  test('needs Staff', async () => {
+    const f = fixture();
+    await expect(f.list.execute({ actor: ownerActor })).rejects.toThrow(ForbiddenError);
+    await expect(f.list.execute({ actor: null })).rejects.toThrow(UnauthenticatedError);
+  });
+});
+
+describe('FR-23: update a Tool (Staff)', () => {
+  test('AJ-7: disable a Tool and reprice another; each change is audited', async () => {
+    const f = fixture();
+    const yelp = await f.update.execute({
+      actor: staffActor,
+      key: 'apify.yelp',
+      changes: { enabled: false },
+    });
+    expect(yelp.enabled).toBe(false);
+    const places = await f.update.execute({
+      actor: staffActor,
+      key: 'google.places-text-search',
+      changes: { creditsPerUnit: 10 },
+    });
+    expect(places).toMatchObject({ creditsPerUnit: 10, marginPct: 65 });
+    expect((await f.tools.find('google.places-text-search'))?.creditsPerUnit).toBe(10);
+    expect(f.audit.entries).toEqual([
+      {
+        staffMemberId: staffActor.memberId,
+        businessId: null,
+        action: 'tool.updated',
+        targetType: 'tool',
+        targetId: 'apify.yelp',
+        details: { fields: ['enabled'], enabled: { from: true, to: false } },
+      },
+      expect.objectContaining({
+        targetId: 'google.places-text-search',
+        details: { fields: ['creditsPerUnit'], creditsPerUnit: { from: 9, to: 10 } },
+      }),
+    ]);
+  });
+
+  test('a change to the same values writes no audit entry', async () => {
+    const f = fixture();
+    await f.update.execute({ actor: staffActor, key: 'apify.yelp', changes: { enabled: true } });
+    expect(f.audit.entries).toEqual([]);
+  });
+
+  test('unknown Tool → NotFound; owner → Forbidden; bad price → ValidationError', async () => {
+    const f = fixture();
+    await expect(
+      f.update.execute({ actor: staffActor, key: 'nope', changes: { enabled: false } }),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      f.update.execute({ actor: ownerActor, key: 'apify.yelp', changes: { enabled: false } }),
+    ).rejects.toThrow(ForbiddenError);
+    await expect(
+      f.update.execute({
+        actor: staffActor,
+        key: 'apify.yelp',
+        changes: { creditsPerUnit: 1.0005 },
+      }),
+    ).rejects.toThrow(ValidationError);
+  });
+});
+
+describe('FR-18: Tool availability for research', () => {
+  test('reports enabled and configured per key; unknown keys are unavailable', async () => {
+    const f = fixture();
+    f.settings.credentials.zerobounce = { apiKey: null };
+    const tool = await f.tools.find('apify.yelp');
+    if (tool) await f.tools.save({ ...tool, enabled: false });
+    expect(
+      await f.queries.availability([
+        'google.places-text-search',
+        'apify.yelp',
+        'zerobounce.validate',
+        'x',
+      ]),
+    ).toEqual([
+      { key: 'google.places-text-search', enabled: true, configured: true },
+      { key: 'apify.yelp', enabled: false, configured: true },
+      { key: 'zerobounce.validate', enabled: true, configured: false },
+      { key: 'x', enabled: false, configured: false },
+    ]);
+  });
+
+  test('a run’s Tool calls with attempt and reused', async () => {
+    const f = fixture();
+    await f.calls.add([call({ attemptN: 2, reused: true }), call({ runId: null })]);
+    const calls = await f.queries.callsForRun(RUN);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      attempt: 2,
+      reused: true,
+      toolKey: 'google.places-text-search',
+    });
+  });
+});
+
+describe('FR-14: LlmUsageMeter', () => {
+  function meter() {
+    const f = fixture();
+    const errors: unknown[] = [];
+    const m = new LlmUsageMeter({
+      tools: f.tools,
+      calls: f.calls,
+      models: () => f.settings.ai(),
+      clock: f.clock,
+      ids: new SequentialIdGenerator(),
+      onError: (e) => errors.push(e),
+    });
+    return { ...f, m, errors };
+  }
+
+  test('1k-token units round up', () => {
+    expect([0, 1, 1000, 1001, 2500].map(thousandTokenUnits)).toEqual([0, 1, 1, 2, 3]);
+  });
+
+  test('a chat call is recorded as two Tool calls with no run, by model role', async () => {
+    const f = meter();
+    await f.m.onLlmUsage({
+      businessId: BUSINESS,
+      purpose: 'assistant.welcome',
+      model: 'claude-sonnet-5-5',
+      inputTokens: 2_400,
+      outputTokens: 300,
+    });
+    expect(
+      f.calls.rows.map((r) => [r.toolKey, r.units, r.millicredits, r.providerCostMicros]),
+    ).toEqual([
+      ['claude.chat', 3, 1_800, 6_000],
+      ['claude.chat.out', 1, 3_000, 10_000],
+    ]);
+    expect(f.calls.rows[0]).toMatchObject({
+      runId: null,
+      stepKey: null,
+      businessId: BUSINESS,
+      status: 'ok',
+    });
+  });
+
+  test('the planning and fast models map to their Tools', async () => {
+    const f = meter();
+    const usage = { businessId: BUSINESS, purpose: 'p', inputTokens: 1, outputTokens: 1 };
+    await f.m.onLlmUsage({ ...usage, model: 'claude-opus-5-5' });
+    await f.m.onLlmUsage({ ...usage, model: 'claude-haiku-5-5' });
+    expect(f.calls.rows.map((r) => r.toolKey)).toEqual([
+      'claude.planning',
+      'claude.planning.out',
+      'claude.fast',
+      'claude.fast.out',
+    ]);
+  });
+
+  test('a recording failure is reported, not thrown', async () => {
+    const f = meter();
+    f.calls.add = () => Promise.reject(new Error('db down'));
+    await expect(
+      f.m.onLlmUsage({
+        businessId: BUSINESS,
+        purpose: 'p',
+        model: 'm',
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    ).resolves.toBeUndefined();
+    expect(f.errors).toHaveLength(1);
+  });
+});

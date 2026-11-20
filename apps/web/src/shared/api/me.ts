@@ -1,6 +1,6 @@
 import { me, type Me } from '@app/contracts/identity';
 import { creditWallet } from '@app/contracts/billing';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './client';
 
 export const meQueryKey = ['me'] as const;
@@ -46,4 +46,39 @@ export function useCreditBalance(enabled: boolean): number | null {
     retry: false,
   });
   return query.data?.available ?? null;
+}
+
+/** The current available balance, read fresh into the cache (null when it can't be read). */
+export function readCredits(client: QueryClient): Promise<number | null> {
+  return client
+    .fetchQuery({
+      queryKey: creditsQueryKey,
+      queryFn: () => api('/credits', { schema: creditWallet }),
+      staleTime: 0,
+      retry: false,
+    })
+    .then((wallet) => wallet.available)
+    .catch(() => null);
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Re-reads the balance until it differs from `baseline` (e.g. the trial grant after email
+ * verification lands through the outbox and the worker), at most `timeoutMs`. Every read updates
+ * the `creditsQueryKey` cache, so the header pill follows.
+ */
+export async function refreshCreditsUntilChanged(
+  client: QueryClient,
+  baseline: number | null,
+  options: { timeoutMs?: number; everyMs?: number } = {},
+): Promise<void> {
+  const { timeoutMs = 10_000, everyMs = 1_000 } = options;
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const now = await readCredits(client);
+    if (now !== null && now !== baseline) return;
+    if (Date.now() + everyMs > until) return;
+    await wait(everyMs);
+  }
 }
