@@ -1,6 +1,6 @@
 # Viper Design System: Midnight
 
-**Status:** Draft · **Updated:** 2026-11-18 · **Mockups:** [Viper Prospecting Proposal canvas](https://claude.ai/artifact/1hDti46b9PisXsVmHn13kS), row "Option A · Midnight"
+**Status:** Draft · **Updated:** 2026-11-19 · **Public name:** UI copy says "Llyner Leads" (Viper is the code name) · **Mockups:** [Viper Prospecting Proposal canvas](https://claude.ai/artifact/1hDti46b9PisXsVmHn13kS), row "Option A · Midnight"
 
 Midnight is Viper's visual language: a dark, focused tool for people who work through lists of leads. It was chosen over *Daylight* (soft, light) and *Signal* (bold, editorial); both remain on the canvas for reference. This file is the source of truth for colors, type, layout and components. When a mockup and this file disagree, this file wins.
 
@@ -94,7 +94,7 @@ Rules:
  72px icon rail
 ```
 - **Icon rail (72px):** logo (lime square, links home), Plans/Assistant, Leads, Research flows, Credits; the **staff back office** (shield) is pinned to the bottom and is only visible to staff. Every icon button has an `aria-label` and a tooltip.
-- **Header:** breadcrumb on the left (`Business / Section / Item`); search ("Search or ask Viper… ⌘K") and the credit balance on the right.
+- **Header:** breadcrumb on the left (`Business / Section / Item`); search ("Search or ask Llyner… ⌘K") and the credit balance on the right.
 - **Content patterns:**
   - **Conversation:** a centered column, max 680–820px (welcome chat, plan).
   - **List + preview:** list `flex 3`, preview `flex 2` on `--bg-sunken` (leads, flows).
@@ -128,7 +128,7 @@ Same tokens and fonts, max width 1200px, sections separated by `--line` rules, g
 | **Working state** | Centered: thin ring (lime arc), status label, title "Working on it", one sentence with ETA, a 3-cell summary (flow, started, budget), "notify me" checkbox, actions |
 | **Balance bar** | 6px bar: available (lime) + reserved (`--reserved`) over `--line` |
 | **kbd** | Mono 11–12px, 1px `--line-control` border, radius 5–6 |
-| **Chat** | Assistant: no bubble, `--text-2`, optional small "Viper" label. User: `--surface-raised` bubble, radius 14, right-aligned, max 460–480px |
+| **Chat** | Assistant: no bubble, `--text-2`, optional small "Llyner" label. User: `--surface-raised` bubble, radius 14, right-aligned, max 460–480px |
 | **Table** | Header 12px `--text-muted`; rows 14px, 12–16px vertical padding, `--line` dividers; numbers right-aligned in mono |
 
 Icons: 20px stroke icons, 1.8 stroke, round caps (Lucide is a good match). Never emoji.

@@ -1,1 +1,12 @@
 .idea
+node_modules
+**/node_modules
+dist
+coverage
+.env*
+!.env.example
+playwright-report
+test-results
+.build/
+.npm-cache/
+.claude/settings.local.json
