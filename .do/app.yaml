@@ -10,6 +10,9 @@
 # first. Provider, Claude, SMTP and Stripe keys are NOT here: they live in Platform settings (ADR 0012).
 name: llyner-leads
 region: nyc
+domains:
+  - domain: leads.llyner.com
+    type: PRIMARY
 
 alerts:
   - rule: DEPLOYMENT_FAILED

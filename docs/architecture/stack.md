@@ -11,7 +11,7 @@ _Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stac
 | Database | DigitalOcean Managed MySQL 8 (pin the cluster's exact version in `docker-compose` as `mysql:8.0` or `mysql:8.4` to match) (ADR 0002) |
 | Queue / cache | DigitalOcean Managed Caching (Valkey, Redis-compatible) for BullMQ (ADR 0008) |
 | File storage | DigitalOcean Spaces (S3-compatible), not used in the first version (CSV is streamed) |
-| Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `[TBD]` |
+| Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `leads.llyner.com` (primary; DNS by the founder, 2026-11-20) |
 | Region | NYC (`nyc`): customers are US-only. App, database and Valkey all in the same region |
 | Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
 | Staging | none for now (ADR 0018); add a second app from `.do/app.yaml` when needed. Setup and costs: `docs/ops/digitalocean-setup.md` |
