@@ -11,6 +11,7 @@ const list = (dir) =>
 const entryPoints = Object.fromEntries([
   ['main', 'src/main.ts'],
   ['worker', 'src/worker.ts'],
+  ['scripts/staff', 'src/modules/identity/scripts/staff.ts'],
   ...list('src/scripts'),
   ...list('migrations'),
 ]);

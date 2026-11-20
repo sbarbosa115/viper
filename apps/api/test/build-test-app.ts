@@ -16,6 +16,7 @@ export const testConfig: Config = {
   SESSION_SECRET: 'test-session-secret-test-session-secret',
   APP_URL: 'http://localhost:5173',
   TOOLS_MODE: 'fake',
+  ENABLE_TEST_HOOKS: false,
 };
 
 export type TestDeps = AppDeps & {
@@ -29,6 +30,8 @@ export interface BuildTestAppOptions {
   deps?: Partial<AppDeps>;
   /** Installs a stub for authentication. Omit it to test 401 responses. */
   actor?: Actor;
+  /** Turns on the /api Origin check (CSRF, ADR 0004) that main.ts always has. Off by default. */
+  originCheck?: boolean;
 }
 
 export function defaultTestDeps(): TestDeps {
@@ -52,7 +55,9 @@ export async function buildTestApp(
     ...options.deps,
     ...(options.actor ? { resolveActor: () => options.actor ?? null } : {}),
   } as TestDeps;
-  const app = await buildApp(testConfig, testDeps, options.modules ?? []);
+  const app = await buildApp(testConfig, testDeps, options.modules ?? [], {
+    originCheck: options.originCheck ?? false,
+  });
   await app.ready();
   return Object.assign(app, { testDeps });
 }

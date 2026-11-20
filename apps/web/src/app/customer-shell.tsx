@@ -1,7 +1,8 @@
+import { UnverifiedNotice } from '../features/auth';
 import { Link, Outlet, useLocation } from 'react-router';
 import type { Me } from '@app/contracts/identity';
 import { t } from '../shared/i18n';
-import { Banner, cx, Icon, KeyboardHint, Logo } from '../shared/ui';
+import { cx, Icon, KeyboardHint, Logo } from '../shared/ui';
 import { AccountMenu } from './account-menu';
 import { activeSection, breadcrumbKeys, customerNav } from './nav';
 import { useCreditBalance, useMe } from './me';
@@ -160,13 +161,7 @@ export function CustomerShell() {
       {!mobile && <Rail me={me} />}
       <div className="flex min-w-0 flex-1 flex-col">
         {mobile ? <MobileTopBar me={me} balance={balance} /> : <Header me={me} balance={balance} />}
-        {me.actingAs && (
-          <div className="px-4 pt-3 md:px-[var(--page-gutter)]">
-            <Banner tone="warn">
-              {t('acting.banner', { business: me.actingAs.businessName })}
-            </Banner>
-          </div>
-        )}
+        <UnverifiedNotice />
         <main className={cx('min-w-0 flex-1', mobile && 'pb-20')}>
           <Outlet />
         </main>

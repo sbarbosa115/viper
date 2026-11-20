@@ -15,8 +15,13 @@ const schema = z
     APP_URL: z.url().default('http://localhost:5173'),
     SENTRY_DSN: z.string().optional(),
     TOOLS_MODE: z.enum(['live', 'fake']).default('live'),
+    /** Test-only routes (e.g. the fake Stripe completion used by e2e). Never in production. */
+    ENABLE_TEST_HOOKS: z.stringbool().default(false),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production' && env.ENABLE_TEST_HOOKS) {
+      ctx.addIssue({ code: 'custom', message: 'ENABLE_TEST_HOOKS is not allowed in production', path: ['ENABLE_TEST_HOOKS'] });
+    }
     if (env.NODE_ENV === 'production' && env.TOOLS_MODE === 'fake') {
       ctx.addIssue({
         code: 'custom',

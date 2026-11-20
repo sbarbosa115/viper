@@ -11,7 +11,10 @@
     "start:worker": "node dist/worker.js",
     "migrate": "tsx src/scripts/migrate.ts up",
     "migrate:down": "tsx src/scripts/migrate.ts down",
-    "seed": "tsx src/scripts/seed.ts"
+    "seed": "tsx src/scripts/seed.ts",
+    "staff:grant": "tsx src/modules/identity/scripts/staff.ts grant",
+    "staff:revoke": "tsx src/modules/identity/scripts/staff.ts revoke",
+    "staff:reset-2fa": "tsx src/modules/identity/scripts/staff.ts reset-2fa"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.6.0",

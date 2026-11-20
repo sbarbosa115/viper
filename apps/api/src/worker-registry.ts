@@ -1,6 +1,7 @@
 import type { Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
+import { composeCore } from './composition.js';
 import type { Config } from './config/env.js';
 import { billingSubscriptions, registerBillingWorkers } from './modules/billing/index.js';
 import { platformSubscriptions, registerPlatformWorkers } from './modules/platform/index.js';
@@ -10,7 +11,6 @@ import {
   createOutboxRelayWorker,
   type OutboxSubscription,
 } from './shared/infrastructure/outbox/index.js';
-import { SystemClock } from './shared/infrastructure/time/system-clock.js';
 
 export interface WorkerDeps {
   config: Config;
@@ -31,16 +31,17 @@ export const outboxSubscriptions: readonly OutboxSubscription[] = [
  * workers (research-runs, email, the run sweeper, event consumers).
  */
 export function registerWorkers(deps: WorkerDeps): Worker[] {
+  const core = composeCore(deps.config, deps.db, deps.logger);
   return [
     createOutboxRelayWorker({
       db: deps.db,
       connection: deps.connection,
-      clock: new SystemClock(),
+      clock: core.clock,
       logger: deps.logger,
       subscriptions: outboxSubscriptions,
     }),
     ...registerPlatformWorkers(deps),
-    ...registerBillingWorkers(deps),
+    ...registerBillingWorkers({ ...deps, trialCredits: core.trialCredits }),
     ...registerResearchWorkers(deps),
   ];
 }

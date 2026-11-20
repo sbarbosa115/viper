@@ -68,7 +68,8 @@ export function registerErrorHandling(app: FastifyInstance): void {
 
   app.setErrorHandler((error: FastifyError | AppError, req, reply) => {
     if (error instanceof AppError) {
-      const status = statusByCode[error.code] ?? 400;
+      const override = 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+      const status = override ?? statusByCode[error.code] ?? 400;
       const fields =
         error.code === 'VALIDATION_ERROR' && error.details
           ? Object.fromEntries(Object.entries(error.details).map(([k, v]) => [k, String(v)]))

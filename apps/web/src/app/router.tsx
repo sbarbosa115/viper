@@ -42,6 +42,12 @@ function groupOf(route: RouteObject): RouteGroup {
 
 const keyOf = (route: RouteObject) => (route.index ? '' : (route.path ?? '*'));
 
+/** Placeholders not yet replaced by a feature route (used by tests). */
+export function remainingPlaceholders() {
+  const taken = new Set(featureRoutes.map(keyOf));
+  return placeholders.filter((p) => !taken.has(p.path));
+}
+
 /** Feature routes first; a placeholder is added only for paths no feature provides. */
 function routesFor(group: RouteGroup): RouteObject[] {
   const own = featureRoutes.filter((r) => groupOf(r) === group);

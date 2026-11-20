@@ -22,6 +22,13 @@ export type Json<T> = ColumnType<T, string, string>;
 /** TINYINT(1). Read as 0 or 1; written as a boolean or 0/1. */
 export type Bool = ColumnType<number, boolean | number, boolean | number>;
 
+/**
+ * TINYINT(1) with a database default, so inserts may omit it. Use this instead of
+ * `Generated<Bool>`: Kysely does not unwrap a ColumnType nested inside Generated, so selects
+ * would be typed as the ColumnType object rather than a number.
+ */
+export type DefaultedBool = ColumnType<number, boolean | number | undefined, boolean | number>;
+
 /** DECIMAL, read as a number (`decimalNumbers: true`). BIGINT is a number too (safe below 2^53). */
 export type Decimal = number;
 

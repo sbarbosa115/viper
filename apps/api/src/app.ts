@@ -10,16 +10,8 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { Config } from './config/env.js';
-import { assistantModule } from './modules/assistant/index.js';
-import { billingModule } from './modules/billing/index.js';
-import { identityModule } from './modules/identity/index.js';
-import { leadsModule } from './modules/leads/index.js';
-import { planningModule } from './modules/planning/index.js';
-import { platformModule } from './modules/platform/index.js';
-import { profileModule } from './modules/profile/index.js';
-import { reportingModule } from './modules/reporting/index.js';
-import { researchModule } from './modules/research/index.js';
-import { toolsModule } from './modules/tools/index.js';
+import { registerOriginCheck } from './modules/identity/index.js';
+import { registerAuditTrail, type AuditRecorder } from './modules/platform/index.js';
 import { siteRoutes } from './site/site.routes.js';
 import type { AnalyticsTracker } from './shared/application/analytics-tracker.js';
 import type { EmailSender } from './shared/application/email-sender.js';
@@ -41,32 +33,29 @@ export interface AppDeps {
   health: HealthProbes;
   /** Resolves the signed-in Actor; the identity module provides it. Absent means anonymous. */
   resolveActor?: ResolveActor;
+  /** platform's Audit log: records every write made while Acting as (FR-6, FR-7). */
+  auditTrail?: AuditRecorder;
 }
 
-/** A bounded context's HTTP entry point, registered under the /api prefix. */
+export interface BuildAppOptions {
+  /**
+   * CSRF Origin check on every state-changing /api request (ADR 0004). On by default; module
+   * HTTP tests built with buildTestApp turn it off unless they ask for it.
+   */
+  originCheck?: boolean;
+}
+
+/** A bounded context's HTTP entry point, registered under the /api prefix (see composition.ts). */
 export interface AppModule {
   readonly name: string;
   register(app: FastifyInstance, deps: AppDeps): void | Promise<void>;
 }
 
-/** Every bounded context's HTTP module, as main.ts registers them. */
-export const appModules: readonly AppModule[] = [
-  identityModule,
-  platformModule,
-  billingModule,
-  profileModule,
-  assistantModule,
-  planningModule,
-  researchModule,
-  toolsModule,
-  leadsModule,
-  reportingModule,
-];
-
 export async function buildApp(
   config: Config,
   deps: AppDeps,
   modules: readonly AppModule[] = [],
+  options: BuildAppOptions = {},
 ): Promise<FastifyInstance> {
   const app = Fastify(
     deps.logger
@@ -78,6 +67,7 @@ export async function buildApp(
 
   registerErrorHandling(app);
   registerActor(app, deps.resolveActor);
+  if (deps.auditTrail) registerAuditTrail(app, { audit: deps.auditTrail });
 
   await app.register(helmet);
   await app.register(cookie, { secret: config.SESSION_SECRET });
@@ -95,6 +85,8 @@ export async function buildApp(
 
   await app.register(
     async (api) => {
+      // Skips GET/HEAD/OPTIONS and the Stripe webhook (signature-checked instead).
+      if (options.originCheck ?? true) registerOriginCheck(api, { appUrl: config.APP_URL });
       healthRoutes(api, deps.health);
       for (const module of modules) {
         await api.register(async (scoped) => module.register(scoped, deps));

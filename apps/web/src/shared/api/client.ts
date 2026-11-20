@@ -41,6 +41,8 @@ export async function api<T = void>(path: string, options: RequestOptions<T> = {
   });
   if (!res.ok) throw await toApiError(res);
   if (res.status === 204) return undefined as T;
-  const json: unknown = await res.json();
+  const text = await res.text();
+  if (text === '') return undefined as T;
+  const json: unknown = JSON.parse(text);
   return options.schema ? options.schema.parse(json) : (json as T);
 }

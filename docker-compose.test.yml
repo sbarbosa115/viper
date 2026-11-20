@@ -17,6 +17,8 @@ services:
   valkey:
     image: valkey/valkey:8
     healthcheck: { test: ['CMD', 'valkey-cli', 'ping'], interval: 2s, retries: 30 }
+  mailpit:
+    image: axllent/mailpit:v1.29
   tests:
     <<: *node
     environment:
@@ -24,6 +26,8 @@ services:
       NODE_ENV: test
       DATABASE_URL_TEST: 'mysql://root:test@db:3306/app_test'
       REDIS_URL: 'redis://valkey:6379'
+      MAILPIT_URL: 'http://mailpit:8025'
     depends_on:
       db: { condition: service_healthy }
       valkey: { condition: service_healthy }
+      mailpit: { condition: service_started }

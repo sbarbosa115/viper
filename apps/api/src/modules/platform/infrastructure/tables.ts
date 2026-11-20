@@ -5,7 +5,7 @@ export interface EncryptedSecret {
   ciphertext: string;
   iv: string;
   tag: string;
-  last4: string;
+  last4: string | null;
   updatedAt: string;
 }
 

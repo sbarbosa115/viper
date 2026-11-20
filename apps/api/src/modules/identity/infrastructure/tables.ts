@@ -1,10 +1,16 @@
-import type { Generated } from 'kysely';
+import type { ColumnType, Generated } from 'kysely';
 import type { Bool, Timestamp } from '../../../shared/infrastructure/db/schema.js';
+
+/**
+ * TINYINT(1) with a database default. `Generated<Bool>` would nest two ColumnTypes, which Kysely
+ * does not unwrap (selects would be typed as the ColumnType itself).
+ */
+type DefaultedBool = ColumnType<number, boolean | number | undefined, boolean | number>;
 
 export interface BusinessesTable {
   id: string;
   name: string;
-  internal: Generated<Bool>;
+  internal: DefaultedBool;
   created_at: Timestamp;
   last_active_at: Timestamp | null;
 }
@@ -17,7 +23,7 @@ export interface MembersTable {
   name: string;
   password_hash: string;
   role: Generated<'owner'>;
-  is_staff: Generated<Bool>;
+  is_staff: DefaultedBool;
   email_verified_at: Timestamp | null;
   /** AES-256-GCM ciphertext (ADR 0012). */
   totp_secret_enc: Buffer | null;
@@ -30,7 +36,7 @@ export interface SessionsTable {
   id: string;
   member_id: string;
   acting_as_business_id: string | null;
-  two_factor_passed: Generated<Bool>;
+  two_factor_passed: DefaultedBool;
   /** Wrong two-factor codes on this half-session; 5 delete it (FR-5). */
   two_factor_failures: Generated<number>;
   created_at: Timestamp;

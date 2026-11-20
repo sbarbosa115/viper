@@ -4,7 +4,7 @@ import { PlaceholderPage } from './pages/placeholder';
 
 export type RouteGroup = 'auth' | 'guest-auth' | 'customer' | 'staff';
 
-interface Placeholder {
+export interface Placeholder {
   /** Path relative to /app; '' is the index route. */
   path: string;
   title: StringKey;

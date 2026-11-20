@@ -23,6 +23,7 @@ afterAll(async () => {
 
 /** Every table in PRD section 8 (the Removal list is deferred). */
 const prdTables = [
+  'credit_wallets',
   'businesses',
   'members',
   'sessions',

@@ -91,8 +91,8 @@ describe('app: customer shell', () => {
       },
     );
     const router = renderApp('/plans');
-    expect(await screen.findByText('Acting as Acme Bakery')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+    // No banner while Acting as (founder decision, PRD §13); the account menu holds the way out.
+    await userEvent.click(await screen.findByRole('button', { name: 'Account menu' }));
     await userEvent.click(screen.getByRole('menuitem', { name: 'Stop acting as Acme Bakery' }));
     await screen.findByRole('heading', { name: 'Customers' });
     expect(router.state.location.pathname).toBe('/staff/customers');

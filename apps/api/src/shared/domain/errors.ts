@@ -32,6 +32,8 @@ export class CodedError extends AppError {
     readonly code: string,
     message: string,
     details?: Record<string, unknown>,
+    /** Overrides the code's usual HTTP status when a contract documents another (e.g. 422). */
+    readonly status?: number,
   ) {
     super(message, details);
   }

@@ -1,4 +1,5 @@
 import { pino } from 'pino';
+import { createTotpCipher } from '../composition.js';
 import { loadConfig } from '../config/env.js';
 import * as assistant from '../modules/assistant/index.js';
 import * as billing from '../modules/billing/index.js';
@@ -52,7 +53,16 @@ const demo = {
 
 const logger = pino({ level: 'info' });
 const db = createDatabase(config.DATABASE_URL);
-const deps = { config, db, logger, clock: new SystemClock(), ids: new Uuid7Generator(), demo };
+const deps = {
+  config,
+  db,
+  logger,
+  clock: new SystemClock(),
+  ids: new Uuid7Generator(),
+  demo,
+  // Seals the Staff demo account's TOTP secret the way platform seals settings (ADR 0012).
+  cipher: createTotpCipher(platform.createSecretBox(config)),
+};
 
 /**
  * identity: owner@demo.test (Sweet Supply Co), new@demo.test (Clean Desk Co), low@demo.test

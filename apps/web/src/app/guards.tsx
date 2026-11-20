@@ -37,11 +37,20 @@ export function RequireStaff() {
 }
 
 /** Login and sign-up send a signed-in Member home (a Staff half-session goes to the code step). */
+/** A same-app return path from `?next=` (must start with one `/`), else null. */
+export function safeNext(search: string): string | null {
+  const next = new URLSearchParams(search).get('next');
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+}
+
 export function RedirectIfSignedIn() {
   const { me } = useMe();
+  const location = useLocation();
   if (!me) return <Outlet />;
+  const next = safeNext(location.search);
   if (me.twoFactor.required && !me.twoFactor.passed) {
-    return <Navigate to="/login/two-factor" replace />;
+    const query = next ? `?next=${encodeURIComponent(next)}` : '';
+    return <Navigate to={`/login/two-factor${query}`} replace />;
   }
-  return <Navigate to="/" replace />;
+  return <Navigate to={next ?? '/'} replace />;
 }

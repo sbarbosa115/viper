@@ -1,5 +1,5 @@
-import type { Generated } from 'kysely';
-import type { Bool, Timestamp } from '../../../shared/infrastructure/db/schema.js';
+import type { ColumnType, Generated } from 'kysely';
+import type { Timestamp } from '../../../shared/infrastructure/db/schema.js';
 
 export type LedgerEntryTypeColumn =
   'grant' | 'purchase' | 'reservation' | 'release' | 'settlement' | 'adjustment';
@@ -33,7 +33,8 @@ export interface CreditPacksTable {
   name: string;
   credits: number;
   price_cents: number;
-  active: Generated<Bool>;
+  /** TINYINT(1) DEFAULT 1. */
+  active: ColumnType<number, boolean | number | undefined, boolean | number>;
   position: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -54,7 +55,14 @@ export interface PurchasesTable {
   paid_at: Timestamp | null;
 }
 
+/** One lock row per Business's Credit wallet (no balance: that stays derived from the ledger). */
+export interface CreditWalletsTable {
+  business_id: string;
+  created_at: Timestamp;
+}
+
 export interface BillingTables {
+  credit_wallets: CreditWalletsTable;
   credit_ledger: CreditLedgerTable;
   reservations: ReservationsTable;
   credit_packs: CreditPacksTable;

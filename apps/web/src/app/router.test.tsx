@@ -1,6 +1,6 @@
+import { remainingPlaceholders } from './router';
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { placeholders } from './placeholders';
 import { meFixture, mockMe, renderApp, setViewport } from './test-utils';
 
 afterEach(() => {
@@ -35,7 +35,7 @@ describe('app: router', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('UI kit');
   });
 
-  test.each(placeholders.map((p) => [p.path || '(index)', p] as const))(
+  test.each(remainingPlaceholders().map((p) => [p.path || '(index)', p] as const))(
     'every section 6b route renders a placeholder: %s',
     async (_name, p) => {
       const me = meFixture({
