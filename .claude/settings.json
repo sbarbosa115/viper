@@ -32,7 +32,22 @@
       "Bash(chmod +x:*)",
       "Edit(/home/sbarb/Development/viper/**)",
       "Write(/home/sbarb/Development/viper/**)",
-      "Read(/home/sbarb/Development/viper/**)"
+      "Read(/home/sbarb/Development/viper/**)",
+      "Bash(doctl account get:*)",
+      "Bash(doctl databases list:*)",
+      "Bash(doctl databases get:*)",
+      "Bash(doctl databases options:*)",
+      "Bash(doctl databases configuration get:*)",
+      "Bash(doctl databases db list:*)",
+      "Bash(doctl databases user list:*)",
+      "Bash(doctl databases firewalls list:*)",
+      "Bash(doctl databases backups:*)",
+      "Bash(doctl apps list:*)",
+      "Bash(doctl apps get:*)",
+      "Bash(doctl apps list-deployments:*)",
+      "Bash(doctl apps get-deployment:*)",
+      "Bash(doctl apps logs:*)",
+      "Bash(doctl apps spec validate:*)"
     ],
     "ask": [
       "Bash(git push origin main:*)",
