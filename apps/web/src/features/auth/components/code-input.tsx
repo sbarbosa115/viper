@@ -49,8 +49,13 @@ export function CodeInput({ value, onChange, invalid, describedBy, disabled }: C
   };
 
   return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0" aria-describedby={describedBy}>
-      <legend className="mb-1.5 p-0 text-[13px] font-medium text-fg">{copy.twoFactor.legend}</legend>
+    <fieldset
+      className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0"
+      aria-describedby={describedBy}
+    >
+      <legend className="mb-1.5 p-0 text-[13px] font-medium text-fg">
+        {copy.twoFactor.legend}
+      </legend>
       <div className="flex gap-2">
         {digits.map((digit, index) => (
           <Input

@@ -54,7 +54,9 @@ function body(
   fields?: Record<string, string>,
   details?: Record<string, unknown>,
 ): ErrorResponse {
-  return { error: { code, message, ...(fields ? { fields } : {}), ...(details ? { details } : {}) } };
+  return {
+    error: { code, message, ...(fields ? { fields } : {}), ...(details ? { details } : {}) },
+  };
 }
 
 /** The only place errors become HTTP responses (PRD section 7 error shape). */
@@ -68,7 +70,8 @@ export function registerErrorHandling(app: FastifyInstance): void {
 
   app.setErrorHandler((error: FastifyError | AppError, req, reply) => {
     if (error instanceof AppError) {
-      const override = 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+      const override =
+        'status' in error && typeof error.status === 'number' ? error.status : undefined;
       const status = override ?? statusByCode[error.code] ?? 400;
       const fields =
         error.code === 'VALIDATION_ERROR' && error.details
@@ -88,7 +91,9 @@ export function registerErrorHandling(app: FastifyInstance): void {
     }
     const status = 'statusCode' in error ? error.statusCode : undefined;
     if (status === 429) {
-      return reply.status(429).send(body('TOO_MANY_REQUESTS', 'Too many requests, try again later'));
+      return reply
+        .status(429)
+        .send(body('TOO_MANY_REQUESTS', 'Too many requests, try again later'));
     }
     if (status && status >= 400 && status < 500) {
       return reply.status(status).send(body('BAD_REQUEST', error.message));

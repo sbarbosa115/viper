@@ -34,7 +34,13 @@ export function auditLogRepositoryContract(
     test('lists newest first with ties broken by id, and pages with a cursor', async () => {
       for (const n of [1, 2, 3, 4, 5]) await repo.append(entry(n));
       const all = await repo.list({}, null, 10);
-      expect(all.map((e) => e.targetId)).toEqual(['plan-5', 'plan-4', 'plan-3', 'plan-2', 'plan-1']);
+      expect(all.map((e) => e.targetId)).toEqual([
+        'plan-5',
+        'plan-4',
+        'plan-3',
+        'plan-2',
+        'plan-1',
+      ]);
       const last = all[1];
       if (!last) throw new Error('expected entries');
       const next = await repo.list({}, { at: last.at, id: last.id }, 2);

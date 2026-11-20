@@ -98,7 +98,9 @@ describe('FR-4: forgot and reset password', () => {
     await user.type(await screen.findByLabelText('Email'), 'nobody@example.com');
     await user.click(screen.getByRole('button', { name: 'Send reset link' }));
     expect(
-      await screen.findByText("If an account exists for that email, we've sent a link. It works for 1 hour."),
+      await screen.findByText(
+        "If an account exists for that email, we've sent a link. It works for 1 hour.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to log in' })).toHaveAttribute('href', '/login');
   });

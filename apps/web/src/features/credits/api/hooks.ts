@@ -35,7 +35,11 @@ export function useLedger() {
 export function useCheckout() {
   return useMutation({
     mutationFn: (packId: string) =>
-      api('/credits/checkout', { method: 'POST', body: { packId }, schema: createCheckout.response }),
+      api('/credits/checkout', {
+        method: 'POST',
+        body: { packId },
+        schema: createCheckout.response,
+      }),
   });
 }
 
@@ -44,14 +48,42 @@ export const POLL_FOR_MS = 60_000;
 
 export type PurchaseState = 'idle' | 'waiting' | 'done' | 'timeout';
 
+const BASELINE_KEY = 'viper.credits.purchaseBaseline';
+
+/**
+ * Keeps the balance from before the redirect to checkout, so the return page can tell the
+ * purchase landed even when the webhook beat the Member back. Storage may be unavailable.
+ */
+export function rememberPurchaseBaseline(balance: number | undefined): void {
+  if (balance === undefined) return;
+  try {
+    sessionStorage.setItem(BASELINE_KEY, String(balance));
+  } catch {
+    // No storage: the first balance loaded after the return is the baseline.
+  }
+}
+
+function takePurchaseBaseline(): number | null {
+  try {
+    const raw = sessionStorage.getItem(BASELINE_KEY);
+    sessionStorage.removeItem(BASELINE_KEY);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * FR-12: after Stripe sends the Member back, the webhook may not have landed yet. Refresh the
- * wallet and ledger every 3 s for up to 60 s, until the balance goes up.
+ * wallet and ledger every 3 s for up to 60 s, until the balance goes above the balance before
+ * the redirect (or, without it, the first balance loaded).
  */
 export function usePurchasePolling(active: boolean, balance: number | undefined): PurchaseState {
   const client = useQueryClient();
   const [state, setState] = useState<PurchaseState>(active ? 'waiting' : 'idle');
-  const baseline = useRef<number | null>(null);
+  const baseline = useRef<number | null | undefined>(undefined);
+  if (baseline.current === undefined) baseline.current = active ? takePurchaseBaseline() : null;
 
   useEffect(() => {
     if (balance === undefined) return;

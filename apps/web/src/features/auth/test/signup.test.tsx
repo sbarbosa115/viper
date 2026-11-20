@@ -22,8 +22,14 @@ describe('FR-1: sign up', () => {
     renderAuth('/signup');
     expect(await screen.findByLabelText('Business name')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toHaveAccessibleDescription('At least 10 characters');
-    expect(screen.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute('href', '/terms');
-    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy');
+    expect(screen.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
+      'href',
+      '/terms',
+    );
+    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
     expect(screen.getByText(/By signing up you agree to the/)).toBeInTheDocument();
   });
 
@@ -53,7 +59,9 @@ describe('FR-1: sign up', () => {
     renderAuth('/signup');
     await fill('taken@example.com');
     expect(
-      await screen.findByText(/An account with this email already exists\. Log in or reset your password\./),
+      await screen.findByText(
+        /An account with this email already exists\. Log in or reset your password\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Log in' })[0]).toHaveAttribute('href', '/login');
   });
@@ -68,7 +76,13 @@ describe('FR-1: sign up', () => {
     server.use(
       http.post('*/api/auth/signup', () =>
         HttpResponse.json(
-          { error: { code: 'VALIDATION_ERROR', message: 'Invalid', fields: { businessName: 'Pick another name' } } },
+          {
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid',
+              fields: { businessName: 'Pick another name' },
+            },
+          },
           { status: 400 },
         ),
       ),

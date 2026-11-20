@@ -13,6 +13,8 @@ export interface MessagesTable {
   role: 'user' | 'assistant';
   text: string;
   quick_replies: Json<string[]>;
+  /** What an assistant message asked about (migration 20261119200000); null for user messages. */
+  topic: string | null;
   created_at: Timestamp;
 }
 

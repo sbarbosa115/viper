@@ -41,4 +41,6 @@ export function applyFieldErrors<T extends FieldValues>(
 }
 
 export const isApiError = (error: unknown, status: number, code?: string): error is ApiError =>
-  error instanceof ApiError && error.status === status && (code === undefined || error.code === code);
+  error instanceof ApiError &&
+  error.status === status &&
+  (code === undefined || error.code === code);

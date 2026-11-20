@@ -37,7 +37,10 @@ export function singular(noun: string): string {
 }
 
 function snake(segment: string): string {
-  return segment.replace(/[-\s]+/g, '_').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return segment
+    .replace(/[-\s]+/g, '_')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase();
 }
 
 const isParam = (segment: string) => segment.startsWith(':');
@@ -85,7 +88,9 @@ export function auditTargetFor(
 const SECRET_KEY = /pass(word)?|secret|token|api_?key|authorization|cookie/i;
 
 /** Audit details never hold secret values: any key that names a secret is dropped. */
-export function scrubAuditDetails(details: Readonly<Record<string, unknown>>): Record<string, unknown> {
+export function scrubAuditDetails(
+  details: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(details)) {
     if (SECRET_KEY.test(key)) continue;

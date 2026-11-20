@@ -29,7 +29,9 @@ describe('FR-8 / NFR-4: SecretBox (AES-256-GCM)', () => {
     const sealed = box.encrypt('value', 'ctx');
     const flipped = Buffer.from(sealed.ciphertext, 'base64');
     flipped[0] = (flipped[0] ?? 0) ^ 1;
-    expect(() => box.decrypt({ ...sealed, ciphertext: flipped.toString('base64') }, 'ctx')).toThrow();
+    expect(() =>
+      box.decrypt({ ...sealed, ciphertext: flipped.toString('base64') }, 'ctx'),
+    ).toThrow();
     expect(() => new AesGcmSecretBox(randomBytes(32)).decrypt(sealed, 'ctx')).toThrow();
   });
 

@@ -1,3 +1,4 @@
+import { conversation, profile } from '@app/contracts/examples';
 import { screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { meFixture, mockMe, renderApp } from './test-utils';
@@ -13,10 +14,16 @@ describe('app: route guards', () => {
   });
 
   test('signed in on login goes home', async () => {
-    mockMe(meFixture());
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } });
+    mockMe(meFixture(), {
+      'GET /api/profile': () => json({ ...profile, complete: false }),
+      'GET /api/conversations/welcome': () => json(conversation),
+    });
     const router = renderApp('/login');
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
-    expect(await screen.findByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+    // Home is the welcome chat while the Business Profile is incomplete.
+    expect(await screen.findByRole('heading', { name: 'Welcome chat' })).toBeInTheDocument();
   });
 
   test('Staff without a passed code is sent to two-factor', async () => {

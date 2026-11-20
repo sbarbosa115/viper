@@ -85,7 +85,11 @@ export function createSettingsReader(deps: {
 }
 
 /** The Audit log's write side (identity's AuditRecorder, back-office writes in every module). */
-export function createAuditLog(deps: { db: Database; clock: Clock; ids: IdGenerator }): AuditRecorder {
+export function createAuditLog(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+}): AuditRecorder {
   return new AuditLog({
     repository: new KyselyAuditLogRepository(deps.db),
     clock: deps.clock,

@@ -7,6 +7,8 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly fields?: Record<string, string>,
+    /** Extra data some errors carry, e.g. INSUFFICIENT_CREDITS { available, required }. */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -16,8 +18,8 @@ export class ApiError extends Error {
 async function toApiError(res: Response): Promise<ApiError> {
   const parsed = errorResponse.safeParse(await res.json().catch(() => null));
   if (parsed.success) {
-    const { code, message, fields } = parsed.data.error;
-    return new ApiError(res.status, code, message, fields);
+    const { code, message, fields, details } = parsed.data.error;
+    return new ApiError(res.status, code, message, fields, details);
   }
   return new ApiError(res.status, 'UNKNOWN_ERROR', res.statusText || 'Request failed');
 }

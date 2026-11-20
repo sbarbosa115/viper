@@ -80,7 +80,12 @@ function CodeEntry({ email }: { email: string }) {
     <div className="flex flex-col gap-5">
       <Heading title={copy.twoFactor.title} subtitle={fill(copy.twoFactor.subtitle, { email })} />
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <CodeInput value={code} onChange={setCode} invalid={problem === 'wrong'} disabled={pending} />
+        <CodeInput
+          value={code}
+          onChange={setCode}
+          invalid={problem === 'wrong'}
+          disabled={pending}
+        />
         {problem && <FormError>{problemText[problem]}</FormError>}
         <Button type="submit" variant="primary" size="lg" loading={pending}>
           {copy.twoFactor.submit}
@@ -94,7 +99,10 @@ function CodeEntry({ email }: { email: string }) {
 }
 
 function groupKey(secret: string): string {
-  return secret.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim();
+  return secret
+    .replace(/\s/g, '')
+    .replace(/(.{4})/g, '$1 ')
+    .trim();
 }
 
 function SetupEntry() {
@@ -110,12 +118,7 @@ function SetupEntry() {
     );
   }
   if (setup.isError) {
-    return (
-      <ErrorState
-        title={copy.twoFactor.setupError}
-        onRetry={() => void setup.refetch()}
-      />
-    );
+    return <ErrorState title={copy.twoFactor.setupError} onRetry={() => void setup.refetch()} />;
   }
 
   const onSubmit = (event: FormEvent) => {
@@ -141,7 +144,10 @@ function SetupEntry() {
         </li>
       </ol>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-        <Field label={copy.twoFactor.stepCode} error={problem === 'wrong' ? problemText.wrong : undefined}>
+        <Field
+          label={copy.twoFactor.stepCode}
+          error={problem === 'wrong' ? problemText.wrong : undefined}
+        >
           {(p) => (
             <Input
               {...p}

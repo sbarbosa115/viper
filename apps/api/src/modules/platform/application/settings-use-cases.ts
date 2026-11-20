@@ -134,9 +134,10 @@ export class TestSettings {
       }, this.deps.timeoutMs ?? TEST_TIMEOUT_MS);
     });
     const check = this.deps.tester[cmd.target];
-    const run = check({ to: cmd.to, signal: controller.signal }).catch(
-      (): ConnectivityResult => ({ ok: false, message: 'The test failed unexpectedly' }),
-    );
+    const run = check({ to: cmd.to, signal: controller.signal }).catch((): ConnectivityResult => ({
+      ok: false,
+      message: 'The test failed unexpectedly',
+    }));
     try {
       return await Promise.race([run, timedOut]);
     } finally {

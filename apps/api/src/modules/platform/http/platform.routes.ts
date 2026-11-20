@@ -65,7 +65,11 @@ export function platformRoutes(app: FastifyInstance, deps: PlatformRouteDeps): v
     routePath(testSettings),
     {
       preHandler: app.authenticate,
-      schema: { tags: ['platform'], body: testSettings.body, response: { 200: testSettings.response } },
+      schema: {
+        tags: ['platform'],
+        body: testSettings.body,
+        response: { 200: testSettings.response },
+      },
     },
     (req) =>
       deps.testSettings.execute({ actor: req.actor, target: req.body.target, to: req.body.to }),

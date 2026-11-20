@@ -132,7 +132,10 @@ export class CachedSettingsReader implements SettingsReader {
     const rows = new Map((await this.deps.repository.findAll()).map((s) => [s.section, s]));
     const entries = SETTINGS_SECTIONS.map(
       (section) =>
-        [section, revealSection(rows.get(section) ?? emptySection(section), this.deps.secretBox)] as const,
+        [
+          section,
+          revealSection(rows.get(section) ?? emptySection(section), this.deps.secretBox),
+        ] as const,
     );
     return Object.fromEntries(entries) as Snapshot;
   }

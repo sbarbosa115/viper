@@ -71,32 +71,47 @@ describe('FR-8: provider "Test" actions', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test.each(providers)('%s: a rejected key shows the provider message, never the key', async (provider) => {
-    const check = providerCheck(provider, {
-      settings: configured,
-      fetch: fakeFetch(401, { error: { message: `Invalid key ${KEY}` }, message: `Invalid key ${KEY}` }),
-    });
-    const result = await check({ signal });
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('Invalid key');
-    expect(result.message).not.toContain(KEY);
-  });
+  test.each(providers)(
+    '%s: a rejected key shows the provider message, never the key',
+    async (provider) => {
+      const check = providerCheck(provider, {
+        settings: configured,
+        fetch: fakeFetch(401, {
+          error: { message: `Invalid key ${KEY}` },
+          message: `Invalid key ${KEY}`,
+        }),
+      });
+      const result = await check({ signal });
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain('Invalid key');
+      expect(result.message).not.toContain(KEY);
+    },
+  );
 
   test('a header-authenticated provider sends the key in a header, not the URL', async () => {
     const calls: Call[] = [];
-    await providerCheck('apollo', { settings: configured, fetch: fakeFetch(200, okBodies.apollo, calls) })({
+    await providerCheck('apollo', {
+      settings: configured,
+      fetch: fakeFetch(200, okBodies.apollo, calls),
+    })({
       signal,
     });
     expect(calls[0]?.url).not.toContain(KEY);
     expect(calls[0]?.headers['X-Api-Key']).toBe(KEY);
   });
 
-  test('Google Maps REQUEST_DENIED (HTTP 200) is a failure with Google\'s message', async () => {
+  test("Google Maps REQUEST_DENIED (HTTP 200) is a failure with Google's message", async () => {
     const check = providerCheck('googleMaps', {
       settings: configured,
-      fetch: fakeFetch(200, { status: 'REQUEST_DENIED', error_message: 'The provided API key is invalid.' }),
+      fetch: fakeFetch(200, {
+        status: 'REQUEST_DENIED',
+        error_message: 'The provided API key is invalid.',
+      }),
     });
-    expect(await check({ signal })).toEqual({ ok: false, message: 'The provided API key is invalid.' });
+    expect(await check({ signal })).toEqual({
+      ok: false,
+      message: 'The provided API key is invalid.',
+    });
   });
 
   test('ZeroBounce answers Credits -1 for an invalid key', async () => {

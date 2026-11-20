@@ -22,7 +22,9 @@ async function appWith(actor: Actor, recorder: { record(e: AuditRecord): Promise
         throw new ForbiddenError('nope');
       });
       app.post('/conversations/:id/messages', { config: { audit: false } }, () => ({ ok: true }));
-      app.put('/profile', { config: { audit: { action: 'profile.edited' } } }, () => ({ ok: true }));
+      app.put('/profile', { config: { audit: { action: 'profile.edited' } } }, () => ({
+        ok: true,
+      }));
     },
   };
   return buildTestApp({ modules: [customerRoutes], actor });
@@ -40,7 +42,7 @@ function recording() {
 }
 
 describe('FR-7: audit trail for writes made while Acting as', () => {
-  test('Staff Acting as B edits B\'s Plan → plan.updated with Staff, B and the plan id', async () => {
+  test("Staff Acting as B edits B's Plan → plan.updated with Staff, B and the plan id", async () => {
     const recorder = recording();
     const app = await appWith(staffActingAs(), recorder);
     const res = await app.inject({

@@ -61,7 +61,10 @@ describe('FR-8: platform settings defaults', () => {
 
 describe('FR-8: secrets are write-only', () => {
   test('a new secret is a change and its name (not value) is a changed field', () => {
-    const plan = planSectionUpdate(emptySection('ai'), { ...aiInput, anthropicApiKey: 'sk-ant-123456' });
+    const plan = planSectionUpdate(emptySection('ai'), {
+      ...aiInput,
+      anthropicApiKey: 'sk-ant-123456',
+    });
     expect(plan.secretChanges).toEqual([{ path: 'anthropicApiKey', value: 'sk-ant-123456' }]);
     expect(plan.changedFields).toEqual(['anthropicApiKey']);
     expect(plan.values).toEqual(aiInput);

@@ -91,11 +91,14 @@ describe('FR-8: Stripe "Test" action (local fake API)', () => {
       settings: fakeSettingsReader({ 'stripe.secretKey': 'sk_test_abcdef123456' }),
       endpoint: { host: '127.0.0.1', port, protocol: 'http' },
     });
-    expect(await check({ signal: signal() })).toEqual({ ok: true, message: 'Connected (test mode)' });
+    expect(await check({ signal: signal() })).toEqual({
+      ok: true,
+      message: 'Connected (test mode)',
+    });
     expect(auth).toBe('Bearer sk_test_abcdef123456');
   });
 
-  test('a rejected key shows Stripe\'s message without the key', async () => {
+  test("a rejected key shows Stripe's message without the key", async () => {
     const port = await localApi((_req, res) => {
       json(res, 401, {
         error: {

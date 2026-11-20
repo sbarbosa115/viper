@@ -20,7 +20,11 @@ const schema = z
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.ENABLE_TEST_HOOKS) {
-      ctx.addIssue({ code: 'custom', message: 'ENABLE_TEST_HOOKS is not allowed in production', path: ['ENABLE_TEST_HOOKS'] });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ENABLE_TEST_HOOKS is not allowed in production',
+        path: ['ENABLE_TEST_HOOKS'],
+      });
     }
     if (env.NODE_ENV === 'production' && env.TOOLS_MODE === 'fake') {
       ctx.addIssue({

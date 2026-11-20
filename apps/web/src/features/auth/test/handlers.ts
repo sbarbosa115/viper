@@ -57,7 +57,8 @@ export const handlers = [
     const parsed = signupBody.safeParse(await request.json());
     if (!parsed.success) return invalid(parsed.error);
     if (parsed.data.email.startsWith('taken@')) return fail(409, 'EMAIL_TAKEN', 'Email taken');
-    if (parsed.data.email.startsWith('limited@')) return fail(429, 'TOO_MANY_REQUESTS', 'Slow down');
+    if (parsed.data.email.startsWith('limited@'))
+      return fail(429, 'TOO_MANY_REQUESTS', 'Slow down');
     authState.session = meSchema.parse({
       ...meExample,
       member: {
@@ -104,7 +105,8 @@ export const handlers = [
       twoFactorSetup.response.parse({
         otpauthUrl: 'otpauth://totp/Llyner:staff@llyner.example?secret=JBSWY3DPEHPK3PXP',
         secret: 'JBSWY3DPEHPK3PXP',
-        qrSvg: '<svg viewBox="0 0 2 2" xmlns="http://www.w3.org/2000/svg"><rect width="2" height="2"/></svg>',
+        qrSvg:
+          '<svg viewBox="0 0 2 2" xmlns="http://www.w3.org/2000/svg"><rect width="2" height="2"/></svg>',
       }),
     ),
   ),

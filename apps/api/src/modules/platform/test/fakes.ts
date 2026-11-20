@@ -182,7 +182,11 @@ export function staffActingAs(overrides: Partial<Actor> = {}): Actor {
     businessId: ids.business,
     roles: ['owner', 'staff'],
     emailVerified: true,
-    actingAs: { businessId: ids.business, businessName: 'Sweet Supply Co', staffMemberId: ids.staff },
+    actingAs: {
+      businessId: ids.business,
+      businessName: 'Sweet Supply Co',
+      staffMemberId: ids.staff,
+    },
     ...overrides,
   };
 }

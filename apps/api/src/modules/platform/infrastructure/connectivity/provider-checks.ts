@@ -122,7 +122,8 @@ export const PROVIDER_SPECS: {
     })),
     interpret: (status, body) => {
       const credits = Number(field(body, 'Credits'));
-      if (status === 200 && credits >= 0) return { ok: true, message: `Connected (${credits} credits)` };
+      if (status === 200 && credits >= 0)
+        return { ok: true, message: `Connected (${credits} credits)` };
       if (status === 200) return { ok: false, message: 'The API key was not accepted' };
       return byStatus(status, body);
     },

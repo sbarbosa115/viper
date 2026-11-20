@@ -1,5 +1,5 @@
 import { ledgerEntry as ledgerExample, me as meExample } from '@app/contracts/examples';
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -13,6 +13,7 @@ const signIn = (...args: Parameters<typeof meHandler>) => server.use(meHandler(.
 vi.mock('../lib/redirect', () => ({ redirectTo: vi.fn() }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   resetCreditsState();
   signIn();
   vi.mocked(redirectTo).mockClear();
@@ -196,6 +197,22 @@ describe('FR-12: returning from Stripe', () => {
     const after = calls();
     await vi.advanceTimersByTimeAsync(9000);
     expect(calls()).toBe(after);
+  });
+
+  test('the webhook landing before the return still confirms (baseline from before checkout)', async () => {
+    renderCredits();
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Buy Starter' }));
+    await waitFor(() => expect(redirectTo).toHaveBeenCalled());
+    expect(sessionStorage.getItem('viper.credits.purchaseBaseline')).toBe(
+      String(creditsState.wallet.balance),
+    );
+
+    // The webhook credits the wallet before the Member comes back from checkout.
+    creditsState.wallet = { ...creditsState.wallet, balance: 3500, available: 3100 };
+    cleanup();
+    renderCreditsPage('/credits?purchase=success');
+    expect(await screen.findByText('Your credits were added.')).toBeInTheDocument();
+    expect(sessionStorage.getItem('viper.credits.purchaseBaseline')).toBeNull();
   });
 
   test('without ?purchase=success nothing polls and no banner shows', async () => {

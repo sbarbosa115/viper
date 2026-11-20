@@ -67,7 +67,10 @@ export function useVerifyEmail(token: string | null) {
  * 202 answers carry no body (contract `noContent`); the shared client would fail parsing an empty
  * one, so an empty-body SyntaxError after a 2xx is treated as success.
  */
-async function apiAccepted(path: string, options: { method: 'POST'; body?: unknown }): Promise<void> {
+async function apiAccepted(
+  path: string,
+  options: { method: 'POST'; body?: unknown },
+): Promise<void> {
   try {
     await api(path, options);
   } catch (error) {
@@ -90,7 +93,8 @@ export function useTwoFactorSetup(enabled: boolean) {
     staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,
-    queryFn: () => api('/auth/two-factor/setup', { method: 'POST', schema: twoFactorSetup.response }),
+    queryFn: () =>
+      api('/auth/two-factor/setup', { method: 'POST', schema: twoFactorSetup.response }),
   });
 }
 
@@ -122,4 +126,3 @@ export function useConfirmPasswordReset() {
       }),
   });
 }
-

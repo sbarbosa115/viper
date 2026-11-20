@@ -157,7 +157,11 @@ describe('FR-8: save a settings section', () => {
 
   test('a non-Staff Member cannot save', async () => {
     await expect(
-      ctx.update.execute({ actor: ownerActor(), section: 'landing', input: { youtubeVideoId: null } }),
+      ctx.update.execute({
+        actor: ownerActor(),
+        section: 'landing',
+        input: { youtubeVideoId: null },
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     expect(ctx.uow.auditLog.entries).toHaveLength(0);
   });
@@ -225,9 +229,21 @@ describe('FR-9: public config', () => {
 
   test('returns the measurement ID, support email and video ID once set', async () => {
     const actor = staffActor();
-    await ctx.update.execute({ actor, section: 'analytics', input: { gaMeasurementId: 'G-ABC1234' } });
-    await ctx.update.execute({ actor, section: 'support', input: { supportEmail: 'help@llyner.test' } });
-    await ctx.update.execute({ actor, section: 'landing', input: { youtubeVideoId: 'dQw4w9WgXcQ' } });
+    await ctx.update.execute({
+      actor,
+      section: 'analytics',
+      input: { gaMeasurementId: 'G-ABC1234' },
+    });
+    await ctx.update.execute({
+      actor,
+      section: 'support',
+      input: { supportEmail: 'help@llyner.test' },
+    });
+    await ctx.update.execute({
+      actor,
+      section: 'landing',
+      input: { youtubeVideoId: 'dQw4w9WgXcQ' },
+    });
     expect(await new GetPublicConfig({ reader: ctx.reader }).execute()).toEqual({
       gaMeasurementId: 'G-ABC1234',
       supportEmail: 'help@llyner.test',

@@ -42,7 +42,11 @@ export function ForgotPasswordPage() {
         <h2 className="m-0 text-[22px] font-semibold text-fg">{copy.forgot.title}</h2>
         <p className="m-0 text-sm text-muted">{copy.forgot.subtitle}</p>
       </header>
-      <form noValidate onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-3">
+      <form
+        noValidate
+        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+        className="flex flex-col gap-3"
+      >
         <Field label={copy.forgot.email} error={errors.email?.message}>
           {(p) => <Input {...p} type="email" autoComplete="email" {...register('email')} />}
         </Field>

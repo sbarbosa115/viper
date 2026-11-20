@@ -21,7 +21,10 @@ describe('FR-3: log in', () => {
       'href',
       '/forgot-password',
     );
-    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute('href', '/signup');
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute(
+      'href',
+      '/signup',
+    );
     expect(screen.getByText(/Signing in as Staff/)).toBeInTheDocument();
   });
 
@@ -34,9 +37,7 @@ describe('FR-3: log in', () => {
   test('goes to ?next= when given', async () => {
     const { where } = renderAuth('/login?next=%2Fcredits%3Fpurchase%3Dsuccess');
     await logIn('owner@demo.test');
-    await waitFor(() =>
-      expect(where()).toBe('/credits?purchase=success'),
-    );
+    await waitFor(() => expect(where()).toBe('/credits?purchase=success'));
   });
 
   test('ignores an off-site ?next=', async () => {
@@ -48,9 +49,7 @@ describe('FR-3: log in', () => {
   test('Staff with two-factor required go to the code step, keeping next', async () => {
     const { where } = renderAuth('/login?next=%2Fstaff');
     await logIn('staff@llyner.example');
-    await waitFor(() =>
-      expect(where()).toBe('/login/two-factor?next=%2Fstaff'),
-    );
+    await waitFor(() => expect(where()).toBe('/login/two-factor?next=%2Fstaff'));
   });
 
   test('wrong email or password shows one generic message', async () => {
@@ -62,7 +61,9 @@ describe('FR-3: log in', () => {
   test('429 shows the 15 minute message', async () => {
     renderAuth('/login');
     await logIn('limited@example.com');
-    expect(await screen.findByText('Too many attempts, try again in 15 minutes.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Too many attempts, try again in 15 minutes.'),
+    ).toBeInTheDocument();
   });
 
   test('client validation: empty email', async () => {

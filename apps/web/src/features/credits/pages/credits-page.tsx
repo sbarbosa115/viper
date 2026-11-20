@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router';
 import { creditsQueryKey, useMe } from '../../../shared/api/me';
 import { Banner, Card, ErrorState, Skeleton, Spinner, StatTile } from '../../../shared/ui';
 import { ApiError } from '../../../shared/api/client';
-import { useCheckout, usePurchasePolling, useWallet } from '../api/hooks';
+import { rememberPurchaseBaseline, useCheckout, usePurchasePolling, useWallet } from '../api/hooks';
 import { History } from '../components/history';
 import { PackList } from '../components/pack-list';
 import { copy, fill } from '../copy';
@@ -24,9 +24,7 @@ function checkoutMessage(error: unknown): string {
 
 function PurchaseBanner({ state }: { state: ReturnType<typeof usePurchasePolling> }) {
   if (state === 'waiting') {
-    return (
-      <Banner action={<Spinner size={16} label="" />}>{copy.pending}</Banner>
-    );
+    return <Banner action={<Spinner size={16} label="" />}>{copy.pending}</Banner>;
   }
   if (state === 'done') return <Banner>{copy.done}</Banner>;
   if (state === 'timeout') return <Banner tone="warn">{copy.slow}</Banner>;
@@ -58,7 +56,10 @@ export function CreditsPage() {
     setProblem(null);
     setPendingPackId(pack.id);
     checkout.mutate(pack.id, {
-      onSuccess: ({ checkoutUrl }) => redirectTo(checkoutUrl),
+      onSuccess: ({ checkoutUrl }) => {
+        rememberPurchaseBaseline(wallet.data?.balance);
+        redirectTo(checkoutUrl);
+      },
       onError: (error) => {
         setPendingPackId(null);
         setProblem(checkoutMessage(error));
@@ -79,7 +80,11 @@ export function CreditsPage() {
       {wallet.isSuccess && (
         <>
           <Card className="grid grid-cols-2 p-0">
-            <StatTile label={copy.available} value={formatCredits(wallet.data.available)} highlight />
+            <StatTile
+              label={copy.available}
+              value={formatCredits(wallet.data.available)}
+              highlight
+            />
             <StatTile label={copy.reserved} value={formatCredits(wallet.data.reserved)} />
           </Card>
 

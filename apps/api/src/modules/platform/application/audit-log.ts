@@ -29,7 +29,10 @@ export interface AuditRecorder {
   record(entry: AuditRecord): Promise<void>;
 }
 
-export function auditEntry(record: AuditRecord, deps: { clock: Clock; ids: IdGenerator }): AuditEntry {
+export function auditEntry(
+  record: AuditRecord,
+  deps: { clock: Clock; ids: IdGenerator },
+): AuditEntry {
   return {
     id: deps.ids.next(),
     at: deps.clock.now(),

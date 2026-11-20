@@ -1,9 +1,21 @@
 import type { Geocoder, GeocodeResult } from '../../application/geocoder.js';
 
 const places: readonly (GeocodeResult & { keys: readonly string[] })[] = [
-  { keys: ['1200 e 6th st', 'sweet supply'], label: '1200 E 6th St, Austin, TX 78702', lat: 30.2624, lng: -97.7262, ambiguous: false },
+  {
+    keys: ['1200 e 6th st', 'sweet supply'],
+    label: '1200 E 6th St, Austin, TX 78702',
+    lat: 30.2624,
+    lng: -97.7262,
+    ambiguous: false,
+  },
   { keys: ['austin'], label: 'Austin, TX', lat: 30.2672, lng: -97.7431, ambiguous: false },
-  { keys: ['fredericksburg'], label: 'Fredericksburg, TX', lat: 30.2752, lng: -98.8720, ambiguous: false },
+  {
+    keys: ['fredericksburg'],
+    label: 'Fredericksburg, TX',
+    lat: 30.2752,
+    lng: -98.872,
+    ambiguous: false,
+  },
   { keys: ['springfield'], label: 'Springfield, IL', lat: 39.7817, lng: -89.6501, ambiguous: true },
 ];
 

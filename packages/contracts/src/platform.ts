@@ -1,13 +1,5 @@
 import { z } from 'zod';
-import {
-  defineContract,
-  email,
-  emailInput,
-  id,
-  isoDateTime,
-  listQuery,
-  page,
-} from './common.js';
+import { defineContract, email, emailInput, id, isoDateTime, listQuery, page } from './common.js';
 
 // Public config ----------------------------------------------------------------------------------
 

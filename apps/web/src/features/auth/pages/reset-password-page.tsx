@@ -70,8 +70,16 @@ export function ResetPasswordPage() {
   return (
     <div className="flex flex-col gap-5">
       <h2 className="m-0 text-[22px] font-semibold text-fg">{copy.reset.title}</h2>
-      <form noValidate onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-3">
-        <Field label={copy.reset.password} hint={copy.reset.passwordHint} error={errors.password?.message}>
+      <form
+        noValidate
+        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+        className="flex flex-col gap-3"
+      >
+        <Field
+          label={copy.reset.password}
+          hint={copy.reset.passwordHint}
+          error={errors.password?.message}
+        >
           {(p) => (
             <Input {...p} type="password" autoComplete="new-password" {...register('password')} />
           )}

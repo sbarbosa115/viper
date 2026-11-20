@@ -52,7 +52,11 @@ export function SignupPage() {
         <h2 className="m-0 text-[22px] font-semibold text-fg">{copy.signup.title}</h2>
         <p className="m-0 text-sm text-muted">{copy.signup.subtitle}</p>
       </header>
-      <form noValidate onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-3">
+      <form
+        noValidate
+        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+        className="flex flex-col gap-3"
+      >
         <Field label={copy.signup.businessName} error={errors.businessName?.message}>
           {(p) => <Input {...p} autoComplete="organization" {...register('businessName')} />}
         </Field>

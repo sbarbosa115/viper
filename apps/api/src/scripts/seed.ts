@@ -44,7 +44,12 @@ const demo = {
     lowOwner: id(0xd103),
     staff: id(0xd104),
   },
-  products: { caneSugar: id(0xd201), powderedSugar: id(0xd202), espressoBeans: id(0xd203) },
+  products: {
+    caneSugar: id(0xd201),
+    powderedSugar: id(0xd202),
+    espressoBeans: id(0xd203),
+    brownSugar: id(0xd204),
+  },
   plans: { bakeriesNearAustin: id(0xd301), cornerCafes: id(0xd302) },
   runs: { bakeriesNearAustin: id(0xd401) },
   password: 'demo1234',

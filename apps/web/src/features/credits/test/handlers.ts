@@ -1,7 +1,16 @@
-import { creditWallet, ledgerEntry, type CreditWallet, type LedgerEntry } from '@app/contracts/billing';
+import {
+  creditWallet,
+  ledgerEntry,
+  type CreditWallet,
+  type LedgerEntry,
+} from '@app/contracts/billing';
 import { page } from '@app/contracts/common';
 import { errorResponse } from '@app/contracts/errors';
-import { creditWallet as walletExample, ids, ledgerEntry as ledgerExample } from '@app/contracts/examples';
+import {
+  creditWallet as walletExample,
+  ids,
+  ledgerEntry as ledgerExample,
+} from '@app/contracts/examples';
 import { http, HttpResponse } from 'msw';
 import { z } from 'zod';
 
@@ -39,7 +48,10 @@ export const handlers = [
     const items = creditsState.ledger.slice(start, start + limit);
     const end = start + limit;
     return HttpResponse.json(
-      ledgerPage.parse({ items, nextCursor: end < creditsState.ledger.length ? String(end) : null }),
+      ledgerPage.parse({
+        items,
+        nextCursor: end < creditsState.ledger.length ? String(end) : null,
+      }),
     );
   }),
 

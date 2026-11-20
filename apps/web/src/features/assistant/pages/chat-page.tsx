@@ -1,0 +1,113 @@
+import type { Conversation } from '@app/contracts/assistant';
+import { useRef, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router';
+import { ApiError } from '../../../shared/api/client';
+import { Button, ErrorState, Input, Skeleton } from '../../../shared/ui';
+import { useProfile, useSendMessage, useWelcomeConversation } from '../api/hooks';
+import { ProfilePanel, ProfileProgressLink } from '../components/profile-panel';
+import { Thread } from '../components/thread';
+import { copy } from '../copy';
+
+function Chat({ conversation }: { conversation: Conversation }) {
+  const navigate = useNavigate();
+  const profile = useProfile();
+  const sendMutation = useSendMessage(conversation.id);
+  const [draft, setDraft] = useState('');
+  const [failed, setFailed] = useState(false);
+  const [limited, setLimited] = useState(false);
+  const lastText = useRef('');
+
+  const send = (text: string, retryOfMessageId?: string) => {
+    lastText.current = text;
+    setFailed(false);
+    setLimited(false);
+    setDraft('');
+    sendMutation.mutate(retryOfMessageId ? { text, retryOfMessageId } : { text }, {
+      onSuccess: (res) => {
+        if (res.planId) void navigate(`/plans/${res.planId}`);
+      },
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 429) {
+          setLimited(true);
+          setDraft(text);
+        } else {
+          setFailed(true);
+        }
+      },
+    });
+  };
+
+  const retry = () => {
+    const last = conversation.messages.at(-1);
+    if (last?.role === 'user' && last.text === lastText.current) send(last.text, last.id);
+    else send(lastText.current);
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (text && !sendMutation.isPending) send(text);
+  };
+
+  const pending = sendMutation.isPending ? sendMutation.variables : undefined;
+
+  return (
+    <div className="mx-auto grid h-full w-full max-w-6xl gap-6 px-4 py-6 md:px-7 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <section aria-label={copy.title} className="flex min-h-[60vh] min-w-0 flex-col gap-4">
+        <h1 className="sr-only">{copy.title}</h1>
+        <div className="lg:hidden">
+          <ProfileProgressLink profile={profile.data} />
+        </div>
+        <Thread
+          messages={conversation.messages}
+          pendingText={pending && !pending.retryOfMessageId ? pending.text : null}
+          typing={sendMutation.isPending}
+          failed={failed}
+          limited={limited}
+          onQuickReply={(text) => send(text)}
+          onRetry={retry}
+        />
+        <form onSubmit={onSubmit} className="flex items-end gap-2">
+          <div className="flex-1">
+            <label htmlFor="chat-input" className="mb-1.5 block text-[13px] font-medium text-fg">
+              {copy.inputLabel}
+            </label>
+            <Input
+              id="chat-input"
+              value={draft}
+              maxLength={2000}
+              autoComplete="off"
+              onChange={(e) => setDraft(e.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!draft.trim() || sendMutation.isPending}
+          >
+            {copy.send}
+          </Button>
+        </form>
+      </section>
+      <div className="hidden lg:block">
+        <ProfilePanel profile={profile.data} />
+      </div>
+    </div>
+  );
+}
+
+/** FR-14: the welcome chat, at /app/chat and at /app until the profile is complete. */
+export function ChatPage() {
+  const conversation = useWelcomeConversation();
+  if (conversation.isPending) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-8">
+        <Skeleton className="h-64" role="status" aria-label="Loading chat" />
+      </div>
+    );
+  }
+  if (conversation.isError) {
+    return <ErrorState description={copy.loadFailed} onRetry={() => void conversation.refetch()} />;
+  }
+  return <Chat conversation={conversation.data} />;
+}

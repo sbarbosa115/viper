@@ -11,7 +11,8 @@ export const copy = {
   bonus: '{pct}% bonus',
   noPacks: 'No credit packs are available right now.',
   paymentsOff: "Payments aren't set up yet",
-  actingAs: 'You are acting as {business}. Buying credits is only available from the Owner’s own account.',
+  actingAs:
+    'You are acting as {business}. Buying credits is only available from the Owner’s own account.',
   actingAsForbidden: 'Buying credits is not available while you are acting as another business.',
   unverified: 'Verify your email to buy credits.',
   packGone: 'That pack is no longer available. The list has been refreshed.',

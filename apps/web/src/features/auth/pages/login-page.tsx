@@ -52,13 +52,22 @@ export function LoginPage() {
   return (
     <div className="flex flex-col gap-5">
       <h2 className="m-0 text-[22px] font-semibold text-fg">{copy.login.title}</h2>
-      <form noValidate onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="flex flex-col gap-3">
+      <form
+        noValidate
+        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+        className="flex flex-col gap-3"
+      >
         <Field label={copy.login.email} error={errors.email?.message}>
           {(p) => <Input {...p} type="email" autoComplete="email" {...register('email')} />}
         </Field>
         <Field label={copy.login.password} error={errors.password?.message}>
           {(p) => (
-            <Input {...p} type="password" autoComplete="current-password" {...register('password')} />
+            <Input
+              {...p}
+              type="password"
+              autoComplete="current-password"
+              {...register('password')}
+            />
           )}
         </Field>
         <Link to="/forgot-password" className="text-sm text-accent underline">
