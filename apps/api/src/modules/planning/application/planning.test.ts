@@ -227,9 +227,9 @@ describe('FR-16: Create a Plan from a Goal', () => {
   test('403 EMAIL_NOT_VERIFIED before the email is verified; the model is not called', async () => {
     const f = planningFixture();
     f.llm.reply(draftReply(bakeriesDraft()));
-    expect(await codeOf(f.app.createPlan.execute(owner({ emailVerified: false }), BAKERIES_GOAL))).toBe(
-      'EMAIL_NOT_VERIFIED',
-    );
+    expect(
+      await codeOf(f.app.createPlan.execute(owner({ emailVerified: false }), BAKERIES_GOAL)),
+    ).toBe('EMAIL_NOT_VERIFIED');
     expect(f.llm.requests).toHaveLength(0);
     expect(f.store.all()).toHaveLength(0);
   });

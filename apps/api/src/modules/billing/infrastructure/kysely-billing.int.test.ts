@@ -219,7 +219,10 @@ describe('FR-12: Stripe webhook idempotency (MySQL)', () => {
         type: 'checkout.session.async_payment_failed',
       }),
     );
-    await app.handleStripeWebhook.execute({ rawBody: body, signature: FakePaymentGateway.sign(body) });
+    await app.handleStripeWebhook.execute({
+      rawBody: body,
+      signature: FakePaymentGateway.sign(body),
+    });
     const purchase = await db.selectFrom('purchases').selectAll().executeTakeFirstOrThrow();
     expect(purchase.status).toBe('failed');
     expect((await build().billingQueries.getWallet(BUSINESS)).available).toBe(0);

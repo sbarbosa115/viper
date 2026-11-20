@@ -52,7 +52,11 @@ describe('FR-5: Staff accounts and two-factor sign-in', () => {
     const stored = [...w.s.store.members.values()][0]?.totpSecretEnc;
     expect(stored).toBe(`enc:${setup.secret}`);
 
-    const me = await w.verifyTwoFactor.execute({ token: sessionToken, code: FakeTotp.validCode, ip });
+    const me = await w.verifyTwoFactor.execute({
+      token: sessionToken,
+      code: FakeTotp.validCode,
+      ip,
+    });
     expect(me.twoFactor).toEqual({ required: true, passed: true, setUp: true });
     const actor = await w.actorOf(sessionToken);
     expect(actor.roles).toEqual(['owner', 'staff']);
@@ -72,15 +76,17 @@ describe('FR-5: Staff accounts and two-factor sign-in', () => {
     const { sessionToken } = await halfSignedInStaff();
     await w.setUpTwoFactor.execute({ token: sessionToken });
     for (let i = 0; i < 4; i += 1) {
-      expect(await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '000000', ip }))).toBe(
-        'INVALID_CODE',
-      );
+      expect(
+        await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '000000', ip })),
+      ).toBe('INVALID_CODE');
     }
-    expect(await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '000000', ip }))).toBe(
-      'TOO_MANY_REQUESTS',
-    );
     expect(
-      await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: FakeTotp.validCode, ip })),
+      await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '000000', ip })),
+    ).toBe('TOO_MANY_REQUESTS');
+    expect(
+      await codeOf(
+        w.verifyTwoFactor.execute({ token: sessionToken, code: FakeTotp.validCode, ip }),
+      ),
     ).toBe('UNAUTHENTICATED');
   });
 
@@ -162,9 +168,9 @@ describe('FR-5: Staff accounts and two-factor sign-in', () => {
 
   test('verifying before setup is a conflict; non-Staff cannot use two-factor', async () => {
     const { sessionToken } = await halfSignedInStaff();
-    expect(await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '123456', ip }))).toBe(
-      'CONFLICT',
-    );
+    expect(
+      await codeOf(w.verifyTwoFactor.execute({ token: sessionToken, code: '123456', ip })),
+    ).toBe('CONFLICT');
     const owner = await w.owner();
     expect(await codeOf(w.setUpTwoFactor.execute({ token: owner.sessionToken }))).toBe('FORBIDDEN');
   });
@@ -357,7 +363,11 @@ describe('identity public queries', () => {
     const { identityQueriesFrom } = await import('./queries.js');
     const q = identityQueriesFrom(w.s);
     const a = await w.owner();
-    const by = { staffMemberId: 'staff-1', action: 'business.updated', details: { internal: true } };
+    const by = {
+      staffMemberId: 'staff-1',
+      action: 'business.updated',
+      details: { internal: true },
+    };
 
     w.s.audit.failNext = new Error('audit log down');
     await expect(q.setBusinessInternal(a.me.business.id, true, by)).rejects.toThrow(
@@ -396,7 +406,6 @@ describe('identity public queries', () => {
     );
     expect(await q.getMemberEmails([])).toEqual(new Map());
   });
-
 
   test('getOwnerContact, renameBusiness, setBusinessInternal and listBusinesses', async () => {
     const { identityQueriesFrom } = await import('./queries.js');

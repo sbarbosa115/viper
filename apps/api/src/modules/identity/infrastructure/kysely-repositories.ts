@@ -168,7 +168,10 @@ export class KyselyMemberRepository implements MemberRepository {
       .set({ two_factor_locked_until: until })
       .where('id', '=', memberId)
       .where((eb) =>
-        eb.or([eb('two_factor_locked_until', 'is', null), eb('two_factor_locked_until', '<=', now)]),
+        eb.or([
+          eb('two_factor_locked_until', 'is', null),
+          eb('two_factor_locked_until', '<=', now),
+        ]),
       )
       .executeTakeFirst();
     return result.numUpdatedRows > 0n;

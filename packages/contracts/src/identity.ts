@@ -105,11 +105,7 @@ export const twoFactorVerify = defineContract({
   status: 200,
   body: z.object({ code: twoFactorCode }),
   response: me,
-  errors: [
-    err(401, 'INVALID_CODE'),
-    err(429, 'TOO_MANY_REQUESTS'),
-    err(429, 'TWO_FACTOR_LOCKED'),
-  ],
+  errors: [err(401, 'INVALID_CODE'), err(429, 'TOO_MANY_REQUESTS'), err(429, 'TWO_FACTOR_LOCKED')],
 });
 
 /** FR-3. Deletes the session (and ends any Acting as). */

@@ -68,9 +68,7 @@ export async function buildApp(
   // A hop count, never `true`: `true` makes req.ip the client-written left-most X-Forwarded-For.
   const trustProxy = trustHops(config.TRUST_PROXY_HOPS ?? DEFAULT_TRUST_PROXY_HOPS);
   const app = Fastify(
-    deps.logger
-      ? { loggerInstance: deps.logger, trustProxy }
-      : { logger: false, trustProxy },
+    deps.logger ? { loggerInstance: deps.logger, trustProxy } : { logger: false, trustProxy },
   );
   registerClientIp(app, { header: config.CLIENT_IP_HEADER });
   app.setValidatorCompiler(validatorCompiler);

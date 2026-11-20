@@ -36,14 +36,12 @@ function submit(form: string, fields: Record<string, string>): void {
 }
 
 function replyWith(status: number, body: unknown) {
-  return vi
-    .fn()
-    .mockResolvedValue(
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+  return vi.fn().mockResolvedValue(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
 }
 
 beforeEach(() => {

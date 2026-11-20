@@ -297,7 +297,9 @@ describe('identity repositories (MySQL)', () => {
       repos().emailTokens.consume(token.id, now),
     ]);
     expect(results.sort()).toEqual([false, true]);
-    expect((await repos().emailTokens.findByHash('3'.repeat(64)))?.toSnapshot().usedAt).toEqual(now);
+    expect((await repos().emailTokens.findByHash('3'.repeat(64)))?.toSnapshot().usedAt).toEqual(
+      now,
+    );
   });
 
   test('FR-2: one verification link opened twice at once verifies once (one trial grant)', async () => {

@@ -84,7 +84,9 @@ describe('composition: geocoder failures', () => {
   });
 
   test('a provider failure is 503 GEOCODER_UNAVAILABLE, not a 500', async () => {
-    await expect(failing(new Error('Google Geocoding: OVER_QUERY_LIMIT')).search('x')).rejects.toMatchObject({
+    await expect(
+      failing(new Error('Google Geocoding: OVER_QUERY_LIMIT')).search('x'),
+    ).rejects.toMatchObject({
       code: 'GEOCODER_UNAVAILABLE',
       status: 503,
     });
