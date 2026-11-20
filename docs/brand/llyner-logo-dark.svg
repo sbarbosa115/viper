@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="50 40 694 300" width="694" height="300" role="img" aria-label="Llyner">
+  <title>Llyner</title>
+  <!-- Dark-background version: off-white letters (#EDEDF2, DESIGN.md fg), brighter brand blue face (#4C9AFF),
+       heavier strokes so it stays legible at header size (~120px wide). -->
+  <g fill="none" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M280.5 177V163.5A105 105 0 0 1 490.5 163.5V177" stroke="#4C9AFF" stroke-width="16"/>
+    <path d="M331.5 152A17.5 17.5 0 0 1 366.5 152M404 152A17.5 17.5 0 0 1 439 152" stroke="#4C9AFF" stroke-width="12"/>
+    <g stroke="#EDEDF2" stroke-width="13">
+      <path d="M62 194V327H131.5"/>
+      <path d="M183 194V327H252.5"/>
+      <path d="M285.5 194L328 276L371 194M328 276V331.5"/>
+      <path d="M414.5 331.5V194L484.5 331.5V194"/>
+      <path d="M613 198H543V327H612.5M543 258.5H601.5"/>
+      <path d="M662 331.5V198H704C722 198 730.5 211 730.5 230S722 262 704 262H662M701 262L732.5 331.5"/>
+    </g>
+  </g>
+</svg>

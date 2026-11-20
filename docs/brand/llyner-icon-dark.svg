@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 150" width="150" height="150" role="img" aria-label="Llyner">
+  <title>Llyner</title>
+  <!-- Dark-background version: same brand blue disc; heavier face strokes so it reads at 24-32px. -->
+  <circle cx="75" cy="75" r="75" fill="#1877F2"/>
+  <circle cx="75" cy="75" r="64" fill="none" stroke="#FFFFFF" stroke-width="4"/>
+  <path d="M35 81A12.5 12.5 0 0 1 60 81M89 81A12.5 12.5 0 0 1 114 81" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
+</svg>

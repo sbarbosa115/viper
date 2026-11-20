@@ -130,7 +130,7 @@ export function shareImagePng(): Buffer {
   return cached;
 }
 
-/** The logo mark as an SVG favicon, in the token colours. */
+/** The Llyner icon as an SVG favicon (docs/brand/llyner-icon-dark.svg). */
 export function iconSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22"><rect x="1" y="1" width="20" height="20" rx="6" fill="${midnightTokens['--accent']}"/><path d="M7 6v10h8" stroke="${midnightTokens['--accent-ink']}" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 150"><circle cx="75" cy="75" r="75" fill="#1877F2"/><circle cx="75" cy="75" r="64" fill="none" stroke="#FFFFFF" stroke-width="4"/><path d="M35 81A12.5 12.5 0 0 1 60 81M89 81A12.5 12.5 0 0 1 114 81" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/></svg>';
 }
