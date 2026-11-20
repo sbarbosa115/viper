@@ -51,7 +51,7 @@ describe('shared kernel: central error handler', () => {
   test('authenticate lets the stub actor through', async () => {
     const app = await buildTestApp({
       modules: [probeModule],
-      actor: { memberId: 'm', businessId: 'b', roles: ['owner'] },
+      actor: { memberId: 'm', businessId: 'b', roles: ['owner'], emailVerified: true },
     });
     const res = await app.inject({ method: 'GET', url: '/api/secret' });
     expect(res.statusCode).toBe(403);
