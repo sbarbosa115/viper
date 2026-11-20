@@ -1,4 +1,4 @@
-import type { Kysely, Selectable, Transaction } from 'kysely';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../../../shared/domain/clock.js';
 import type { IdGenerator } from '../../../shared/domain/id-generator.js';
 import type { DB } from '../../../shared/infrastructure/db/schema.js';
@@ -12,9 +12,11 @@ import type {
   HandoffRepository,
   HandoffValues,
   MessageRepository,
+  ReportWindow,
   ResearchStore,
   ResearchTx,
   RunEmailLog,
+  RunFact,
   RunPageCursor,
   RunRepository,
   StaffRunFilter,
@@ -367,6 +369,58 @@ class KyselyRunRepository implements RunRepository {
       .where('status', '=', status)
       .executeTakeFirst();
     return Number(row?.n ?? 0);
+  }
+
+  /** One range scan on queued_at; the Plan fields come out of plan_snapshot in SQL. */
+  async factsQueuedIn(window: ReportWindow): Promise<RunFact[]> {
+    const rows = await this.db
+      .selectFrom('research_runs')
+      .select([
+        'id',
+        'business_id',
+        'status',
+        'queued_at',
+        'started_at',
+        'finished_at',
+        'credits_spent',
+        'provider_cost_micros',
+        'leads_delivered',
+        'failure_code',
+        sql<number>`CAST(JSON_EXTRACT(plan_snapshot, '$.guardrails.maxCredits') AS SIGNED)`.as(
+          'max_credits',
+        ),
+        sql<number>`JSON_UNQUOTE(JSON_EXTRACT(plan_snapshot, '$.icpEdited')) = 'true'`.as(
+          'icp_edited',
+        ),
+      ])
+      .where('queued_at', '>=', window.from)
+      .where('queued_at', '<', window.to)
+      .execute();
+    return rows.map((r) => ({
+      runId: r.id,
+      businessId: r.business_id,
+      status: r.status,
+      queuedAt: r.queued_at,
+      startedAt: r.started_at,
+      finishedAt: r.finished_at,
+      creditsSpent: Number(r.credits_spent),
+      maxCredits: Number(r.max_credits ?? 0),
+      providerCostMicros: Number(r.provider_cost_micros),
+      leadsDelivered: Number(r.leads_delivered),
+      icpEdited: Number(r.icp_edited) === 1,
+      failureCode: r.failure_code,
+    }));
+  }
+
+  async countByBusiness(businessIds: readonly string[]): Promise<Map<string, number>> {
+    if (businessIds.length === 0) return new Map();
+    const rows = await this.db
+      .selectFrom('research_runs')
+      .select((eb) => ['business_id', eb.fn.countAll<number>().as('n')])
+      .where('business_id', 'in', [...new Set(businessIds)])
+      .groupBy('business_id')
+      .execute();
+    return new Map(rows.map((r) => [r.business_id, Number(r.n)]));
   }
 }
 

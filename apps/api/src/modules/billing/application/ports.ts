@@ -101,7 +101,11 @@ export interface BillingReadModel {
     excludeBusinessIds: readonly string[];
   }): Promise<CreditsSummary>;
   availableByBusiness(businessIds: readonly string[]): Promise<Map<string, number>>;
-  payingBusinessIds(businessIds: readonly string[]): Promise<Set<string>>;
+  /** Businesses with a paid purchase; `paidBefore` counts only purchases paid before it. */
+  payingBusinessIds(
+    businessIds: readonly string[],
+    options?: { paidBefore?: Date },
+  ): Promise<Set<string>>;
 }
 
 // Other ports ------------------------------------------------------------------------------------

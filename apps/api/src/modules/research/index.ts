@@ -14,6 +14,7 @@ import {
   FlowUseCases,
   ResearchFlowDefaults,
   ResearchPlanActivity,
+  ResearchReportingQueries,
   ResearchRunStats,
 } from './application/flows.js';
 import type {
@@ -65,6 +66,8 @@ export type {
   ProspectInput,
   ProspectPatch,
   ProspectStorePort,
+  ReportWindow,
+  RunFact,
   SourceRef,
   ToolCallError,
   ToolCallLogPort,
@@ -126,6 +129,8 @@ export interface Research {
   runStats: ResearchRunStats;
   /** For planning's PlanActivity (lastRuns; leadsCounts comes from leads). */
   planActivity: ResearchPlanActivity;
+  /** For reporting's Staff dashboard and customer list (FR-30, FR-31). */
+  reportingQueries: ResearchReportingQueries;
   runs: RunUseCases;
   flows: FlowUseCases;
   store: ResearchStore;
@@ -147,6 +152,7 @@ function assemble(deps: AssembleDeps): Research {
     flowDefaults: new ResearchFlowDefaults(deps),
     runStats: new ResearchRunStats(deps.store),
     planActivity: new ResearchPlanActivity(deps.store),
+    reportingQueries: new ResearchReportingQueries(deps.store),
     module: {
       name: 'research',
       register: (app) =>
@@ -168,6 +174,15 @@ export function createResearch(
     monitor: new RedisQueueMonitor(deps.queue),
     ...(deps.testHooks ? { stopHook: new RedisStopHook(deps.queue) } : {}),
   });
+}
+
+/** research's reporting reads on MySQL alone (no queues or collaborators): reporting's tests. */
+export function createResearchReportingQueries(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+}): ResearchReportingQueries {
+  return new ResearchReportingQueries(new KyselyResearchStore(deps.db, deps));
 }
 
 /** The same module on storage and fakes the caller provides (other modules' and HTTP tests). */

@@ -227,6 +227,34 @@ export class InMemoryResearchStore implements ResearchStore {
           ),
         countByStatus: (status: RunStatus) =>
           Promise.resolve(runs().filter((r) => r.status === status).length),
+        factsQueuedIn: (window) =>
+          Promise.resolve(
+            runs()
+              .filter((r) => r.queuedAt >= window.from && r.queuedAt < window.to)
+              .map((r) => ({
+                runId: r.id,
+                businessId: r.businessId,
+                status: r.status,
+                queuedAt: r.queuedAt,
+                startedAt: r.startedAt,
+                finishedAt: r.finishedAt,
+                creditsSpent: r.creditsSpent,
+                maxCredits: r.plan.guardrails.maxCredits,
+                providerCostMicros: r.providerCostMicros,
+                leadsDelivered: r.leadsDelivered,
+                icpEdited: r.plan.icpEdited,
+                failureCode: r.failureCode,
+              })),
+          ),
+        countByBusiness: (businessIds) => {
+          const counts = new Map<string, number>();
+          for (const r of runs()) {
+            if (businessIds.includes(r.businessId)) {
+              counts.set(r.businessId, (counts.get(r.businessId) ?? 0) + 1);
+            }
+          }
+          return Promise.resolve(counts);
+        },
       },
       steps: {
         list: (runId) =>

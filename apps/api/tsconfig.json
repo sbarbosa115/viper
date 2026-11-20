@@ -8,5 +8,5 @@
     "tsBuildInfoFile": "../../.build/tsc/api/.tsbuildinfo"
   },
   "include": ["src", "migrations", "test"],
-  "references": [{ "path": "../../packages/contracts" }]
+  "references": [{ "path": "../../packages/contracts" }, { "path": "../web" }]
 }

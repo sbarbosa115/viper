@@ -33,6 +33,13 @@ export interface CreditsPageView {
   paymentsAvailable: boolean;
 }
 
+export interface ActivePackView {
+  id: string;
+  name: string;
+  credits: number;
+  priceCents: number;
+}
+
 export const toLedgerEntryView = (e: LedgerEntry): LedgerEntryView => ({
   id: e.id,
   type: e.type,
@@ -93,6 +100,18 @@ export class WalletQueries {
     };
   }
 
+  /** The public site's pricing (FR-34): active packs in their Staff-set order, no Stripe check. */
+  activePacks(): Promise<ActivePackView[]> {
+    return this.deps.uow.run(async ({ packs }) =>
+      (await packs.list({ activeOnly: true })).map((p) => ({
+        id: p.id,
+        name: p.name,
+        credits: p.credits,
+        priceCents: p.priceCents,
+      })),
+    );
+  }
+
   /** GET /api/credits/ledger: newest first, cursor pagination. */
   ledger(
     actor: Actor,
@@ -132,7 +151,11 @@ export class WalletQueries {
     return this.deps.readModel.availableByBusiness(businessIds);
   }
 
-  payingBusinessIds(businessIds: readonly string[]): Promise<Set<string>> {
-    return this.deps.readModel.payingBusinessIds(businessIds);
+  /** `paidBefore`: paying as of that time (the dashboard's previous period). */
+  payingBusinessIds(
+    businessIds: readonly string[],
+    options?: { paidBefore?: Date },
+  ): Promise<Set<string>> {
+    return this.deps.readModel.payingBusinessIds(businessIds, options);
   }
 }

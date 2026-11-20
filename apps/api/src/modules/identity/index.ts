@@ -28,7 +28,11 @@ import { kyselyIdentityRepos } from './infrastructure/kysely-repositories.js';
 import { BcryptPasswordHasher, CryptoTokenService } from './infrastructure/security-adapters.js';
 
 export type { AuditRecorder, SecretCipher } from './application/ports.js';
-export type { BusinessListItem, BusinessListQuery } from './application/ports.js';
+export type {
+  BusinessListItem,
+  BusinessListQuery,
+  BusinessWithOwner,
+} from './application/ports.js';
 export type { BusinessSummary, IdentityQueries, OwnerContact } from './application/queries.js';
 export type { SignedIn } from './application/session-context.js';
 export type { IdentityUseCases } from './application/use-cases.js';

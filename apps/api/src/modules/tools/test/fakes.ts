@@ -9,6 +9,7 @@ import type {
   ToolCallRecord,
   ToolCallRepository,
   ToolRepository,
+  ToolSpend,
 } from '../application/ports.js';
 import {
   adapterRegistry,
@@ -93,6 +94,26 @@ export class InMemoryToolCallRepository implements ToolCallRepository {
         !r.reused,
     );
     return Promise.resolve(found ? structuredClone(found) : null);
+  }
+  spendBetween(window: { from: Date; to: Date }): Promise<ToolSpend[]> {
+    const spend = new Map<string, ToolSpend>();
+    for (const r of this.rows) {
+      if (r.createdAt < window.from || r.createdAt >= window.to) continue;
+      if (r.reused || r.status === 'skipped') continue;
+      const s = spend.get(r.toolKey) ?? {
+        toolKey: r.toolKey,
+        providerCostMicros: 0,
+        calls: 0,
+        errors: 0,
+      };
+      spend.set(r.toolKey, {
+        toolKey: r.toolKey,
+        providerCostMicros: s.providerCostMicros + r.providerCostMicros,
+        calls: s.calls + 1,
+        errors: s.errors + (r.status === 'error' ? 1 : 0),
+      });
+    }
+    return Promise.resolve([...spend.values()]);
   }
   statsSince(since: Date): Promise<Map<string, ToolStats>> {
     const stats = new Map<string, ToolStats>();

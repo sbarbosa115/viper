@@ -11,7 +11,13 @@ import {
   type FlowVersion,
 } from '../domain/flow.js';
 import { requireStaff } from './policies.js';
-import type { AuditPort, PlatformSettingsPort, ResearchStore } from './ports.js';
+import type {
+  AuditPort,
+  PlatformSettingsPort,
+  ReportWindow,
+  ResearchStore,
+  RunFact,
+} from './ports.js';
 import { toRunSummary } from './run-views.js';
 
 export interface FlowUseCaseDeps {
@@ -192,5 +198,21 @@ export class ResearchPlanActivity {
         runs.map((r) => [r.toSnapshot().planId, toRunSummary(r, steps.get(r.id) ?? [])]),
       );
     });
+  }
+}
+
+/** reporting's reads (FR-30, FR-31): run facts for the Staff dashboard and per-Business counts. */
+export class ResearchReportingQueries {
+  constructor(private readonly store: ResearchStore) {}
+
+  /** Every run queued in [from, to), all Businesses. */
+  runFacts(window: ReportWindow): Promise<RunFact[]> {
+    return this.store.transaction((tx) => tx.runs.factsQueuedIn(window));
+  }
+
+  /** Runs ever started per Business (Businesses without runs are left out). */
+  runCounts(businessIds: readonly string[]): Promise<Map<string, number>> {
+    if (businessIds.length === 0) return Promise.resolve(new Map<string, number>());
+    return this.store.transaction((tx) => tx.runs.countByBusiness(businessIds));
   }
 }

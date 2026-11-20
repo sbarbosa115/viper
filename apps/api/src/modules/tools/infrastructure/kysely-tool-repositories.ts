@@ -1,6 +1,11 @@
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { DB } from '../../../shared/infrastructure/db/schema.js';
-import type { ToolCallRecord, ToolCallRepository, ToolRepository } from '../application/ports.js';
+import type {
+  ToolCallRecord,
+  ToolCallRepository,
+  ToolRepository,
+  ToolSpend,
+} from '../application/ports.js';
 import type { ToolStats } from '../domain/health.js';
 import type { ToolSnapshot } from '../domain/tool.js';
 import type { ToolCallsTable } from './tables.js';
@@ -130,6 +135,29 @@ export class KyselyToolCallRepository implements ToolCallRepository {
         : query.where('step_key', '=', q.stepKey);
     const row = await query.orderBy('created_at').orderBy('id').limit(1).executeTakeFirst();
     return row ? toRecord(row) : null;
+  }
+
+  async spendBetween(window: { from: Date; to: Date }): Promise<ToolSpend[]> {
+    const rows = await this.db
+      .selectFrom('tool_calls')
+      .select((eb) => [
+        'tool_key',
+        eb.fn.sum<number>('provider_cost_micros').as('cost'),
+        eb.fn.countAll<number>().as('calls'),
+        sql<number>`SUM(status = 'error')`.as('errors'),
+      ])
+      .where('created_at', '>=', window.from)
+      .where('created_at', '<', window.to)
+      .where('reused', '=', 0)
+      .where('status', 'in', ['ok', 'error'])
+      .groupBy('tool_key')
+      .execute();
+    return rows.map((r) => ({
+      toolKey: r.tool_key,
+      providerCostMicros: Number(r.cost ?? 0),
+      calls: Number(r.calls),
+      errors: Number(r.errors ?? 0),
+    }));
   }
 
   async statsSince(since: Date): Promise<Map<string, ToolStats>> {

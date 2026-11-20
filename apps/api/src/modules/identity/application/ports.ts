@@ -81,9 +81,24 @@ export interface BusinessListQuery {
   limit: number;
 }
 
+/** A Business with its Owner, for reporting's Staff dashboard (FR-30). */
+export interface BusinessWithOwner {
+  id: string;
+  name: string;
+  internal: boolean;
+  ownerEmail: string;
+  /** The Owner is Staff: the Staff's own Business. */
+  ownerIsStaff: boolean;
+  signedUpAt: Date;
+  /** When the Owner verified their email; null when not yet. */
+  verifiedAt: Date | null;
+}
+
 /** Read model for the Staff customer list (FR-31): Businesses with their Owner, newest first. */
 export interface BusinessDirectory {
   list(query: BusinessListQuery): Promise<{ items: BusinessListItem[]; nextCursor: string | null }>;
+  /** Every Business with its Owner, unordered (fewer than a few hundred in this version). */
+  all(): Promise<BusinessWithOwner[]>;
 }
 
 /** The OutboxEvents map lives in shared infrastructure; identity publishes only this one. */

@@ -1,6 +1,6 @@
 # Stack and hosting (source of truth)
 
-_Last updated: 2026-11-19._ Every skill reads this file; none hardcodes the stack. Changes need an ADR.
+_Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stack. Changes need an ADR.
 
 ## Hosting facts
 | Fact | Value |
@@ -11,7 +11,9 @@ _Last updated: 2026-11-19._ Every skill reads this file; none hardcodes the stac
 | Database | DigitalOcean Managed MySQL 8 (pin the cluster's exact version in `docker-compose` as `mysql:8.0` or `mysql:8.4` to match) (ADR 0002) |
 | Queue / cache | DigitalOcean Managed Caching (Valkey, Redis-compatible) for BullMQ (ADR 0008) |
 | File storage | DigitalOcean Spaces (S3-compatible), not used in the first version (CSV is streamed) |
-| Domains | app `https://app.<domain>` (web + API under `/api`), marketing `https://<domain>`; domain `[TBD]` |
+| Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `[TBD]` |
+| Region | NYC (`nyc`): customers are US-only. App, database and Valkey all in the same region |
+| Deploy gates | Staging deploys automatically when `feat/*` or `main` checks pass; production deploys only after the founder approves each release (GitHub environment `production` with a required reviewer) |
 | Staging | a second App Platform app with its own database (a separate database on the same cluster to save cost) and Valkey |
 | Secrets | Infrastructure secrets (`DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, `SENTRY_DSN`) in App Platform encrypted env vars. Provider, model, SMTP and Stripe keys in Platform settings, encrypted with AES-256-GCM (ADR 0012). Never in the repo |
 

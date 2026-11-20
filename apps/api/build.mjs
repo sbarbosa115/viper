@@ -1,6 +1,6 @@
 // Bundles the api, the worker, the scripts and the migrations into dist/ (everything bundled,
 // contracts included), so the production image runs without the monorepo.
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { build } from 'esbuild';
 
 const list = (dir) =>
@@ -32,3 +32,6 @@ await build({
   },
   logLevel: 'info',
 });
+
+// The public site's legal Markdown, read at runtime from dist/content/legal (site/legal-content.ts).
+cpSync('../web/src/content/legal', 'dist/content/legal', { recursive: true });

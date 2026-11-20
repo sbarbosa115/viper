@@ -94,6 +94,31 @@ describe('FR-10: Credit wallet', () => {
     ]);
   });
 
+  test("the public site's active packs are in order, without inactive ones or Stripe", async () => {
+    const f = billingFixture();
+    await f.app.creditPacks.ensure({
+      name: 'Starter',
+      credits: 2500,
+      priceCents: 2500,
+      active: true,
+    });
+    await f.app.creditPacks.ensure({ name: 'Old', credits: 10, priceCents: 100, active: false });
+    await f.app.creditPacks.ensure({
+      name: 'Growth',
+      credits: 11000,
+      priceCents: 10000,
+      active: true,
+    });
+    f.gateway.available = false;
+
+    const packs = await f.app.queries.activePacks();
+    expect(packs.map(({ id: _id, ...p }) => p)).toEqual([
+      { name: 'Starter', credits: 2500, priceCents: 2500 },
+      { name: 'Growth', credits: 11000, priceCents: 10000 },
+    ]);
+    expect(packs.every((p) => typeof p.id === 'string' && p.id.length > 0)).toBe(true);
+  });
+
   test('the ledger is newest first with cursor pagination, scoped to the Business', async () => {
     const f = billingFixture();
     for (let i = 1; i <= 5; i += 1) await f.fund(i);

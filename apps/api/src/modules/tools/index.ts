@@ -36,7 +36,7 @@ export type { ToolCallRequest, ToolCallResult, ToolCallError } from './applicati
 export type { ToolErrorCode } from './application/tool-adapter.js';
 export type { ToolAvailability } from './application/tool-catalog.js';
 export type { LlmUsage } from './application/llm-usage-meter.js';
-export type { Sleeper, ProviderSettings } from './application/ports.js';
+export type { Sleeper, ProviderSettings, ToolSpend } from './application/ports.js';
 export * from './infrastructure/tool-io.js';
 export { LlmUsageMeter, ToolQueries };
 export { FakeToolControls, InMemoryFaultStore, RedisFaultStore };
@@ -144,6 +144,15 @@ export interface Tools {
   llmUsageMeter: LlmUsageMeter;
   toolQueries: ToolQueries;
   fakeControls: FakeToolControls;
+}
+
+/** tools' public read side on MySQL alone (reporting's tests, scripts). */
+export function createToolQueries(deps: { db: Database; settings: ProviderSettings }): ToolQueries {
+  return new ToolQueries({
+    tools: new KyselyToolRepository(deps.db),
+    calls: new KyselyToolCallRepository(deps.db),
+    settings: deps.settings,
+  });
 }
 
 /** Everything the api needs from tools, on MySQL. */

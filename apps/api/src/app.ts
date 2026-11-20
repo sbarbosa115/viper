@@ -12,7 +12,7 @@ import {
 import type { Config } from './config/env.js';
 import { registerOriginCheck } from './modules/identity/index.js';
 import { registerAuditTrail, type AuditRecorder } from './modules/platform/index.js';
-import { siteRoutes } from './site/site.routes.js';
+import { siteRoutes, type SiteDeps } from './site/site.routes.js';
 import type { AnalyticsTracker } from './shared/application/analytics-tracker.js';
 import type { EmailSender } from './shared/application/email-sender.js';
 import type { Features } from './shared/application/features.js';
@@ -35,6 +35,8 @@ export interface AppDeps {
   resolveActor?: ResolveActor;
   /** platform's Audit log: records every write made while Acting as (FR-6, FR-7). */
   auditTrail?: AuditRecorder;
+  /** The public site's collaborators (FR-33 to FR-35); absent serves the placeholder page. */
+  site?: SiteDeps;
 }
 
 export interface BuildAppOptions {
@@ -81,7 +83,7 @@ export async function buildApp(
     await app.register(swaggerUi, { routePrefix: '/api/docs' });
   }
 
-  await app.register(siteRoutes);
+  await app.register(siteRoutes, deps.site ? { site: deps.site } : {});
 
   await app.register(
     async (api) => {

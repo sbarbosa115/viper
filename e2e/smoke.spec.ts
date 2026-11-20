@@ -12,10 +12,14 @@ test.describe('smoke', () => {
     expect(await res.json()).toMatchObject({ status: 'ok' });
   });
 
-  test('the public site placeholder is served at /', async ({ request }) => {
+  test('the public landing page is served at /', async ({ request }) => {
     const res = await request.get('/');
     expect(res.ok()).toBe(true);
     expect(res.headers()['content-type']).toContain('text/html');
-    expect(await res.text()).toContain('Llyner Leads');
+    const html = await res.text();
+    expect(html).toContain('Llyner Leads');
+    expect(html).toMatch(
+      /<h1 id="hero-title">Find the businesses most likely to buy what you sell\.<\/h1>/,
+    );
   });
 });

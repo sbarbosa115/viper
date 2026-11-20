@@ -45,6 +45,16 @@ export interface ToolCallRepository {
   statsSince(since: Date): Promise<Map<string, ToolStats>>;
   /** A run's Tool calls, oldest first (Staff run detail). */
   listForRun(runId: string): Promise<ToolCallRecord[]>;
+  /** Per Tool key, provider cost, ok + error calls and errors in [from, to) (reused and skipped excluded). */
+  spendBetween(window: { from: Date; to: Date }): Promise<ToolSpend[]>;
+}
+
+/** What one Tool cost the platform in a window (Staff dashboard, FR-30). */
+export interface ToolSpend {
+  readonly toolKey: string;
+  readonly providerCostMicros: number;
+  readonly calls: number;
+  readonly errors: number;
 }
 
 interface ApiKey {

@@ -6,7 +6,12 @@ import { ScriptedLlmClient } from '../../../shared/infrastructure/llm/scripted-l
 import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
 import { Uuid7Generator } from '../../../shared/infrastructure/time/uuid7.js';
 import { createInMemoryBilling, chargeableCredits } from '../../billing/index.js';
-import { FlowUseCases, ResearchPlanActivity, ResearchRunStats } from '../application/flows.js';
+import {
+  FlowUseCases,
+  ResearchPlanActivity,
+  ResearchReportingQueries,
+  ResearchRunStats,
+} from '../application/flows.js';
 import { RunExecutor } from '../application/run-executor.js';
 import { RunUseCases } from '../application/runs.js';
 import { RunSweeper } from '../application/sweeper.js';
@@ -282,6 +287,46 @@ describe('KyselyResearchStore (MySQL)', () => {
         (r) => r.id,
       ),
     ).toEqual([first.id]);
+  });
+
+  test('FR-30/FR-31: reporting reads run facts in a window and run counts per Business', async () => {
+    const f = await mysqlFixture();
+    const first = await f.runs.start(owner(), PLAN);
+    await f.executor.runAttempt(first.id);
+    f.clock.set(new Date(START.getTime() + 60_000));
+    const second = await f.runs.start(owner(), PLAN);
+    const q = new ResearchReportingQueries(f.store);
+    const done = (await f.store.transaction((tx) => tx.runs.find(first.id)))?.toSnapshot();
+
+    const facts = await q.runFacts({ from: START, to: new Date(START.getTime() + 120_000) });
+    expect([...facts].sort((a, b) => a.queuedAt.getTime() - b.queuedAt.getTime())).toEqual([
+      {
+        runId: first.id,
+        businessId: BUSINESS,
+        status: 'completed',
+        queuedAt: START,
+        startedAt: done?.startedAt,
+        finishedAt: done?.finishedAt,
+        creditsSpent: done?.creditsSpent,
+        maxCredits: done?.plan.guardrails.maxCredits,
+        providerCostMicros: done?.providerCostMicros,
+        leadsDelivered: done?.leadsDelivered,
+        icpEdited: done?.plan.icpEdited,
+        failureCode: null,
+      },
+      expect.objectContaining({ runId: second.id, status: 'queued', creditsSpent: 0 }),
+    ]);
+    expect(done?.leadsDelivered).toBeGreaterThan(0);
+    // [from, to): a run queued at `to` is left out, one queued at `from` is in.
+    expect(
+      (await q.runFacts({ from: START, to: new Date(START.getTime() + 60_000) })).map(
+        (r) => r.runId,
+      ),
+    ).toEqual([first.id]);
+    expect(await q.runCounts([BUSINESS, 'f0000000-0000-4000-8000-00000000dead'])).toEqual(
+      new Map([[BUSINESS, 2]]),
+    );
+    expect(await q.runCounts([])).toEqual(new Map());
   });
 
   test('FR-22: an email claim succeeds once per event and recipient', async () => {

@@ -7,6 +7,7 @@ import type {
   AuditRecorder,
   BusinessDirectory,
   BusinessListItem,
+  BusinessWithOwner,
   BusinessRepository,
   EmailTokenRepository,
   IdentityEvents,
@@ -213,6 +214,26 @@ class InMemoryDirectory implements BusinessDirectory {
     const page = items.slice(start, start + query.limit);
     const more = start + query.limit < items.length;
     return Promise.resolve({ items: page, nextCursor: more ? (page.at(-1)?.id ?? null) : null });
+  }
+  all() {
+    const owners = [...this.db.members.values()].filter((m) => m.role === 'owner');
+    return Promise.resolve(
+      [...this.db.businesses.values()].flatMap((b): BusinessWithOwner[] => {
+        const o = owners.find((m) => m.businessId === b.id);
+        if (!o) return [];
+        return [
+          {
+            id: b.id,
+            name: b.name,
+            internal: b.internal,
+            ownerEmail: o.email,
+            ownerIsStaff: o.isStaff,
+            signedUpAt: b.createdAt,
+            verifiedAt: o.emailVerifiedAt,
+          },
+        ];
+      }),
+    );
   }
 }
 

@@ -293,6 +293,16 @@ describe('Staff reporting figures (MySQL)', () => {
       ]),
     );
     expect(await billingQueries.payingBusinessIds([BUSINESS, OTHER])).toEqual(new Set([OTHER]));
+    const paidAt = clock.now();
+    expect(await billingQueries.payingBusinessIds([OTHER], { paidBefore: paidAt })).toEqual(
+      new Set(),
+    );
+    expect(
+      await billingQueries.payingBusinessIds([OTHER], {
+        paidBefore: new Date(paidAt.getTime() + 1),
+      }),
+    ).toEqual(new Set([OTHER]));
+    expect(await billingQueries.payingBusinessIds([], { paidBefore: paidAt })).toEqual(new Set());
   });
 });
 

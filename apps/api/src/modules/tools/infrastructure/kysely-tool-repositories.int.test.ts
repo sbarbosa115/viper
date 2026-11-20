@@ -150,6 +150,40 @@ describe('FR-36: Tool call repository', () => {
   });
 });
 
+describe('FR-30: Tool spend for the Staff dashboard', () => {
+  test('cost, calls and errors per Tool in [from, to): reused and skipped left out', async () => {
+    const hour = 3_600_000;
+    const from = new Date(NOW.getTime() - 24 * hour);
+    await calls.add([
+      record({ providerCostMicros: 1_000, createdAt: new Date(NOW.getTime() - hour) }),
+      record({
+        status: 'error',
+        error: 'boom',
+        output: null,
+        providerCostMicros: 0,
+        createdAt: from,
+      }),
+      record({ reused: true, output: null, providerCostMicros: 900 }),
+      record({ status: 'skipped', output: null, providerCostMicros: 900 }),
+      record({ providerCostMicros: 900, createdAt: new Date(from.getTime() - 1) }),
+      record({ providerCostMicros: 900, createdAt: NOW }),
+      record({
+        toolKey: 'firecrawl.scrape',
+        runId: null,
+        stepKey: null,
+        providerCostMicros: 250,
+        createdAt: new Date(NOW.getTime() - hour),
+      }),
+    ]);
+    const spend = await calls.spendBetween({ from, to: NOW });
+    expect([...spend].sort((a, b) => a.toolKey.localeCompare(b.toolKey))).toEqual([
+      { toolKey: 'firecrawl.scrape', providerCostMicros: 250, calls: 1, errors: 0 },
+      { toolKey: 'google.places-text-search', providerCostMicros: 1_000, calls: 2, errors: 1 },
+    ]);
+    expect(await calls.spendBetween({ from: NOW, to: NOW })).toEqual([]);
+  });
+});
+
 describe('FR-36: ToolRunner on MySQL inside a caller transaction', () => {
   test('records in the given transaction; a rollback leaves nothing; a retry reuses the stored call', async () => {
     const places = new ScriptedAdapter('google.places-text-search');

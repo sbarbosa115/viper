@@ -91,15 +91,19 @@ export class KyselyBillingReadModel implements BillingReadModel {
     return result;
   }
 
-  async payingBusinessIds(businessIds: readonly string[]): Promise<Set<string>> {
+  async payingBusinessIds(
+    businessIds: readonly string[],
+    options?: { paidBefore?: Date },
+  ): Promise<Set<string>> {
     if (businessIds.length === 0) return new Set();
-    const rows = await this.db
+    let q = this.db
       .selectFrom('purchases')
       .select('business_id')
       .distinct()
       .where('status', '=', 'paid')
-      .where('business_id', 'in', [...businessIds])
-      .execute();
+      .where('business_id', 'in', [...businessIds]);
+    if (options?.paidBefore) q = q.where('paid_at', '<', options.paidBefore);
+    const rows = await q.execute();
     return new Set(rows.map((r) => r.business_id));
   }
 }

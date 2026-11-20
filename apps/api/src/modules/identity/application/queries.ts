@@ -1,6 +1,11 @@
 import { NotFoundError } from '../../../shared/domain/errors.js';
 import type { Business } from '../domain/business.js';
-import type { BusinessListItem, BusinessListQuery, IdentityServices } from './ports.js';
+import type {
+  BusinessListItem,
+  BusinessListQuery,
+  BusinessWithOwner,
+  IdentityServices,
+} from './ports.js';
 
 export interface BusinessSummary {
   id: string;
@@ -25,6 +30,8 @@ export interface IdentityQueries {
   listBusinesses(
     query: BusinessListQuery,
   ): Promise<{ items: BusinessListItem[]; nextCursor: string | null }>;
+  /** Staff dashboard (FR-30): every Business with its Owner, unordered. */
+  allBusinesses(): Promise<BusinessWithOwner[]>;
   getOwnerContact(businessId: string): Promise<OwnerContact | null>;
   /** Business name edits (2–120 characters); 404 when unknown. */
   renameBusiness(businessId: string, name: string): Promise<void>;
@@ -64,6 +71,7 @@ export function identityQueriesFrom(
       return (await s.repos.businesses.findByIds([...new Set(ids)])).map(summary);
     },
     listBusinesses: (query) => s.directory.list(query),
+    allBusinesses: () => s.directory.all(),
     async getOwnerContact(businessId) {
       const owner = await s.repos.members.findOwnerOf(businessId);
       return owner

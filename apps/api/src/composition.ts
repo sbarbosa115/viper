@@ -9,6 +9,8 @@ import {
   createActorResolver,
   createIdentityModule,
   createIdentityQueries,
+  createIdentityUseCasesFor,
+  type IdentityDeps,
   type IdentityQueries,
   type SecretCipher,
 } from './modules/identity/index.js';
@@ -28,7 +30,7 @@ import {
   type SettingsReader,
 } from './modules/platform/index.js';
 import { createProfile, type Profile } from './modules/profile/index.js';
-import { reportingModule } from './modules/reporting/index.js';
+import { createReporting } from './modules/reporting/index.js';
 import {
   createResearch,
   fakeResearchAgent,
@@ -43,6 +45,7 @@ import {
   type Tools,
 } from './modules/tools/index.js';
 import { researchProspectStore } from './research-prospects.js';
+import { fileLegalContent } from './site/legal-content.js';
 import type { AnalyticsTracker } from './shared/application/analytics-tracker.js';
 import type { Geocoder } from './shared/application/geocoder.js';
 import type { LlmClient } from './shared/application/llm-client.js';
@@ -416,7 +419,7 @@ export function composeApp(
   const { profile, planning, leads, research } = m;
   const { clock, ids, secretBox, settings, auditLog, analytics } = core;
 
-  const identity = createIdentityModule({
+  const identityDeps: IdentityDeps = {
     db,
     cipher: createTotpCipher(secretBox),
     audit: auditLog,
@@ -426,7 +429,8 @@ export function composeApp(
     ids,
     analytics,
     email,
-  });
+  };
+  const identity = createIdentityModule(identityDeps);
 
   const platform = createPlatformModule(
     createPlatformRouteDeps({
@@ -454,6 +458,30 @@ export function composeApp(
     usage: tools.llmUsageMeter,
   });
 
+  const reporting = createReporting({
+    clock,
+    audit: auditLog,
+    identity: {
+      allBusinesses: () => identityQueries.allBusinesses(),
+      listBusinesses: (query) => identityQueries.listBusinesses(query),
+      getBusiness: (id) => identityQueries.getBusiness(id),
+      getOwnerContact: (businessId) => identityQueries.getOwnerContact(businessId),
+      setBusinessInternal: (businessId, internal) =>
+        identityQueries.setBusinessInternal(businessId, internal),
+    },
+    billing: {
+      creditsSummary: (filter) => billing.billingQueries.creditsSummary(filter),
+      availableByBusiness: (ids) => billing.billingQueries.availableByBusiness(ids),
+      payingBusinessIds: (ids, options) => billing.billingQueries.payingBusinessIds(ids, options),
+    },
+    research: {
+      runFacts: (window) => research.reportingQueries.runFacts(window),
+      runCounts: (ids) => research.reportingQueries.runCounts(ids),
+    },
+    leads: leads.leadsQueries,
+    tools: { spendByTool: (window) => tools.toolQueries.spendByTool(window) },
+  });
+
   const deps: AppDeps = {
     logger,
     clock,
@@ -464,6 +492,15 @@ export function composeApp(
     health: infra.health,
     resolveActor: createActorResolver({ db, clock, ids }),
     auditTrail: auditLog,
+    site: {
+      siteUrl: config.APP_URL,
+      secureCookies: config.NODE_ENV === 'production',
+      clock,
+      packs: { activePacks: () => billing.billingQueries.activePacks() },
+      settings,
+      identity: createIdentityUseCasesFor(identityDeps),
+      legal: fileLegalContent(),
+    },
   };
 
   const modules: readonly AppModule[] = [
@@ -476,7 +513,7 @@ export function composeApp(
     research.module,
     tools.module,
     leads.module,
-    reportingModule,
+    reporting.module,
   ];
 
   return { core, deps, modules, billing, close: () => email.close() };

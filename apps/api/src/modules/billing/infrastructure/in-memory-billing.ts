@@ -91,11 +91,20 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
     return Promise.resolve(new Map(businessIds.map((b) => [b, this.totals(b).available])));
   }
 
-  payingBusinessIds(businessIds: readonly string[]): Promise<Set<string>> {
+  payingBusinessIds(
+    businessIds: readonly string[],
+    options?: { paidBefore?: Date },
+  ): Promise<Set<string>> {
+    const before = options?.paidBefore;
     return Promise.resolve(
       new Set(
         this.state.purchases
-          .filter((p) => p.status === 'paid' && businessIds.includes(p.businessId))
+          .filter(
+            (p) =>
+              p.status === 'paid' &&
+              businessIds.includes(p.businessId) &&
+              (!before || (p.paidAt !== null && p.paidAt < before)),
+          )
           .map((p) => p.businessId),
       ),
     );

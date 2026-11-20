@@ -15,6 +15,7 @@ import {
   type ProviderSettings,
   type ToolCallRepository,
   type ToolRepository,
+  type ToolSpend,
 } from './ports.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -173,6 +174,11 @@ export class ToolQueries {
       enabled: tools.get(key)?.enabled ?? false,
       configured: tools.has(key) && (configured.get(key) ?? false),
     }));
+  }
+
+  /** Provider cost, calls and errors per Tool for calls made in [from, to) (Staff dashboard, FR-30). */
+  spendByTool(window: { from: Date; to: Date }): Promise<ToolSpend[]> {
+    return this.deps.calls.spendBetween(window);
   }
 
   /** A run's Tool calls, oldest first (Staff run detail, FR-32/FR-36). */

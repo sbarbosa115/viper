@@ -3,6 +3,7 @@ import type { DB } from '../../../shared/infrastructure/db/schema.js';
 import type {
   BusinessDirectory,
   BusinessListItem,
+  BusinessWithOwner,
   BusinessListQuery,
   BusinessRepository,
   EmailTokenRepository,
@@ -436,6 +437,32 @@ export class KyselyBusinessDirectory implements BusinessDirectory {
           ? encodeCursor({ k: new Date(last.sort_key).toISOString(), id: last.id })
           : null,
     };
+  }
+
+  async all(): Promise<BusinessWithOwner[]> {
+    const rows = await this.db
+      .selectFrom('businesses as b')
+      .innerJoin('members as m', 'm.business_id', 'b.id')
+      .where('m.role', '=', 'owner')
+      .select([
+        'b.id',
+        'b.name',
+        'b.internal',
+        'b.created_at',
+        'm.email',
+        'm.is_staff',
+        'm.email_verified_at',
+      ])
+      .execute();
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      internal: r.internal === 1,
+      ownerEmail: r.email,
+      ownerIsStaff: r.is_staff === 1,
+      signedUpAt: r.created_at,
+      verifiedAt: r.email_verified_at,
+    }));
   }
 }
 

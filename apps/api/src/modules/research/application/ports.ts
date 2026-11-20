@@ -137,6 +137,32 @@ export interface RunRepository {
   /** Queued runs waiting since before `before` (lost queue jobs). */
   staleQueued(before: Date, limit: number): Promise<ResearchRun[]>;
   countByStatus(status: RunStatus): Promise<number>;
+  /** Staff reporting (FR-30): every run queued in [from, to), all Businesses. */
+  factsQueuedIn(window: ReportWindow): Promise<RunFact[]>;
+  /** Staff reporting (FR-31): runs ever started per Business; Businesses without runs are left out. */
+  countByBusiness(businessIds: readonly string[]): Promise<Map<string, number>>;
+}
+
+/** A half-open time window [from, to). */
+export interface ReportWindow {
+  readonly from: Date;
+  readonly to: Date;
+}
+
+/** One run as Staff reporting reads it (the Plan's budget and ICP flag as the run saw them). */
+export interface RunFact {
+  readonly runId: string;
+  readonly businessId: string;
+  readonly status: RunStatus;
+  readonly queuedAt: Date;
+  readonly startedAt: Date | null;
+  readonly finishedAt: Date | null;
+  readonly creditsSpent: number;
+  readonly maxCredits: number;
+  readonly providerCostMicros: number;
+  readonly leadsDelivered: number;
+  readonly icpEdited: boolean;
+  readonly failureCode: string | null;
 }
 
 export interface StepRepository {

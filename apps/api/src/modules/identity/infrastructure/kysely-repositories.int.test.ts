@@ -213,6 +213,37 @@ describe('identity repositories (MySQL)', () => {
     expect((await q.listBusinesses({ sort: 'signedUp', limit: 50, q: '%' })).items).toEqual([]);
   });
 
+  test('FR-30: allBusinesses lists every Business with its Owner, Staff and verification', async () => {
+    const one = await seedOwner(1);
+    const two = await seedOwner(2, new Date(now.getTime() + 1000));
+    two.member.grantStaff();
+    two.member.verifyEmail(now);
+    await repos().members.save(two.member);
+    two.business.markInternal(true);
+    await repos().businesses.save(two.business);
+    const all = await identityQueriesFrom(services()).allBusinesses();
+    expect([...all].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+      {
+        id: one.business.id,
+        name: 'Business 1',
+        internal: false,
+        ownerEmail: 'owner1@example.com',
+        ownerIsStaff: false,
+        signedUpAt: now,
+        verifiedAt: null,
+      },
+      {
+        id: two.business.id,
+        name: 'Business 2',
+        internal: true,
+        ownerEmail: 'owner2@example.com',
+        ownerIsStaff: true,
+        signedUpAt: new Date(now.getTime() + 1000),
+        verifiedAt: now,
+      },
+    ]);
+  });
+
   test('FR-2: verification commits the email and MemberEmailVerified in one transaction', async () => {
     const s = services();
     const uc = createIdentityUseCases(s);
