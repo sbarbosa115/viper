@@ -143,6 +143,16 @@ export class KyselyPlanRepository implements PlanRepository {
     );
   }
 
+  async countCreatedSince(businessId: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom('plans')
+      .select((eb) => eb.fn.countAll<number>().as('n'))
+      .where('business_id', '=', businessId)
+      .where('created_at', '>=', since)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
   async productInUse(businessId: string, productId: string): Promise<boolean> {
     const hit = await this.db
       .selectFrom('target_segments')

@@ -28,7 +28,14 @@ export const ownerActor: Actor = {
 
 export class RecordingAudit implements ReportingAudit {
   readonly entries: Parameters<ReportingAudit['record']>[0][] = [];
+  /** The next write fails with this error (to test that it rolls its change back). */
+  failNext: Error | null = null;
   record(entry: Parameters<ReportingAudit['record']>[0]): Promise<void> {
+    if (this.failNext) {
+      const error = this.failNext;
+      this.failNext = null;
+      return Promise.reject(error);
+    }
     this.entries.push(entry);
     return Promise.resolve();
   }
@@ -55,7 +62,11 @@ const sortKey = (b: WorldBusiness, sort: 'signedUp' | 'lastActive') =>
  * positive adjustments, unspent = balance − open Reservations; leads: verified % of phone and
  * email Contacts; tools: reused and skipped calls left out).
  */
-export function inMemorySources(world: World): ReportingSources {
+/** `audit` stands in for platform's Audit log inside identity's transaction. */
+export function inMemorySources(
+  world: World,
+  audit: ReportingAudit = new RecordingAudit(),
+): ReportingSources {
   const byWindow = <T>(items: readonly T[], when: (t: T) => Date | null, w: TimeWindow) =>
     items.filter((t) => within(when(t), w));
   return {
@@ -99,12 +110,22 @@ export function inMemorySources(world: World): ReportingSources {
           b ? { email: b.ownerEmail, emailVerified: b.verifiedAt !== null } : null,
         );
       },
-      setBusinessInternal(businessId, internal) {
+      // Like identity: the change and its Audit entry in one transaction.
+      async setBusinessInternal(businessId, internal, by) {
         const i = world.businesses.findIndex((x) => x.id === businessId);
         const found = world.businesses[i];
-        if (!found) return Promise.reject(new NotFoundError('Business not found', { businessId }));
+        if (!found) throw new NotFoundError('Business not found', { businessId });
+        if (by) {
+          await audit.record({
+            staffMemberId: by.staffMemberId,
+            businessId,
+            action: by.action,
+            targetType: 'business',
+            targetId: businessId,
+            details: by.details,
+          });
+        }
         world.businesses[i] = { ...found, internal };
-        return Promise.resolve();
       },
     },
     billing: {
@@ -209,5 +230,6 @@ export function inMemorySources(world: World): ReportingSources {
 }
 
 export function fakeDeps(world: World, now: Date = NOW): ReportingDeps & { audit: RecordingAudit } {
-  return { ...inMemorySources(world), audit: new RecordingAudit(), clock: new FixedClock(now) };
+  const audit = new RecordingAudit();
+  return { ...inMemorySources(world, audit), audit, clock: new FixedClock(now) };
 }

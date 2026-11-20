@@ -1,10 +1,11 @@
 import type { Flow, FlowInput, FlowListItem, RunSummary } from '@app/contracts/research';
 import type { Actor } from '../../../shared/domain/actor.js';
 import type { Clock } from '../../../shared/domain/clock.js';
-import { NotFoundError, ValidationError } from '../../../shared/domain/errors.js';
+import { CodedError, NotFoundError, ValidationError } from '../../../shared/domain/errors.js';
 import type { IdGenerator } from '../../../shared/domain/id-generator.js';
 import {
   changedFlowFields,
+  stepTimeTotal,
   validateFlowSettings,
   type FlowCeilings,
   type FlowSettingsSnapshot,
@@ -66,7 +67,10 @@ export class FlowUseCases {
     return this.view(flow);
   }
 
-  /** Saves a new version (400 naming the ceiling or the 100% rule) and records the Audit log. */
+  /**
+   * Saves a new version (400 naming the ceiling or the 100% rule; 422 when the Steps' time limits
+   * exceed the max active time) with its Audit log entry, in one transaction.
+   */
   async update(actor: Actor, key: string, input: FlowInput): Promise<Flow> {
     requireStaff(actor);
     const ceilings = await flowCeilings(this.deps.settings);
@@ -76,6 +80,16 @@ export class FlowUseCases {
       const errors = validateFlowSettings(input, ceilings, current);
       if (Object.keys(errors).length > 0) {
         throw new ValidationError(Object.values(errors)[0] ?? 'Invalid flow settings', errors);
+      }
+      const totalMinutes = stepTimeTotal(input.steps);
+      const maxActiveMinutes = input.runSettings.maxActiveMinutes;
+      if (totalMinutes > maxActiveMinutes) {
+        throw new CodedError(
+          'STEP_TIME_OVER_ACTIVE_TIME',
+          `Step time limits add up to ${totalMinutes} min, more than the max active time (${maxActiveMinutes} min)`,
+          { field: 'steps', totalMinutes, maxActiveMinutes },
+          422,
+        );
       }
       const next: FlowVersion = {
         ...current,
@@ -89,17 +103,21 @@ export class FlowUseCases {
         createdAt: this.deps.clock.now(),
       };
       await tx.flows.insert(next);
-      return { next, changed: changedFlowFields(current, input) };
+      // The new version and its Audit log entry commit together (FR-37).
+      await this.deps.audit.record(
+        {
+          staffMemberId: actor.actingAs?.staffMemberId ?? actor.memberId,
+          businessId: null,
+          action: 'research_flow.updated',
+          targetType: 'research_flow',
+          targetId: key,
+          details: { version: next.version, fields: changedFlowFields(current, input) },
+        },
+        tx.handle,
+      );
+      return next;
     });
-    await this.deps.audit.record({
-      staffMemberId: actor.actingAs?.staffMemberId ?? actor.memberId,
-      businessId: null,
-      action: 'research_flow.updated',
-      targetType: 'research_flow',
-      targetId: key,
-      details: { version: saved.next.version, fields: saved.changed },
-    });
-    return this.view(saved.next);
+    return this.view(saved);
   }
 
   /** Seeds a Flow template's first version when the flow doesn't exist yet (idempotent). */

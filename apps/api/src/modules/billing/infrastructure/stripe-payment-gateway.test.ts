@@ -73,6 +73,8 @@ describe('FR-12: Stripe adapter', () => {
     const form = new URLSearchParams(requests[0]?.body);
     expect(Object.fromEntries(form)).toMatchObject({
       mode: 'payment',
+      // Cards settle at once; delayed methods are off (their async events are handled anyway).
+      'allowed_payment_method_types[0]': 'card',
       client_reference_id: 'b-1',
       'metadata[packId]': 'p-1',
       'line_items[0][price_data][unit_amount]': '2500',

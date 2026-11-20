@@ -31,7 +31,12 @@ import { seedToolCatalog } from './infrastructure/seed-tools.js';
 export { TOOL_KEYS, ALL_TOOL_KEYS, CLAUDE_TOOLS } from './domain/tool-keys.js';
 export type { ToolKey, ClaudeRole } from './domain/tool-keys.js';
 export { TOOL_CATALOG } from './domain/catalog.js';
-export { RETRY_DELAYS_MS, inputHash } from './application/tool-runner.js';
+export {
+  RETRY_DELAYS_MS,
+  LONGEST_TRY_MS,
+  LONGEST_TOOL_CALL_MS,
+  inputHash,
+} from './application/tool-runner.js';
 export type { ToolCallRequest, ToolCallResult, ToolCallError } from './application/tool-runner.js';
 export type { ToolErrorCode } from './application/tool-adapter.js';
 export type { ToolAvailability } from './application/tool-catalog.js';
@@ -42,7 +47,7 @@ export { LlmUsageMeter, ToolQueries };
 export { FakeToolControls, InMemoryFaultStore, RedisFaultStore };
 export type { RedisLike };
 export { createGoogleGeocoder } from './infrastructure/adapters/google.js';
-export { APIFY_ACTORS } from './infrastructure/adapters/apify.js';
+export { APIFY_ACTORS, APIFY_WAIT_SECS } from './infrastructure/adapters/apify.js';
 export { FAKE_BUSINESSES, type FakeBusiness } from './infrastructure/fake/austin-businesses.js';
 
 const MODULE_NAME = 'tools';
@@ -172,7 +177,15 @@ export function createTools(
   return {
     module: createToolsModule({
       listTools: new ListTools(catalogDeps),
-      updateTool: new UpdateTool({ ...catalogDeps, audit: deps.audit }),
+      updateTool: new UpdateTool({
+        ...catalogDeps,
+        audit: deps.audit,
+        // The Rate card change and its Audit log entry commit together (FR-7, FR-23).
+        transaction: (fn) =>
+          deps.db
+            .transaction()
+            .execute((trx) => fn({ tools: new KyselyToolRepository(trx), within: trx })),
+      }),
       testHooks: deps.testHooks && deps.mode === 'fake' ? { controls: fakeControls } : undefined,
     }),
     toolRunner: createToolRunner({ ...deps, fakeControls }),

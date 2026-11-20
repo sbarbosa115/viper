@@ -52,6 +52,13 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
   readonly unconfigured = new Set<string>();
   /** Runs before each provider call (e.g. to move the clock or simulate a crash). */
   beforeCall: ((request: ToolCallRequest) => void) | null = null;
+  /**
+   * Runs while a provider or Claude call is in flight (not for reused or refused calls); its
+   * promise is awaited, so a test can make a call slow, or hang.
+   */
+  duringCall: ((request: ToolCallRequest) => void | Promise<void>) | null = null;
+  /** The `within` of every deferred commit, in order. */
+  readonly commitsWithin: unknown[] = [];
   /** Millicredits per 1k LLM input tokens (0 = Claude is free in this test). */
   llmRatePer1k = 100;
   /** Millicredits per call, by Tool (tests raise prices to reach guardrails). */
@@ -113,6 +120,7 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
         message: failure.message,
       });
     }
+    await this.duringCall?.(request);
     try {
       const response = await this.llm.complete({ ...input, role });
       const output = {
@@ -122,8 +130,7 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
         model: response.model,
       };
       const cost = Math.ceil((response.usage.inputTokens / 1000) * this.llmRatePer1k);
-      this.stored.set(key, output);
-      return this.record(request, 'ok', cost, false, null, output);
+      return this.record(request, 'ok', cost, false, null, output, key);
     } catch (error) {
       if (!(error instanceof LlmUnavailableError)) throw error;
       return this.record(request, 'error', 0, false, {
@@ -134,7 +141,7 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
     }
   }
 
-  call(request: ToolCallRequest): Promise<ToolCallResult> {
+  async call(request: ToolCallRequest): Promise<ToolCallResult> {
     const { toolKey } = request;
     if (this.disabled.has(toolKey)) {
       return Promise.resolve(
@@ -168,15 +175,16 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
     }
     this.beforeCall?.(request);
     this.providerCalls.push({ toolKey, stepKey: request.stepKey, input: { ...request.input } });
+    await this.duringCall?.(request);
     const failure = this.nextFailure(toolKey);
     if (failure) {
-      return Promise.resolve(
-        this.record(request, 'error', 0, false, { code: failure.code, message: failure.message }),
-      );
+      return this.record(request, 'error', 0, false, {
+        code: failure.code,
+        message: failure.message,
+      });
     }
     const output = fixtureOutput(toolKey, request.input);
-    this.stored.set(key, output);
-    return Promise.resolve(this.record(request, 'ok', cost, false, null, output));
+    return this.record(request, 'ok', cost, false, null, output, key);
   }
 
   availability(toolKeys: readonly string[]): Promise<ReadonlyMap<string, boolean>> {
@@ -196,9 +204,11 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
     reused: boolean,
     error: { code: string; message: string; retryable?: boolean } | null,
     output: unknown = null,
+    /** Where a successful call is stored for reuse (like a committed `ok` row). */
+    reuseKey?: string,
   ): ToolCallResult {
     this.n += 1;
-    this.calls.push({
+    const view = {
       id: `00000000-0000-7000-9000-${this.n.toString(16).padStart(12, '0')}`,
       runId: request.runId,
       input: { ...request.input },
@@ -213,8 +223,12 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
       createdAt: this.clock.now(),
       attemptN: request.attemptN,
       reused,
-    });
-    return {
+    };
+    const store = () => {
+      this.calls.push(view);
+      if (reuseKey && status === 'ok') this.stored.set(reuseKey, output);
+    };
+    const result: ToolCallResult = {
       status,
       output,
       units: status === 'ok' ? 1 : 0,
@@ -222,6 +236,23 @@ export class FakeToolRunner implements ToolRunnerPort, ToolCatalogPort, ToolCall
       providerCostMicros: Math.round(millicredits / 2),
       reused,
       error,
+    };
+    // Like the tools module: a deferred call is stored when the caller commits it.
+    if (!request.defer) {
+      store();
+      return result;
+    }
+    let committed = false;
+    return {
+      ...result,
+      commit: (within: object) => {
+        if (!committed) {
+          committed = true;
+          this.commitsWithin.push(within);
+          store();
+        }
+        return Promise.resolve();
+      },
     };
   }
 }

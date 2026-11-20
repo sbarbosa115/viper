@@ -128,12 +128,26 @@ export class RedisStopHook implements StopHook {
   }
 }
 
-export const intervalHeartbeat: Heartbeat = {
-  start(beat, everyMs) {
-    const timer = setInterval(() => void beat().catch(() => undefined), everyMs);
-    return () => clearInterval(timer);
-  },
-};
+/**
+ * Renews an attempt's lease on a timer (FR-36). A failed renewal is logged, never swallowed: the
+ * next beat tries again before the lease runs out.
+ */
+export function intervalHeartbeat(logger: { warn(obj: object, msg: string): void }): Heartbeat {
+  return {
+    start(beat, everyMs) {
+      const timer = setInterval(() => {
+        beat().catch((err: unknown) => logger.warn({ err }, 'research lease renewal failed'));
+      }, everyMs);
+      return () => clearInterval(timer);
+    },
+  };
+}
+
+/**
+ * BullMQ's own job lock outlives the shortest lease (5 min): a run's liveness is the lease the
+ * sweeper checks, not BullMQ's stalled-job detection (maxStalledCount 0).
+ */
+export const RESEARCH_RUN_LOCK_MS = 5 * 60_000;
 
 /** The run id of a research-runs job: an outbox `RunRequested` or an `attempt` job. */
 export function runIdOf(job: Pick<Job, 'name' | 'data'>): string | null {
@@ -157,15 +171,24 @@ export interface ResearchWorkersDeps extends QueueOptions {
  */
 export function createResearchWorkers(deps: ResearchWorkersDeps): Worker[] {
   const opts = prefixed(deps);
+  // Closing the worker (SIGTERM) aborts the attempts in flight: each stops at its next save, or
+  // after a short grace if a Tool call is running, and ends as a retryable `worker_stopped`.
+  const shutdown = new AbortController();
   const runs = new Worker(
     RESEARCH_RUNS_QUEUE,
     async (job: Job) => {
       const runId = runIdOf(job);
       if (!runId) return 'invalid';
-      return deps.executor.runAttempt(runId);
+      return deps.executor.runAttempt(runId, { signal: shutdown.signal });
     },
-    { ...opts, concurrency: RESEARCH_RUNS_CONCURRENCY, maxStalledCount: 0 },
+    {
+      ...opts,
+      concurrency: RESEARCH_RUNS_CONCURRENCY,
+      maxStalledCount: 0,
+      lockDuration: RESEARCH_RUN_LOCK_MS,
+    },
   );
+  runs.on('closing', () => shutdown.abort());
   runs.on('failed', (job, err) =>
     deps.logger.warn({ err, jobId: job?.id }, 'research run job failed'),
   );

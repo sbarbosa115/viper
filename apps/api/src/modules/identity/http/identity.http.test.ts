@@ -130,6 +130,13 @@ describe('FR-1: POST /api/auth/signup', () => {
 
 describe('NFR-4: Origin check on state-changing requests', () => {
   test('a POST without Origin or from another site is 403; Referer from the app is accepted', async () => {
+    // The check is app.ts's (one for every /api module), on as main.ts always has it.
+    await app.close();
+    app = await buildTestApp({
+      modules: [identityModuleFrom(s, { secure: false }), probeModule],
+      deps: { resolveActor: actorResolverFrom(s) },
+      originCheck: true,
+    });
     const none = await app.inject({
       method: 'POST',
       url: '/api/auth/signup',

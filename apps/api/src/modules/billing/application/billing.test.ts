@@ -363,6 +363,84 @@ describe('FR-12: Buy Credit packs with Stripe', () => {
   });
 });
 
+describe('FR-12: payments that settle later (Stripe async payment events)', () => {
+  async function delayedCheckout() {
+    const f = billingFixture();
+    const pack = await f.app.creditPacks.ensure({
+      name: 'Starter',
+      credits: 2500,
+      priceCents: 2500,
+      active: true,
+    });
+    await f.app.startCheckout.execute({ packId: pack.id }, owner());
+    const sessionId = f.gateway.sessions[0]?.sessionId ?? '';
+    const deliver = async (body: string) => {
+      const raw = Buffer.from(body);
+      await f.app.handleStripeWebhook.execute({
+        rawBody: raw,
+        signature: FakePaymentGateway.sign(raw),
+      });
+    };
+    // The session completes before the money arrives: nothing yet.
+    await deliver(
+      FakePaymentGateway.completedEvent({ eventId: 'evt_1', sessionId, paymentStatus: 'unpaid' }),
+    );
+    expect(f.store.state.ledger.filter((e) => e.type === 'purchase')).toHaveLength(0);
+    expect(f.store.state.purchases[0]?.status).toBe('pending');
+    return { ...f, pack, sessionId, deliver };
+  }
+
+  test('async_payment_succeeded adds the pack credits once, however often it arrives', async () => {
+    const f = await delayedCheckout();
+    const succeeded = FakePaymentGateway.completedEvent({
+      eventId: 'evt_2',
+      sessionId: f.sessionId,
+      type: 'checkout.session.async_payment_succeeded',
+    });
+    await f.deliver(succeeded);
+    await f.deliver(succeeded);
+    expect((await f.app.queries.getWallet(BUSINESS)).available).toBe(2500);
+    expect(f.store.state.ledger.filter((e) => e.type === 'purchase')).toHaveLength(1);
+    expect(f.store.state.purchases[0]).toMatchObject({ status: 'paid', stripeEventId: 'evt_2' });
+    expect(f.store.state.events).toHaveLength(1);
+  });
+
+  test('async_payment_failed marks the purchase failed and adds nothing', async () => {
+    const f = await delayedCheckout();
+    await f.deliver(
+      FakePaymentGateway.completedEvent({
+        eventId: 'evt_3',
+        sessionId: f.sessionId,
+        type: 'checkout.session.async_payment_failed',
+      }),
+    );
+    expect(f.store.state.purchases[0]?.status).toBe('failed');
+    expect((await f.app.queries.getWallet(BUSINESS)).available).toBe(0);
+    expect(f.store.state.events).toHaveLength(0);
+    expect(f.analytics.events.filter((e) => e.name === 'credit_pack_purchased')).toHaveLength(0);
+  });
+
+  test('a failed event for a paid purchase changes nothing', async () => {
+    const f = await delayedCheckout();
+    await f.deliver(
+      FakePaymentGateway.completedEvent({
+        eventId: 'evt_2',
+        sessionId: f.sessionId,
+        type: 'checkout.session.async_payment_succeeded',
+      }),
+    );
+    await f.deliver(
+      FakePaymentGateway.completedEvent({
+        eventId: 'evt_3',
+        sessionId: f.sessionId,
+        type: 'checkout.session.async_payment_failed',
+      }),
+    );
+    expect(f.store.state.purchases[0]?.status).toBe('paid');
+    expect((await f.app.queries.getWallet(BUSINESS)).available).toBe(2500);
+  });
+});
+
 describe('FR-13: Staff credit grants and Credit packs', () => {
   test('given Staff grant 1,000 credits to B with reason "beta tester", B’s ledger shows an adjustment with that reason', async () => {
     const f = billingFixture();
@@ -384,6 +462,43 @@ describe('FR-13: Staff credit grants and Credit packs', () => {
         details: { credits: 1000, reason: 'beta tester' },
       },
     ]);
+  });
+
+  test('the grant and its Audit entry are one transaction: a failed audit write rolls the grant back', async () => {
+    const f = billingFixture();
+    f.audit.failNext = new Error('audit log down');
+    await expect(
+      f.app.adjustCredits.execute(
+        { businessId: BUSINESS, credits: 1000, reason: 'beta tester' },
+        staff(),
+      ),
+    ).rejects.toThrow('audit log down');
+    expect(f.store.state.ledger).toHaveLength(0);
+  });
+
+  test('a pack change and its Audit entry are one transaction', async () => {
+    const f = billingFixture();
+    f.audit.failNext = new Error('audit log down');
+    await expect(
+      f.app.creditPacks.create(
+        { name: 'Starter', credits: 2500, priceCents: 2500, active: true },
+        staff(),
+      ),
+    ).rejects.toThrow('audit log down');
+    expect(f.store.state.packs).toHaveLength(0);
+    const pack = await f.app.creditPacks.create(
+      { name: 'Starter', credits: 2500, priceCents: 2500, active: true },
+      staff(),
+    );
+    f.audit.failNext = new Error('audit log down');
+    await expect(
+      f.app.creditPacks.update(
+        pack.id,
+        { name: 'Starter', credits: 3000, priceCents: 2500, active: true },
+        staff(),
+      ),
+    ).rejects.toThrow('audit log down');
+    expect(f.store.state.packs[0]?.credits).toBe(2500);
   });
 
   test('removing credits cannot take available below 0 (INSUFFICIENT_CREDITS)', async () => {

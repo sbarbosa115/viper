@@ -10,7 +10,15 @@ import { draftRadius, normaliseDraft, type PlanDraft } from '../domain/draft.js'
 import { Guardrails } from '../domain/guardrails.js';
 import { Plan, type PlanSnapshot } from '../domain/plan.js';
 import { SearchArea } from '../domain/search-area.js';
-import { assertCanPlan, profileIncomplete, usableProfile } from './policies.js';
+import {
+  assertCanPlan,
+  assertVerified,
+  DAILY_PLAN_LIMIT,
+  dailyPlanLimitReached,
+  profileIncomplete,
+  startOfUtcDay,
+  usableProfile,
+} from './policies.js';
 import type {
   FlowDefaults,
   PlanDrafter,
@@ -30,6 +38,8 @@ export interface CreatePlanDeps {
   profiles: ProfileReader;
   flows: FlowDefaults;
   wallet: WalletReader;
+  /** Plans per Business per UTC day; DAILY_PLAN_LIMIT (30) when absent. */
+  dailyPlanLimit?: number;
 }
 
 export interface CreatedPlan {
@@ -45,7 +55,8 @@ export function assistantUnavailable(): CodedError {
 }
 
 /**
- * FR-16: Create a Plan from a Goal. The planning model drafts the name, Target segments and any
+ * FR-16: Create a Plan from a Goal. Needs a verified email (403 EMAIL_NOT_VERIFIED) and at most 30
+ * Plans per Business per UTC day (429 TOO_MANY_REQUESTS), since each one calls the planning model. The planning model drafts the name, Target segments and any
  * place or radius in the goal; the rules here pick the Search area (profile location unless the
  * goal names a place that geocodes; radius from the goal, else the delivery radius, 1–25 miles)
  * and the Guardrails (the flow's plan defaults, max credits capped by the available balance).
@@ -55,7 +66,13 @@ export class CreatePlan {
 
   async execute(actor: Actor, goal: string): Promise<CreatedPlan> {
     assertCanPlan(actor);
+    assertVerified(actor);
     const { deps } = this;
+    const limit = deps.dailyPlanLimit ?? DAILY_PLAN_LIMIT;
+    const today = await deps.uow.run(({ plans }) =>
+      plans.countCreatedSince(actor.businessId, startOfUtcDay(deps.clock.now())),
+    );
+    if (today >= limit) throw dailyPlanLimitReached(limit);
     const profile = usableProfile(await deps.profiles.getProfile(actor.businessId));
     if (!profile) throw profileIncomplete();
 

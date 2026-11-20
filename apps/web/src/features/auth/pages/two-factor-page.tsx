@@ -1,5 +1,6 @@
 import { twoFactorCode, type Me } from '@app/contracts/identity';
 import { useState, type FormEvent } from 'react';
+import { ApiError } from '../../../shared/api/client';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useMe } from '../../../shared/api/me';
 import { Badge, Button, ErrorState, Field, Input, Spinner } from '../../../shared/ui';
@@ -10,14 +11,41 @@ import { copy, fill } from '../copy';
 import { isApiError } from '../lib/form-errors';
 import { safeNext } from '../lib/next';
 
-type Problem = 'wrong' | 'tooMany' | 'expired' | 'other' | null;
+type Problem = 'wrong' | 'tooMany' | 'locked' | 'expired' | 'other' | null;
 
 const problemText: Record<Exclude<Problem, null>, string> = {
   wrong: copy.twoFactor.wrong,
   tooMany: copy.twoFactor.tooMany,
+  locked: copy.twoFactor.locked,
   expired: copy.twoFactor.expired,
   other: copy.common.network,
 };
+
+/** 429 TWO_FACTOR_LOCKED: when the lock ends, from `details.retryAfterSeconds` (local time). */
+function lockedUntil(error: unknown): string | null {
+  const seconds = error instanceof ApiError ? error.details?.retryAfterSeconds : undefined;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const time = new Date(Date.now() + seconds * 1000).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return fill(copy.twoFactor.lockedUntil, { time });
+}
+
+function ProblemText({
+  problem,
+  retryAt,
+}: {
+  problem: Exclude<Problem, null>;
+  retryAt: string | null;
+}) {
+  return (
+    <FormError>
+      {problemText[problem]}
+      {problem === 'locked' && retryAt && ` ${retryAt}`}
+    </FormError>
+  );
+}
 
 /** Runs the code submit: validates the digits, then maps API errors to inline text. */
 function useCodeSubmit() {
@@ -26,6 +54,7 @@ function useCodeSubmit() {
   const commitMe = useCommitMe();
   const verify = useTwoFactorVerify();
   const [problem, setProblem] = useState<Problem>(null);
+  const [retryAt, setRetryAt] = useState<string | null>(null);
 
   const submit = async (rawCode: string) => {
     const code = rawCode.replace(/\D/g, '');
@@ -40,12 +69,15 @@ function useCodeSubmit() {
       await navigate(destination(me, safeNext(params.get('next'))), { replace: true });
     } catch (error) {
       if (isApiError(error, 401, 'INVALID_CODE')) setProblem('wrong');
-      else if (isApiError(error, 429)) setProblem('tooMany');
+      else if (isApiError(error, 429, 'TWO_FACTOR_LOCKED')) {
+        setRetryAt(lockedUntil(error));
+        setProblem('locked');
+      } else if (isApiError(error, 429)) setProblem('tooMany');
       else if (isApiError(error, 401)) setProblem('expired');
       else setProblem('other');
     }
   };
-  return { submit, problem, pending: verify.isPending };
+  return { submit, problem, retryAt, pending: verify.isPending };
 }
 
 function destination(me: Me, next: string | null): string {
@@ -63,7 +95,7 @@ function Heading({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 function CodeEntry({ email }: { email: string }) {
-  const { submit, problem, pending } = useCodeSubmit();
+  const { submit, problem, retryAt, pending } = useCodeSubmit();
   const [code, setCode] = useState('');
   const logout = useLogout();
   const navigate = useNavigate();
@@ -86,7 +118,7 @@ function CodeEntry({ email }: { email: string }) {
           invalid={problem === 'wrong'}
           disabled={pending}
         />
-        {problem && <FormError>{problemText[problem]}</FormError>}
+        {problem && <ProblemText problem={problem} retryAt={retryAt} />}
         <Button type="submit" variant="primary" size="lg" loading={pending}>
           {copy.twoFactor.submit}
         </Button>
@@ -107,7 +139,7 @@ function groupKey(secret: string): string {
 
 function SetupEntry() {
   const setup = useTwoFactorSetup(true);
-  const { submit, problem, pending } = useCodeSubmit();
+  const { submit, problem, retryAt, pending } = useCodeSubmit();
   const [code, setCode] = useState('');
 
   if (setup.isPending) {
@@ -159,7 +191,7 @@ function SetupEntry() {
             />
           )}
         </Field>
-        {problem && problem !== 'wrong' && <FormError>{problemText[problem]}</FormError>}
+        {problem && problem !== 'wrong' && <ProblemText problem={problem} retryAt={retryAt} />}
         <Button type="submit" variant="primary" size="lg" loading={pending}>
           {copy.twoFactor.setupSubmit}
         </Button>

@@ -11,7 +11,7 @@ import {
 } from '@app/contracts/identity';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { meQueryKey, readCredits, refreshCreditsUntilChanged } from '../../../shared/api/me';
-import { api } from '../../../shared/api/client';
+import { api, apiAccepted } from '../../../shared/api/client';
 
 /** Seeds the signed-in Member so guards and the shell see the session without another request. */
 export function useCommitMe() {
@@ -67,26 +67,7 @@ export function useVerifyEmail(token: string | null) {
   });
 }
 
-/**
- * 202 answers carry no body (contract `noContent`); the shared client would fail parsing an empty
- * one, so an empty-body SyntaxError after a 2xx is treated as success.
- */
-async function apiAccepted(
-  path: string,
-  options: { method: 'POST'; body?: unknown },
-): Promise<void> {
-  try {
-    await api(path, options);
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-  }
-}
-
-export function useResendVerification() {
-  return useMutation({
-    mutationFn: () => apiAccepted('/auth/verify-email/resend', { method: 'POST' }),
-  });
-}
+export { useResendVerification } from '../../../shared/api/verification';
 
 /** First Staff login: the QR code and key. Requested once; a refetch would replace the secret. */
 export function useTwoFactorSetup(enabled: boolean) {

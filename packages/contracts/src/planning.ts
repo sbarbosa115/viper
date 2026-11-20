@@ -132,7 +132,13 @@ export const createPlan = defineContract({
   status: 201,
   body: z.object({ goal: z.string().trim().min(5).max(500) }),
   response: plan,
-  errors: [err(422, 'PROFILE_INCOMPLETE'), err(503, 'ASSISTANT_UNAVAILABLE')],
+  errors: [
+    err(403, 'EMAIL_NOT_VERIFIED'),
+    err(422, 'PROFILE_INCOMPLETE'),
+    err(429, 'TOO_MANY_REQUESTS'),
+    err(503, 'ASSISTANT_UNAVAILABLE'),
+    err(503, 'GEOCODER_UNAVAILABLE'),
+  ],
 });
 
 /** Newest first. */

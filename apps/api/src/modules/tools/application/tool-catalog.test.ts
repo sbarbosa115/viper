@@ -21,12 +21,26 @@ import {
 } from '../test/fakes.js';
 import { LlmUsageMeter, thousandTokenUnits } from './llm-usage-meter.js';
 import type { ToolCallRecord } from './ports.js';
-import { ListTools, ToolQueries, UpdateTool, type ToolAudit } from './tool-catalog.js';
+import {
+  ListTools,
+  STARTED_WITHOUT_RESULT,
+  ToolQueries,
+  UpdateTool,
+  type ToolAudit,
+  type ToolCatalogTransaction,
+} from './tool-catalog.js';
 
 class RecordingAudit implements ToolAudit {
   readonly entries: Parameters<ToolAudit['record']>[0][] = [];
-  record(entry: Parameters<ToolAudit['record']>[0]): Promise<void> {
+  readonly within: unknown[] = [];
+  failNext = false;
+  record(entry: Parameters<ToolAudit['record']>[0], within?: object): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(new Error('audit log down'));
+    }
     this.entries.push(entry);
+    this.within.push(within);
     return Promise.resolve();
   }
 }
@@ -38,11 +52,22 @@ function fixture() {
   const clock = new FixedClock(NOW);
   const audit = new RecordingAudit();
   const deps = { tools, calls, settings, clock };
+  /** A transaction over the in-memory Tools: a throw rolls the Tools back. */
+  const transaction: ToolCatalogTransaction = async (fn) => {
+    const before = [...tools.rows.entries()].map(([k, v]) => [k, structuredClone(v)] as const);
+    try {
+      return await fn({ tools, within: { tx: 'catalog' } });
+    } catch (error) {
+      tools.rows.clear();
+      for (const [k, v] of before) tools.rows.set(k, v);
+      throw error;
+    }
+  };
   return {
     ...deps,
     audit,
     list: new ListTools(deps),
-    update: new UpdateTool({ ...deps, audit }),
+    update: new UpdateTool({ ...deps, audit, transaction }),
     queries: new ToolQueries(deps),
   };
 }
@@ -163,6 +188,24 @@ describe('FR-23: update a Tool (Staff)', () => {
     ]);
   });
 
+  test('the change and its audit entry are written in one transaction', async () => {
+    const f = fixture();
+    await f.update.execute({ actor: staffActor, key: 'apify.yelp', changes: { enabled: false } });
+    expect(f.audit.within).toEqual([{ tx: 'catalog' }]);
+
+    f.audit.failNext = true;
+    await expect(
+      f.update.execute({
+        actor: staffActor,
+        key: 'google.places-text-search',
+        changes: { creditsPerUnit: 10 },
+      }),
+    ).rejects.toThrow('audit log down');
+    // No audit entry, no change.
+    expect((await f.tools.find('google.places-text-search'))?.creditsPerUnit).toBe(9);
+    expect(f.audit.entries).toHaveLength(1);
+  });
+
   test('a change to the same values writes no audit entry', async () => {
     const f = fixture();
     await f.update.execute({ actor: staffActor, key: 'apify.yelp', changes: { enabled: true } });
@@ -218,6 +261,15 @@ describe('FR-18: Tool availability for research', () => {
       reused: true,
       toolKey: 'google.places-text-search',
     });
+  });
+});
+
+describe('FR-32: a call whose worker stopped mid-call', () => {
+  test('a Tool call left started shows as an error without a result', async () => {
+    const f = fixture();
+    await f.calls.add([call({ status: 'started', units: 0, millicredits: 0 })]);
+    const [shown] = await f.queries.callsForRun(RUN);
+    expect(shown).toMatchObject({ status: 'error', error: STARTED_WITHOUT_RESULT });
   });
 });
 

@@ -9,6 +9,8 @@ A Research run takes 20–60 minutes, calls many providers, and must survive cra
 ## Decision
 A Research run is a BullMQ job processed by the `worker` component. The run follows its Research flow one Step at a time. Inside each Step, a Claude agent loop plans its searches and calls only that Step's allowed Tools through the metered `ToolRunner`. A Checkpoint is saved after every Step, so a retried job resumes. Guardrails (credit budget, time limit) are enforced by the runner, not by the model. Event delivery uses an outbox table relayed to the queue.
 
+*Amended 2026-11-20 (ADR 0019): Claude itself is called as a metered Tool through the `ToolRunner`, so Claude turns share the budget check, retries and stored-call reuse.*
+
 ## Alternatives considered
 - One free-form agent over all tools: less predictable cost and behaviour.
 - Fixed pipeline with no agent: can't adapt queries to what it finds.

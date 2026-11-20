@@ -198,6 +198,32 @@ describe('FR-12: Stripe webhook idempotency (MySQL)', () => {
     const purchase = await db.selectFrom('purchases').selectAll().executeTakeFirstOrThrow();
     expect(purchase).toMatchObject({ status: 'paid', stripe_event_id: 'evt_1', credits: 2500 });
   });
+
+  test('a delayed payment that fails is stored as failed, with no credits', async () => {
+    const { app, gateway } = build();
+    const pack = await app.creditPacks.ensure({
+      name: 'Starter',
+      credits: 2500,
+      priceCents: 2500,
+      active: true,
+    });
+    await app.startCheckout.execute(
+      { packId: pack.id },
+      { memberId: STAFF, businessId: BUSINESS, roles: ['owner'], emailVerified: true },
+    );
+    const sessionId = gateway.sessions[0]?.sessionId ?? '';
+    const body = Buffer.from(
+      FakePaymentGateway.completedEvent({
+        eventId: 'evt_9',
+        sessionId,
+        type: 'checkout.session.async_payment_failed',
+      }),
+    );
+    await app.handleStripeWebhook.execute({ rawBody: body, signature: FakePaymentGateway.sign(body) });
+    const purchase = await db.selectFrom('purchases').selectAll().executeTakeFirstOrThrow();
+    expect(purchase.status).toBe('failed');
+    expect((await build().billingQueries.getWallet(BUSINESS)).available).toBe(0);
+  });
 });
 
 describe('FR-10: ledger list (MySQL)', () => {

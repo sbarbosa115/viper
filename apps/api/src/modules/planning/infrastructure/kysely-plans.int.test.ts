@@ -130,6 +130,18 @@ describe('KyselyPlanRepository', () => {
     expect(second.map((p) => p.id)).toEqual(expected.slice(2));
   });
 
+  test('counts the Plans a Business created since a time (the daily cap)', async () => {
+    const start = clock.now();
+    await repo.save(newPlan(BUSINESS, 1));
+    clock.set(new Date(start.getTime() + 60_000));
+    await repo.save(newPlan(BUSINESS, 1));
+    await repo.save(newPlan(OTHER_BUSINESS, 1));
+    expect(await repo.countCreatedSince(BUSINESS, start)).toBe(2);
+    expect(await repo.countCreatedSince(BUSINESS, new Date(start.getTime() + 1))).toBe(1);
+    expect(await repo.countCreatedSince(OTHER_BUSINESS, start)).toBe(1);
+    clock.set(start);
+  });
+
   test('productInUse is scoped to the Business', async () => {
     await repo.save(newPlan(BUSINESS, 1));
     expect(await repo.productInUse(BUSINESS, CANE_SUGAR)).toBe(true);

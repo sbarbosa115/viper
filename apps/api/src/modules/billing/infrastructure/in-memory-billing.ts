@@ -37,6 +37,9 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
   state: BillingState = { ledger: [], reservations: [], packs: [], purchases: [], events: [] };
   private queue: Promise<unknown> = Promise.resolve();
 
+  /** `audit` receives the Audit entries written inside a transaction (a failed write rolls back). */
+  constructor(private readonly audit: AuditRecorder = new RecordingAuditRecorder()) {}
+
   run<T>(fn: (repos: BillingRepos) => Promise<T>): Promise<T> {
     const next = this.queue.then(async () => {
       const before = structuredClone(this.state);
@@ -192,6 +195,7 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
           return Promise.resolve();
         },
       },
+      audit: { record: (entry) => this.audit.record(entry) },
     };
   }
 
@@ -208,7 +212,14 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
 
 export class RecordingAuditRecorder implements AuditRecorder {
   readonly entries: Parameters<AuditRecorder['record']>[0][] = [];
+  /** The next write fails with this error (to test that it rolls its transaction back). */
+  failNext: Error | null = null;
   record(entry: Parameters<AuditRecorder['record']>[0]): Promise<void> {
+    if (this.failNext) {
+      const error = this.failNext;
+      this.failNext = null;
+      return Promise.reject(error);
+    }
     this.entries.push(entry);
     return Promise.resolve();
   }

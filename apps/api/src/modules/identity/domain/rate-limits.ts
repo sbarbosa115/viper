@@ -15,6 +15,11 @@ export const rateLimits = {
   verificationResendsPerDay: { max: 5, windowMs: 24 * HOUR },
   /** FR-4: 3 reset requests per email per hour. */
   resetRequestsPerEmail: { max: 3, windowMs: HOUR },
+  /**
+   * FR-5: 10 wrong two-factor codes per Staff Member per hour, across sessions (a new log-in does
+   * not reset it), lock two-factor for an hour.
+   */
+  twoFactorFailuresPerMember: { max: 10, windowMs: HOUR },
 } as const;
 
 export function windowStart(now: Date, windowMs: number): Date {

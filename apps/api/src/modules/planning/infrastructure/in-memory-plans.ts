@@ -49,6 +49,14 @@ export class InMemoryPlans implements PlanRepository, PlanningUnitOfWork {
     );
   }
 
+  countCreatedSince(businessId: string, since: Date): Promise<number> {
+    return Promise.resolve(
+      [...this.rows.values()].filter(
+        (s) => s.businessId === businessId && s.createdAt.getTime() >= since.getTime(),
+      ).length,
+    );
+  }
+
   /** Every stored Plan (assertions). */
   all(): PlanSnapshot[] {
     return [...this.rows.values()].map((r) => structuredClone(r));

@@ -10,9 +10,12 @@ import {
   apifyInstagramAdapter,
   apifyYelpAdapter,
   APIFY_ACTORS,
+  APIFY_WAIT_SECS,
   type ApifyActorRunner,
 } from './apify.js';
+import { LONGEST_TOOL_CALL_MS, LONGEST_TRY_MS } from '../../application/tool-runner.js';
 import { claudeAdapter } from './claude.js';
+import { PROVIDER_TIMEOUT_MS } from './http.js';
 import { apolloOrganizationAdapter, apolloPeopleAdapter, hunterAdapter } from './contacts.js';
 import { firecrawlAdapter } from './firecrawl.js';
 import {
@@ -582,5 +585,14 @@ describe('FR-24: Anthropic (Claude)', () => {
       model: 'claude-haiku-5-5',
       source: { name: 'Claude', url: null, retrievedAt },
     });
+  });
+});
+
+describe('FR-36: the longest Tool call', () => {
+  test('no adapter try outlasts LONGEST_TRY_MS (the lease is sized from it)', () => {
+    expect(APIFY_WAIT_SECS * 1000 + PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(LONGEST_TRY_MS);
+    // Research's Claude turns time out at 90 s.
+    expect(90_000).toBeLessThanOrEqual(LONGEST_TRY_MS);
+    expect(LONGEST_TOOL_CALL_MS).toBe(LONGEST_TRY_MS + 21_000);
   });
 });

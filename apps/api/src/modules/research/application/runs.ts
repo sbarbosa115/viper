@@ -217,11 +217,13 @@ export class RunUseCases {
       if (!found || !visible(found)) throw runNotFound(runId);
       if (found.status !== 'failed')
         throw new CodedError('RUN_NOT_FAILED', 'Only a failed run can be resumed');
-      if (await tx.runs.hasActive(found.businessId)) throw runInProgress();
       await this.deps.billing.topUpReservation(
         { runId, credits: found.resumeHoldCredits },
         tx.handle,
       );
+      // Checked under billing's wallet lock (taken by the top-up), as start() does, so a start
+      // and a resume of the same Business can't both pass.
+      if (await tx.runs.hasActive(found.businessId)) throw runInProgress();
       found.resume(now);
       await markOpenSteps(tx, runId, 'pending', null);
       await tx.runs.save(found);

@@ -281,4 +281,122 @@ describe('identity repositories (MySQL)', () => {
     expect(await db.selectFrom('businesses').select('id').execute()).toEqual([]);
     expect(await db.selectFrom('outbox').select('id').execute()).toEqual([]);
   });
+
+  test('email tokens are consumed once: a conditional UPDATE … WHERE used_at IS NULL', async () => {
+    const { member } = await seedOwner(1);
+    const token = EmailToken.issue({
+      id: ids.next(),
+      memberId: member.id,
+      purpose: 'verify',
+      tokenHash: '3'.repeat(64),
+      now,
+    });
+    await repos().emailTokens.save(token);
+    const results = await Promise.all([
+      repos().emailTokens.consume(token.id, now),
+      repos().emailTokens.consume(token.id, now),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
+    expect((await repos().emailTokens.findByHash('3'.repeat(64)))?.toSnapshot().usedAt).toEqual(now);
+  });
+
+  test('FR-2: one verification link opened twice at once verifies once (one trial grant)', async () => {
+    const s = services();
+    const uc = createIdentityUseCases(s);
+    await uc.signUp.execute({
+      businessName: 'Sweet Supply Co',
+      name: 'Sam',
+      email: 'sam@sweet.example',
+      password: 'correct horse battery',
+      ip: '1.1.1.1',
+    });
+    const token = (s.tokens as SequentialTokens).issued[0] ?? '';
+    const outcomes = await Promise.allSettled([
+      uc.verifyEmail.execute({ token }),
+      uc.verifyEmail.execute({ token }),
+    ]);
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.find((o) => o.status === 'rejected')).toMatchObject({
+      reason: { code: 'TOKEN_EXPIRED' },
+    });
+    expect(await db.selectFrom('outbox').select('id').execute()).toHaveLength(1);
+  });
+
+  test('FR-4: one reset link used twice at once sets the password once', async () => {
+    const s = services();
+    const uc = createIdentityUseCases(s);
+    await uc.signUp.execute({
+      businessName: 'Sweet Supply Co',
+      name: 'Sam',
+      email: 'sam@sweet.example',
+      password: 'correct horse battery',
+      ip: '1.1.1.1',
+    });
+    await uc.requestPasswordReset.execute({ email: 'sam@sweet.example' });
+    const token = (s.tokens as SequentialTokens).issued.at(-1) ?? '';
+    const outcomes = await Promise.allSettled([
+      uc.confirmPasswordReset.execute({ token, password: 'first new password' }),
+      uc.confirmPasswordReset.execute({ token, password: 'second new password' }),
+    ]);
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.find((o) => o.status === 'rejected')).toMatchObject({
+      reason: { code: 'TOKEN_EXPIRED' },
+    });
+    // Only the winner's session exists: the loser rolled back.
+    expect(await db.selectFrom('sessions').select('id').execute()).toHaveLength(1);
+  });
+
+  test('FR-5: two-factor codes are counted atomically per half-session', async () => {
+    const { member } = await seedOwner(1);
+    const session = Session.start({ id: 'c'.repeat(64), memberId: member.id, now });
+    await repos().sessions.save(session);
+    const counts = await Promise.all(
+      Array.from({ length: 12 }, () => repos().sessions.countTwoFactorAttempt(session.id)),
+    );
+    expect(Math.max(...counts)).toBe(12);
+    expect((await repos().sessions.findById(session.id))?.toSnapshot().twoFactorFailures).toBe(12);
+    // A whole-session save (e.g. a touch) keeps the count; passing resets it.
+    await repos().sessions.save(session);
+    expect((await repos().sessions.findById(session.id))?.toSnapshot().twoFactorFailures).toBe(12);
+    session.passTwoFactor();
+    await repos().sessions.save(session);
+    expect((await repos().sessions.findById(session.id))?.toSnapshot().twoFactorFailures).toBe(0);
+  });
+
+  test('FR-5: a TOTP step is claimed once and only forward; the lock is set once', async () => {
+    const { member } = await seedOwner(1);
+    const members = repos().members;
+    const claims = await Promise.all([
+      members.claimTotpStep(member.id, 100),
+      members.claimTotpStep(member.id, 100),
+    ]);
+    expect(claims.sort()).toEqual([false, true]);
+    expect(await members.claimTotpStep(member.id, 99)).toBe(false);
+    expect(await members.claimTotpStep(member.id, 101)).toBe(true);
+
+    const until = new Date(now.getTime() + 3_600_000);
+    expect(await members.twoFactorLockedUntil(member.id)).toBeNull();
+    const locks = await Promise.all([
+      members.lockTwoFactor(member.id, until, now),
+      members.lockTwoFactor(member.id, until, now),
+    ]);
+    expect(locks.sort()).toEqual([false, true]);
+    expect(await members.twoFactorLockedUntil(member.id)).toEqual(until);
+    const after = new Date(until.getTime() + 1);
+    expect(await members.lockTwoFactor(member.id, new Date(after.getTime() + 1000), after)).toBe(
+      true,
+    );
+  });
+
+  test('FR-5: two-factor attempts count as failures per Member until they pass', async () => {
+    const r = repos();
+    const since = new Date(now.getTime() - 3_600_000);
+    const a = await r.loginAttempts.recordTwoFactorAttempt('m-1', '1.1.1.1', now);
+    await r.loginAttempts.recordTwoFactorAttempt('m-1', '1.1.1.1', now);
+    await r.loginAttempts.recordTwoFactorAttempt('m-2', '1.1.1.1', now);
+    expect(await r.loginAttempts.countTwoFactorFailures('m-1', since)).toBe(2);
+    await r.loginAttempts.markTwoFactorPassed(a);
+    expect(await r.loginAttempts.countTwoFactorFailures('m-1', since)).toBe(1);
+    expect(await r.loginAttempts.countFailuresForEmail('m-1', since)).toBe(0);
+  });
 });

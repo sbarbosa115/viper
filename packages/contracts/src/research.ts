@@ -378,7 +378,7 @@ export const updateFlow = defineContract({
   params: flowParams,
   body: flowInput,
   response: flow,
-  errors: [err(404, 'NOT_FOUND')],
+  errors: [err(404, 'NOT_FOUND'), err(422, 'STEP_TIME_OVER_ACTIVE_TIME')],
 });
 
 export const researchContracts = {

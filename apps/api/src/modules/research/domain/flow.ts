@@ -79,6 +79,18 @@ export const ALWAYS_REQUIRED_STEPS: readonly string[] = ['maps-places', 'verify'
 
 export const BUDGET_SHARES_MESSAGE = 'Step budget shares must add up to 100%';
 
+/**
+ * The shortest worker-stopped timeout (the attempt's lease, FR-36): longer than the longest Tool
+ * call with its retry waits (the tools module's LONGEST_TOOL_CALL_MS, 4 min 51 s), so a healthy
+ * worker never loses its lease to one slow call even if a heartbeat is missed.
+ */
+export const MIN_WORKER_STOPPED_MINUTES = 5;
+
+/** The sum of the Steps' time limits, which must fit in the max active time (FR-20, FR-37). */
+export function stepTimeTotal(steps: readonly Pick<FlowStepDefinition, 'timeLimitMinutes'>[]) {
+  return steps.reduce((sum, s) => sum + s.timeLimitMinutes, 0);
+}
+
 function hours(h: number): string {
   return `${h} h`;
 }
@@ -126,6 +138,10 @@ export function validateFlowSettings(
   over('planDefaults.maxLeads', p.maxLeads, ceilings.maxLeads, `${ceilings.maxLeads} leads`);
   if (r.scoreAtMinutes > r.maxActiveMinutes) {
     errors['runSettings.scoreAtMinutes'] = 'Must be at most the max active time';
+  }
+  if (r.workerStoppedAfterMinutes < MIN_WORKER_STOPPED_MINUTES) {
+    errors['runSettings.workerStoppedAfterMinutes'] =
+      `At least ${MIN_WORKER_STOPPED_MINUTES} min (the longest Tool call with its retries)`;
   }
   if (r.maxActiveMinutes > r.maxTotalHours * 60) {
     errors['runSettings.maxActiveMinutes'] ??= 'Must be at most the max total time';

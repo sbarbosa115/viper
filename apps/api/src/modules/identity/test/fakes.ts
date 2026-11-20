@@ -12,6 +12,7 @@ import type {
   EmailTokenRepository,
   IdentityEvents,
   IdentityLogger,
+  IdentityReadRepos,
   IdentityRepos,
   IdentityServices,
   IdentityUnitOfWork,
@@ -29,7 +30,7 @@ import { EmailToken, type EmailTokenSnapshot } from '../domain/email-token.js';
 import { identityErrors } from '../domain/errors.js';
 import { Member, type MemberSnapshot } from '../domain/member.js';
 import { Session, type SessionSnapshot } from '../domain/session.js';
-import { SIGNUP_MARKER } from '../infrastructure/markers.js';
+import { SIGNUP_MARKER, twoFactorMarker } from '../infrastructure/markers.js';
 
 /** The tables, in memory. Repositories store cloned snapshots, so unsaved changes are lost. */
 export class InMemoryIdentityStore {
@@ -37,7 +38,10 @@ export class InMemoryIdentityStore {
   members = new Map<string, MemberSnapshot>();
   sessions = new Map<string, SessionSnapshot>();
   tokens = new Map<string, EmailTokenSnapshot>();
-  attempts: LoginAttempt[] = [];
+  attempts: (LoginAttempt & { id?: string })[] = [];
+  /** members.totp_last_step and members.two_factor_locked_until (FR-5). */
+  totpSteps = new Map<string, number>();
+  twoFactorLocks = new Map<string, Date>();
   /** Events published by committed units of work. */
   events: { type: keyof IdentityEvents; payload: unknown }[] = [];
 
@@ -48,6 +52,8 @@ export class InMemoryIdentityStore {
       sessions: this.sessions,
       tokens: this.tokens,
       attempts: this.attempts,
+      totpSteps: this.totpSteps,
+      twoFactorLocks: this.twoFactorLocks,
     });
   }
 
@@ -85,6 +91,14 @@ class InMemoryMembers implements MemberRepository {
   findById(id: string) {
     return Promise.resolve(this.restore(this.db.members.get(id)));
   }
+  findByIds(ids: readonly string[]) {
+    return Promise.resolve(
+      ids.flatMap((id) => {
+        const m = this.restore(this.db.members.get(id));
+        return m ? [m] : [];
+      }),
+    );
+  }
   findByEmail(email: string) {
     return Promise.resolve(
       this.restore([...this.db.members.values()].find((m) => m.email === email)),
@@ -102,6 +116,21 @@ class InMemoryMembers implements MemberRepository {
         .map((m) => Member.restore(structuredClone(m))),
     );
   }
+  claimTotpStep(memberId: string, step: number) {
+    const last = this.db.totpSteps.get(memberId);
+    if (last !== undefined && last >= step) return Promise.resolve(false);
+    this.db.totpSteps.set(memberId, step);
+    return Promise.resolve(true);
+  }
+  twoFactorLockedUntil(memberId: string) {
+    return Promise.resolve(this.db.twoFactorLocks.get(memberId) ?? null);
+  }
+  lockTwoFactor(memberId: string, until: Date, now: Date) {
+    const current = this.db.twoFactorLocks.get(memberId);
+    if (current && current > now) return Promise.resolve(false);
+    this.db.twoFactorLocks.set(memberId, until);
+    return Promise.resolve(true);
+  }
   save(member: Member) {
     const s = member.toSnapshot();
     const clash = [...this.db.members.values()].find((m) => m.email === s.email && m.id !== s.id);
@@ -117,8 +146,19 @@ class InMemorySessions implements SessionRepository {
     const s = this.db.sessions.get(id);
     return Promise.resolve(s ? Session.restore(structuredClone(s)) : null);
   }
+  countTwoFactorAttempt(id: string) {
+    const s = this.db.sessions.get(id);
+    if (!s) return Promise.resolve(0);
+    s.twoFactorFailures += 1;
+    return Promise.resolve(s.twoFactorFailures);
+  }
+  /** Like MySQL: the code count is kept (only countTwoFactorAttempt writes it) unless reset. */
   save(session: Session) {
-    this.db.sessions.set(session.id, structuredClone(session.toSnapshot()));
+    const snap = structuredClone(session.toSnapshot());
+    const stored = this.db.sessions.get(session.id);
+    if (stored && !snap.twoFactorPassed) snap.twoFactorFailures = stored.twoFactorFailures;
+    if (snap.twoFactorPassed) snap.twoFactorFailures = 0;
+    this.db.sessions.set(session.id, snap);
     return Promise.resolve();
   }
   delete(id: string) {
@@ -155,6 +195,12 @@ class InMemoryEmailTokens implements EmailTokenRepository {
   countSince(memberId: string, purpose: 'verify' | 'reset', since: Date) {
     return Promise.resolve(this.of(memberId, purpose).filter((t) => t.createdAt > since).length);
   }
+  consume(id: string, at: Date) {
+    const t = this.db.tokens.get(id);
+    if (!t || t.usedAt) return Promise.resolve(false);
+    t.usedAt = at;
+    return Promise.resolve(true);
+  }
   markAllUsed(memberId: string, purpose: 'verify' | 'reset', at: Date) {
     for (const t of this.of(memberId, purpose)) t.usedAt ??= at;
     return Promise.resolve();
@@ -181,6 +227,19 @@ class InMemoryLoginAttempts implements LoginAttemptRepository {
   }
   countSignupsForIp(ip: string, since: Date) {
     return this.count((a) => a.ip === ip && a.email === SIGNUP_MARKER, since);
+  }
+  recordTwoFactorAttempt(memberId: string, ip: string, at: Date) {
+    const id = `2fa-attempt-${this.db.attempts.length + 1}`;
+    this.db.attempts.push({ id, email: twoFactorMarker(memberId), ip, success: false, at });
+    return Promise.resolve(id);
+  }
+  markTwoFactorPassed(attemptId: string) {
+    const a = this.db.attempts.find((x) => x.id === attemptId);
+    if (a) a.success = true;
+    return Promise.resolve();
+  }
+  countTwoFactorFailures(memberId: string, since: Date) {
+    return this.count((a) => a.email === twoFactorMarker(memberId) && !a.success, since);
   }
 }
 
@@ -237,7 +296,7 @@ class InMemoryDirectory implements BusinessDirectory {
   }
 }
 
-export function inMemoryRepos(db: InMemoryIdentityStore): Omit<IdentityRepos, 'events'> {
+export function inMemoryRepos(db: InMemoryIdentityStore): IdentityReadRepos {
   return {
     businesses: new InMemoryBusinesses(db),
     members: new InMemoryMembers(db),
@@ -249,7 +308,11 @@ export function inMemoryRepos(db: InMemoryIdentityStore): Omit<IdentityRepos, 'e
 
 /** Runs the work on the in-memory store; a thrown error rolls the store back like a transaction. */
 export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
-  constructor(private readonly db: InMemoryIdentityStore) {}
+  /** `audit` receives entries written inside a unit of work (a failed write rolls it back). */
+  constructor(
+    private readonly db: InMemoryIdentityStore,
+    private readonly audit: AuditRecorder = new RecordingAudit(),
+  ) {}
 
   async run<T>(fn: (repos: IdentityRepos) => Promise<T>): Promise<T> {
     const before = this.db.snapshot();
@@ -263,6 +326,7 @@ export class InMemoryIdentityUnitOfWork implements IdentityUnitOfWork {
             return Promise.resolve();
           },
         },
+        audit: { record: (entry) => this.audit.record(entry) },
       });
       this.db.events.push(...pending);
       return result;
@@ -298,14 +362,17 @@ export class SequentialTokens implements TokenService {
   }
 }
 
-/** Accepts only `FakeTotp.validCode`; the real otplib adapter has its own test. */
+/**
+ * Accepts only `FakeTotp.validCode`, as the code of the current 30 s time step (so it can be used
+ * once per step); the real otplib adapter has its own test.
+ */
 export class FakeTotp implements TotpService {
   static readonly validCode = '123456';
   generateSecret() {
     return 'NEWSECRETNEWSECRETNEWSECRET23456';
   }
-  verify(_secret: string, code: string) {
-    return Promise.resolve(code === FakeTotp.validCode);
+  verify(_secret: string, code: string, at: Date) {
+    return Promise.resolve(code === FakeTotp.validCode ? Math.floor(at.getTime() / 30_000) : null);
   }
   otpauthUrl(secret: string, accountName: string) {
     return `otpauth://totp/Llyner%20Leads:${encodeURIComponent(accountName)}?secret=${secret}`;
@@ -326,7 +393,14 @@ export class FakeCipher implements SecretCipher {
 
 export class RecordingAudit implements AuditRecorder {
   readonly entries: Parameters<AuditRecorder['record']>[0][] = [];
+  /** The next write fails with this error (to test that it rolls its transaction back). */
+  failNext: Error | null = null;
   record(entry: Parameters<AuditRecorder['record']>[0]) {
+    if (this.failNext) {
+      const error = this.failNext;
+      this.failNext = null;
+      return Promise.reject(error);
+    }
     this.entries.push(entry);
     return Promise.resolve();
   }
@@ -354,9 +428,10 @@ export const testNow = new Date('2026-11-19T10:00:00.000Z');
 /** Identity services on in-memory fakes, with a fixed clock. */
 export function fakeIdentity(overrides: Partial<IdentityServices> = {}): FakeIdentity {
   const store = new InMemoryIdentityStore();
+  const audit = overrides.audit ?? new RecordingAudit();
   return {
     store,
-    uow: new InMemoryIdentityUnitOfWork(store),
+    uow: new InMemoryIdentityUnitOfWork(store, audit),
     repos: inMemoryRepos(store),
     directory: new InMemoryDirectory(store),
     clock: new FixedClock(testNow),
@@ -365,7 +440,7 @@ export function fakeIdentity(overrides: Partial<IdentityServices> = {}): FakeIde
     tokens: new SequentialTokens(),
     totp: new FakeTotp(),
     cipher: new FakeCipher(),
-    audit: new RecordingAudit(),
+    audit,
     analytics: new RecordingAnalyticsTracker(),
     email: new InMemoryEmailSender(),
     logger: new RecordingLogger(),

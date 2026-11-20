@@ -45,7 +45,11 @@ import {
   REPLY_TOOL_NAME,
   replySystemPrompt,
   replyTool,
+  VERIFY_EMAIL_FIRST,
 } from './prompts/welcome-reply.v1.js';
+
+/** draftPlan's answer when planning refuses an unverified Owner (403 EMAIL_NOT_VERIFIED). */
+const EMAIL_NOT_VERIFIED = Symbol('EMAIL_NOT_VERIFIED');
 
 export interface WelcomeChatDeps {
   conversations: ConversationRepository;
@@ -272,20 +276,26 @@ export class WelcomeChat {
           ).profile;
 
     const goal = clip(extracted.goal, 500);
-    const planId =
+    const drafted =
       asked === 'goal' && profile.complete && goal !== null && goal.length >= 5
         ? await this.draftPlan(actor, goal, userMessage.id)
         : null;
+    const planId = typeof drafted === 'string' ? drafted : null;
 
     const topic: Topic = planId
       ? 'planCreated'
-      : located.candidates.length > 0
-        ? 'locationConfirm'
-        : nextTopic(progressOf(profile), askedTopics);
+      : drafted === EMAIL_NOT_VERIFIED
+        ? 'goal'
+        : located.candidates.length > 0
+          ? 'locationConfirm'
+          : nextTopic(progressOf(profile), askedTopics);
     const answer =
       topic === 'planCreated'
         ? { text: FALLBACK_QUESTION.planCreated, quickReplies: [] }
-        : await this.reply(actor, profile, topic, located, [...earlier, userMessage]);
+        : drafted === EMAIL_NOT_VERIFIED && goal !== null
+          ? // The goal stays a quick reply, so sending it again after verifying is one tap.
+            shapeReply(VERIFY_EMAIL_FIRST, [goal])
+          : await this.reply(actor, profile, topic, located, [...earlier, userMessage]);
 
     const assistantMessage: MessageRecord = {
       id: this.deps.ids.next(),
@@ -477,10 +487,21 @@ export class WelcomeChat {
     return updates;
   }
 
-  private async draftPlan(actor: Actor, goal: string, messageId: string): Promise<string> {
+  /**
+   * The new Plan's id, or EMAIL_NOT_VERIFIED when planning refuses an unverified Owner (the turn
+   * then asks them to verify instead of failing).
+   */
+  private async draftPlan(
+    actor: Actor,
+    goal: string,
+    messageId: string,
+  ): Promise<string | typeof EMAIL_NOT_VERIFIED> {
     try {
       return (await this.deps.planDrafter.draftFromGoal(actor, goal)).planId;
     } catch (error) {
+      if (error instanceof AppError && error.code === 'EMAIL_NOT_VERIFIED') {
+        return EMAIL_NOT_VERIFIED;
+      }
       if (
         error instanceof LlmUnavailableError ||
         (error instanceof AppError && error.code === 'ASSISTANT_UNAVAILABLE')

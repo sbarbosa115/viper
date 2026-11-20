@@ -36,6 +36,7 @@ export function identityWorld(services: FakeIdentity = fakeIdentity()) {
       const me = await useCases.verifyTwoFactor.execute({
         token: half.sessionToken,
         code: FakeTotp.validCode,
+        ip: '1.1.1.1',
       });
       return { me, sessionToken: half.sessionToken };
     },

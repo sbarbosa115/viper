@@ -1,12 +1,14 @@
 import type { Worker } from 'bullmq';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
+import type { Transaction } from 'kysely';
 import type { Logger } from 'pino';
 import type { AnalyticsTracker } from '../../shared/application/analytics-tracker.js';
 import type { EmailSender } from '../../shared/application/email-sender.js';
 import type { Clock } from '../../shared/domain/clock.js';
 import type { IdGenerator } from '../../shared/domain/id-generator.js';
 import type { Database } from '../../shared/infrastructure/db/database.js';
+import type { DB } from '../../shared/infrastructure/db/schema.js';
 import { KyselyUnitOfWork } from '../../shared/infrastructure/db/unit-of-work.js';
 import type { OutboxSubscription } from '../../shared/infrastructure/outbox/index.js';
 import { AuditLog, ListAuditLog, type AuditRecorder } from './application/audit-log.js';
@@ -92,6 +94,7 @@ export function createAuditLog(deps: {
 }): AuditRecorder {
   return new AuditLog({
     repository: new KyselyAuditLogRepository(deps.db),
+    repositoryWithin: (trx) => new KyselyAuditLogRepository(trx as Transaction<DB>),
     clock: deps.clock,
     ids: deps.ids,
   });

@@ -115,6 +115,23 @@ export class KyselyToolCallRepository implements ToolCallRepository {
       .execute();
   }
 
+  async complete(r: ToolCallRecord): Promise<void> {
+    await this.db
+      .updateTable('tool_calls')
+      .set({
+        output: r.output === null || r.output === undefined ? null : JSON.stringify(r.output),
+        units: r.units,
+        millicredits: r.millicredits,
+        provider_cost_micros: r.providerCostMicros,
+        status: r.status,
+        error: r.error,
+        duration_ms: r.durationMs,
+      })
+      .where('id', '=', r.id)
+      .where('status', '=', 'started')
+      .execute();
+  }
+
   async findReusable(q: {
     runId: string;
     stepKey: string | null;

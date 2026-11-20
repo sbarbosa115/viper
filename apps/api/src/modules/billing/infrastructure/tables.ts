@@ -50,7 +50,7 @@ export interface PurchasesTable {
   stripe_event_id: string | null;
   amount_cents: number;
   tax_cents: Generated<number>;
-  status: 'pending' | 'paid';
+  status: 'pending' | 'paid' | 'failed';
   created_at: Timestamp;
   paid_at: Timestamp | null;
 }

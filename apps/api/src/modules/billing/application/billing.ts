@@ -2,14 +2,13 @@ import type { AnalyticsTracker } from '../../../shared/application/analytics-tra
 import type { Clock } from '../../../shared/domain/clock.js';
 import type { IdGenerator } from '../../../shared/domain/id-generator.js';
 import type {
-  AuditRecorder,
   BillingReadModel,
   BillingUnitOfWork,
   BusinessDirectory,
   PaymentGateway,
   TrialCreditsSetting,
 } from './ports.js';
-import { FulfilPurchase, HandleStripeWebhook, StartCheckout } from './purchases.js';
+import { FailPurchase, FulfilPurchase, HandleStripeWebhook, StartCheckout } from './purchases.js';
 import { ReservationCommands } from './reservations.js';
 import { AdjustCredits, ManageCreditPacks } from './staff.js';
 import { GrantTrialCredits } from './trial-credits.js';
@@ -22,7 +21,6 @@ export interface BillingApplicationDeps {
   ids: IdGenerator;
   analytics: AnalyticsTracker;
   gateway: PaymentGateway;
-  audit: AuditRecorder;
   businesses: BusinessDirectory;
   trialCredits: TrialCreditsSetting;
   appUrl: string;
@@ -39,7 +37,11 @@ export function createBillingApplication(deps: BillingApplicationDeps) {
     creditPacks: new ManageCreditPacks(deps),
     startCheckout: new StartCheckout(deps),
     fulfilPurchase,
-    handleStripeWebhook: new HandleStripeWebhook({ gateway: deps.gateway, fulfilPurchase }),
+    handleStripeWebhook: new HandleStripeWebhook({
+      gateway: deps.gateway,
+      fulfilPurchase,
+      failPurchase: new FailPurchase(deps),
+    }),
   };
 }
 

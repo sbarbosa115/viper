@@ -8,6 +8,7 @@ import type {
   FastifyRequest,
 } from 'fastify';
 import { setSessionCookie } from '../modules/identity/index.js';
+import { clientIp } from '../shared/http/client-ip.js';
 import {
   emptyCard,
   legalSlugs,
@@ -249,7 +250,7 @@ function registerSite(app: FastifyInstance, deps: SiteDeps): void {
     try {
       const result = await deps.identity.signUp.execute({
         ...parsed.data,
-        ip: req.ip,
+        ip: clientIp(req),
         source: 'landing',
       });
       setSessionCookie(reply, result.sessionToken, { secure: deps.secureCookies });
@@ -280,7 +281,7 @@ function registerSite(app: FastifyInstance, deps: SiteDeps): void {
     try {
       const { me, sessionToken } = await deps.identity.logIn.execute({
         ...parsed.data,
-        ip: req.ip,
+        ip: clientIp(req),
       });
       setSessionCookie(reply, sessionToken, { secure: deps.secureCookies });
       const twoFactorPending = me.twoFactor.required && !me.twoFactor.passed;

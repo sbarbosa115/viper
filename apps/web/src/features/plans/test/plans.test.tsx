@@ -175,6 +175,62 @@ describe('FR-16: create a Plan from a Goal', () => {
     expect(await screen.findByText('Chat page')).toBeInTheDocument();
   });
 
+  test('403 EMAIL_NOT_VERIFIED asks to verify, and Resend sends a new link', async () => {
+    let resent = 0;
+    server.use(
+      http.post('*/api/plans', () =>
+        HttpResponse.json(
+          errorResponse.parse({
+            error: { code: 'EMAIL_NOT_VERIFIED', message: 'Verify your email to create a Plan' },
+          }),
+          { status: 403 },
+        ),
+      ),
+      http.post('*/api/auth/verify-email/resend', () => {
+        resent += 1;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+    renderPlans('/plans/new');
+    const goal = await screen.findByLabelText('Who would you like to find?');
+    await userEvent.type(goal, 'bakeries nearby');
+    await userEvent.click(screen.getByRole('button', { name: 'Draft plan' }));
+    expect(await screen.findByText(/Verify your email to draft a plan/)).toBeInTheDocument();
+    expect(screen.getByText(/50 free credits/)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't draft your plan just now/)).not.toBeInTheDocument();
+    expect(goal).toHaveValue('bakeries nearby');
+    await userEvent.click(screen.getByRole('button', { name: 'Resend email' }));
+    expect(await screen.findByText(/Link sent\. Check your inbox\./)).toBeInTheDocument();
+    expect(resent).toBe(1);
+  });
+
+  test('429 TOO_MANY_REQUESTS shows the daily limit of new plans', async () => {
+    server.use(
+      http.post('*/api/plans', () =>
+        HttpResponse.json(
+          errorResponse.parse({
+            error: {
+              code: 'TOO_MANY_REQUESTS',
+              message: "That's enough new Plans for today.",
+              details: { limit: 30 },
+            },
+          }),
+          { status: 429 },
+        ),
+      ),
+    );
+    renderPlans('/plans/new');
+    await userEvent.type(
+      await screen.findByLabelText('Who would you like to find?'),
+      'bakeries nearby',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Draft plan' }));
+    expect(
+      await screen.findByText("You've reached today's limit of 30 new plans. Try again tomorrow."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't draft your plan just now/)).not.toBeInTheDocument();
+  });
+
   test('a goal under 5 characters is rejected before calling the API', async () => {
     renderPlans('/plans/new');
     await userEvent.type(await screen.findByLabelText('Who would you like to find?'), 'bak');

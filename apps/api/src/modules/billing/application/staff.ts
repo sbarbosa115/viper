@@ -10,7 +10,8 @@ import {
 import { ledgerEntry } from '../domain/ledger-entry.js';
 import { requireStaff } from './policies.js';
 import type {
-  AuditRecorder,
+  AuditEntry,
+  BillingRepos,
   BillingUnitOfWork,
   BusinessDirectory,
   CreditPackRepository,
@@ -28,14 +29,22 @@ interface Deps {
   uow: BillingUnitOfWork;
   clock: Clock;
   ids: IdGenerator;
-  audit: AuditRecorder;
   businesses: BusinessDirectory;
+}
+
+interface AdjustmentCommand {
+  businessId: string;
+  credits: number;
+  reason: string;
+  memberId: string | null;
+  idempotencyKey?: string;
 }
 
 /** FR-13: Staff add or remove credits with a reason (Ledger `adjustment`). */
 export class AdjustCredits {
   constructor(private readonly deps: Deps) {}
 
+  /** The adjustment and its Audit entry commit together (FR-7). */
   async execute(
     cmd: { businessId: string; credits: number; reason: string },
     actor: Actor,
@@ -44,53 +53,55 @@ export class AdjustCredits {
     if (!(await this.deps.businesses.exists(cmd.businessId))) {
       throw new NotFoundError('Business not found', { businessId: cmd.businessId });
     }
-    const entry = await this.apply({ ...cmd, memberId: actor.memberId });
-    await this.deps.audit.record({
-      staffMemberId: actor.memberId,
-      businessId: cmd.businessId,
-      action: 'credits.adjusted',
-      targetType: 'credit_ledger',
-      targetId: entry.id,
-      details: { credits: cmd.credits, reason: entry.description },
+    return this.deps.uow.run(async (repos) => {
+      const entry = await this.write(repos, { ...cmd, memberId: actor.memberId });
+      await repos.audit.record({
+        staffMemberId: actor.memberId,
+        businessId: cmd.businessId,
+        action: 'credits.adjusted',
+        targetType: 'credit_ledger',
+        targetId: entry.id,
+        details: { credits: cmd.credits, reason: entry.description },
+      });
+      return entry;
     });
-    return entry;
   }
 
   /**
-   * Writes the adjustment; a removal can't take available below 0 (INSUFFICIENT_CREDITS). With an
-   * idempotency key (the demo seed), a repeat returns the entry already written.
+   * Writes the adjustment without an Audit entry (the seed and system grants). With an
+   * idempotency key, a repeat returns the entry already written.
    */
-  apply(cmd: {
-    businessId: string;
-    credits: number;
-    reason: string;
-    memberId: string | null;
-    idempotencyKey?: string;
-  }): Promise<LedgerEntryView> {
-    return this.deps.uow.run(async ({ wallets, ledger }) => {
-      const wallet = await wallets.lock(cmd.businessId);
-      if (cmd.idempotencyKey) {
-        const existing = await ledger.findByIdempotencyKey(cmd.idempotencyKey);
-        if (existing) return toLedgerEntryView(existing);
-      }
-      if (cmd.credits < 0) wallet.assertCovers(-cmd.credits);
-      const entry = ledgerEntry({
-        id: this.deps.ids.next(),
-        businessId: cmd.businessId,
-        type: 'adjustment',
-        credits: cmd.credits,
-        description: cmd.reason,
-        idempotencyKey: cmd.idempotencyKey ?? null,
-        createdByMemberId: cmd.memberId,
-        createdAt: this.deps.clock.now(),
-      });
-      await ledger.append(entry);
-      return toLedgerEntryView(entry);
+  apply(cmd: AdjustmentCommand): Promise<LedgerEntryView> {
+    return this.deps.uow.run((repos) => this.write(repos, cmd));
+  }
+
+  /** A removal can't take available below 0 (INSUFFICIENT_CREDITS). */
+  private async write(
+    { wallets, ledger }: BillingRepos,
+    cmd: AdjustmentCommand,
+  ): Promise<LedgerEntryView> {
+    const wallet = await wallets.lock(cmd.businessId);
+    if (cmd.idempotencyKey) {
+      const existing = await ledger.findByIdempotencyKey(cmd.idempotencyKey);
+      if (existing) return toLedgerEntryView(existing);
+    }
+    if (cmd.credits < 0) wallet.assertCovers(-cmd.credits);
+    const entry = ledgerEntry({
+      id: this.deps.ids.next(),
+      businessId: cmd.businessId,
+      type: 'adjustment',
+      credits: cmd.credits,
+      description: cmd.reason,
+      idempotencyKey: cmd.idempotencyKey ?? null,
+      createdByMemberId: cmd.memberId,
+      createdAt: this.deps.clock.now(),
     });
+    await ledger.append(entry);
+    return toLedgerEntryView(entry);
   }
 }
 
-/** FR-13: Staff manage Credit packs; every change goes to the Audit log. */
+/** FR-13: Staff manage Credit packs; every change and its Audit entry commit together. */
 export class ManageCreditPacks {
   constructor(private readonly deps: Omit<Deps, 'businesses'>) {}
 
@@ -103,22 +114,24 @@ export class ManageCreditPacks {
 
   async create(details: CreditPackDetails, actor: Actor): Promise<CreditPackView> {
     requireStaff(actor);
-    const pack = await this.createPack(details);
-    await this.audit(actor, 'credit_pack.created', pack);
-    return pack;
+    return this.deps.uow.run(async ({ packs, audit }) => {
+      const pack = await this.createIn(packs, details);
+      await audit.record(packAudit(actor, 'credit_pack.created', pack));
+      return pack;
+    });
   }
 
   async update(id: string, details: CreditPackDetails, actor: Actor): Promise<CreditPackView> {
     requireStaff(actor);
-    const pack = await this.deps.uow.run(async ({ packs }) => {
+    return this.deps.uow.run(async ({ packs, audit }) => {
       const found = await packs.findById(id);
       if (!found) throw new NotFoundError('Credit pack not found', { id });
       found.change(details);
       await packs.save(found);
-      return packView(found);
+      const pack = packView(found);
+      await audit.record(packAudit(actor, 'credit_pack.updated', pack));
+      return pack;
     });
-    await this.audit(actor, 'credit_pack.updated', pack);
-    return pack;
   }
 
   /** Creates a pack unless one with the same name exists (the seed relies on this). */
@@ -127,10 +140,6 @@ export class ManageCreditPacks {
       const found = await packs.findByName(details.name);
       return found ? packView(found) : this.createIn(packs, details);
     });
-  }
-
-  private createPack(details: CreditPackDetails): Promise<CreditPackView> {
-    return this.deps.uow.run(({ packs }) => this.createIn(packs, details));
   }
 
   private async createIn(
@@ -145,20 +154,20 @@ export class ManageCreditPacks {
     await packs.save(pack);
     return packView(pack);
   }
+}
 
-  private audit(actor: Actor, action: string, pack: CreditPackView): Promise<void> {
-    return this.deps.audit.record({
-      staffMemberId: actor.memberId,
-      businessId: null,
-      action,
-      targetType: 'credit_pack',
-      targetId: pack.id,
-      details: {
-        name: pack.name,
-        credits: pack.credits,
-        priceCents: pack.priceCents,
-        active: pack.active,
-      },
-    });
-  }
+function packAudit(actor: Actor, action: string, pack: CreditPackView): AuditEntry {
+  return {
+    staffMemberId: actor.memberId,
+    businessId: null,
+    action,
+    targetType: 'credit_pack',
+    targetId: pack.id,
+    details: {
+      name: pack.name,
+      credits: pack.credits,
+      priceCents: pack.priceCents,
+      active: pack.active,
+    },
+  };
 }

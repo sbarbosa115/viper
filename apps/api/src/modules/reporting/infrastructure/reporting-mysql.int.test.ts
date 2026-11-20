@@ -41,14 +41,15 @@ function reportingOnMySql() {
     analytics: noAnalytics,
     plans: { findPlan: () => Promise.resolve(null) },
   });
+  // The Audit log identity writes Staff changes to, in the change's transaction.
+  const audit = new RecordingAudit();
   const sources = mysqlSources({
-    identity: createIdentityQueries({ db, clock, ids }),
+    identity: createIdentityQueries({ db, clock, ids, audit }),
     billing: billing.billingQueries,
     research: createResearchReportingQueries({ db, clock, ids }),
     leads: leads.leadsQueries,
     tools: createToolQueries({ db, settings: noProviderSettings }),
   });
-  const audit = new RecordingAudit();
   return { reporting: createReporting({ ...sources, audit, clock }), audit };
 }
 

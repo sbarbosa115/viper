@@ -24,9 +24,13 @@ export interface AuditRecord {
   readonly details?: Readonly<Record<string, unknown>>;
 }
 
-/** The Audit log's write side, used by every module for Staff actions (FR-7). Append-only. */
+/**
+ * The Audit log's write side, used by every module for Staff actions (FR-7). Append-only.
+ * `within` is the caller's open database transaction: the entry commits (or rolls back) with the
+ * change it describes.
+ */
 export interface AuditRecorder {
-  record(entry: AuditRecord): Promise<void>;
+  record(entry: AuditRecord, within?: object): Promise<void>;
 }
 
 export function auditEntry(
@@ -47,11 +51,21 @@ export function auditEntry(
 
 export class AuditLog implements AuditRecorder {
   constructor(
-    private readonly deps: { repository: AuditLogRepository; clock: Clock; ids: IdGenerator },
+    private readonly deps: {
+      repository: AuditLogRepository;
+      clock: Clock;
+      ids: IdGenerator;
+      /** The repository on a caller's transaction (absent: `within` is not supported). */
+      repositoryWithin?: (within: object) => AuditLogRepository;
+    },
   ) {}
 
-  record(record: AuditRecord): Promise<void> {
-    return this.deps.repository.append(auditEntry(record, this.deps));
+  record(record: AuditRecord, within?: object): Promise<void> {
+    const repository =
+      within && this.deps.repositoryWithin
+        ? this.deps.repositoryWithin(within)
+        : this.deps.repository;
+    return repository.append(auditEntry(record, this.deps));
   }
 }
 

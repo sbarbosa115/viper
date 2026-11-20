@@ -167,6 +167,33 @@ describe('FR-37: research flows list and editor', () => {
     expect(screen.getByText('Too high')).toBeInTheDocument();
   });
 
+  test('shows the server 422 STEP_TIME_OVER_ACTIVE_TIME message under the steps', async () => {
+    const user = await open();
+    server.use(
+      http.put('*/api/staff/flows/:key', () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'STEP_TIME_OVER_ACTIVE_TIME',
+              message: 'Step time limits add up to 61 min, more than the max active time (60 min)',
+              details: { field: 'steps', totalMinutes: 61, maxActiveMinutes: 60 },
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save as v4' }));
+    const steps = screen.getByRole('region', { name: 'Steps' });
+    expect(
+      await within(steps).findByText(
+        'Step time limits add up to 61 min, more than the max active time (60 min)',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Fix the marked fields and save again.')).toBeInTheDocument();
+    expect(screen.queryByText('We could not save this flow. Try again.')).not.toBeInTheDocument();
+  });
+
   test('Discard restores the saved values', async () => {
     const user = await open();
     const input = screen.getByLabelText('Max active work time');

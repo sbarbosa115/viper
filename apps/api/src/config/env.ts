@@ -15,6 +15,22 @@ const schema = z
     APP_URL: z.url().default('http://localhost:5173'),
     SENTRY_DSN: z.string().optional(),
     TOOLS_MODE: z.enum(['live', 'fake']).default('live'),
+    /**
+     * Proxy hops in front of the api whose `X-Forwarded-For` entries are trusted (1: App
+     * Platform's edge, or Vite's proxy locally). Unset means 1. Never trust every hop: the
+     * left-most entry is whatever the client sent.
+     */
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),
+    /**
+     * A header the edge sets with the client's address and overwrites when a client sends it
+     * (`do-connecting-ip` on App Platform). Preferred over `X-Forwarded-For` when present.
+     */
+    CLIENT_IP_HEADER: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^[a-z0-9-]+$/, 'must be a header name')
+      .optional(),
     /** Test-only routes (e.g. the fake Stripe completion used by e2e). Never in production. */
     ENABLE_TEST_HOOKS: z.stringbool().default(false),
   })

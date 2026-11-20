@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { buildTestApp } from '../../../test/build-test-app.js';
 import type { AppModule } from '../../app.js';
-import { ConflictError, ForbiddenError } from '../domain/errors.js';
+import { CodedError, ConflictError, ForbiddenError } from '../domain/errors.js';
 
 const probeModule: AppModule = {
   name: 'probe',
@@ -18,6 +18,9 @@ const probeModule: AppModule = {
     });
     app.get('/secret', { preHandler: app.authenticate }, () => {
       throw new ForbiddenError('Nope');
+    });
+    app.get('/step-time', () => {
+      throw new CodedError('STEP_TIME_OVER_ACTIVE_TIME', 'Too long', { totalMinutes: 61 });
     });
     app.get('/boom', () => {
       throw new Error('internal detail');
@@ -40,6 +43,17 @@ describe('shared kernel: central error handler', () => {
     const res = await app.inject({ method: 'GET', url: '/api/conflict' });
     expect(res.statusCode).toBe(409);
     expect(errorResponse.parse(res.json()).error.code).toBe('CONFLICT');
+  });
+
+  test('STEP_TIME_OVER_ACTIVE_TIME maps to 422 with its details', async () => {
+    const app = await buildTestApp({ modules: [probeModule] });
+    const res = await app.inject({ method: 'GET', url: '/api/step-time' });
+    expect(res.statusCode).toBe(422);
+    expect(errorResponse.parse(res.json()).error).toEqual({
+      code: 'STEP_TIME_OVER_ACTIVE_TIME',
+      message: 'Too long',
+      details: { totalMinutes: 61 },
+    });
   });
 
   test('authenticate gives 401 without an actor', async () => {

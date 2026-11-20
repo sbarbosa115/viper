@@ -86,14 +86,24 @@ export class InMemoryResearchStore implements ResearchStore {
     this.afterCommit.push(fn);
   }
 
+  private open = 0;
+
+  /** True while a transaction runs (tests: nothing slow may happen inside one). */
+  get inTransaction(): boolean {
+    return this.open > 0;
+  }
+
   async transaction<T>(fn: (tx: ResearchTx) => Promise<T>): Promise<T> {
     const before = structuredClone(this.state);
     let result: T;
+    this.open += 1;
     try {
       result = await fn(this.tx());
     } catch (error) {
       this.state = before;
       throw error;
+    } finally {
+      this.open -= 1;
     }
     for (const hook of this.afterCommit.splice(0)) await hook();
     return result;
@@ -323,6 +333,10 @@ export class InMemoryResearchStore implements ResearchStore {
               ),
             ).slice(0, limit),
           ),
+        findForUpdate: (runId, n) => {
+          const a = st().attempts.find((x) => x.runId === runId && x.n === n);
+          return Promise.resolve(a ? structuredClone(a) : null);
+        },
         renewLease: (runId, n, owner, until) => {
           const a = st().attempts.find((x) => x.runId === runId && x.n === n);
           if (a?.status !== 'running' || a.leaseOwner !== owner) return Promise.resolve(false);

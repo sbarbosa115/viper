@@ -47,6 +47,7 @@ export function kyselyIdentityServices(deps: KyselyIdentityDeps): IdentityServic
     uow: new KyselyUnitOfWork<IdentityRepos>(deps.db, (trx) => ({
       ...kyselyIdentityRepos(trx, newId),
       events: { publish: (type, payload) => outbox.add(trx, type, payload) },
+      audit: { record: (entry) => deps.audit.record(entry, trx) },
     })),
     repos: kyselyIdentityRepos(deps.db, newId),
     directory: new KyselyBusinessDirectory(deps.db),

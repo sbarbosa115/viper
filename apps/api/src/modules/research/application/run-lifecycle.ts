@@ -16,7 +16,8 @@ export type RunOutcome = 'completed' | 'failed' | 'cancelled';
 
 /**
  * Ends a run (FR-20): Settlement through billing in the same transaction (failure policy: a
- * failed run with no Leads costs nothing), then the outbox event for emails (FR-22).
+ * failed run with no Leads costs nothing), then the outbox event for emails (FR-22). Spend waived
+ * by an earlier 0-Lead failure stays waived: a resumed run is charged only what it spent after.
  */
 export async function finishRun(
   tx: ResearchTx,
@@ -28,10 +29,11 @@ export async function finishRun(
 ): Promise<void> {
   const s = run.toSnapshot();
   const credits = chargeableCredits({
-    millicreditsSpent: s.millicreditsSpent,
+    millicreditsSpent: run.chargeableMillicredits,
     outcome,
     leadsDelivered: s.leadsDelivered,
   });
+  if (outcome === 'failed' && s.leadsDelivered === 0) run.waiveSpend();
   if (outcome === 'completed') run.complete(now, credits);
   else if (outcome === 'cancelled') run.cancel(now, credits);
   else run.fail(code ?? 'INTERNAL_ERROR', now, credits);

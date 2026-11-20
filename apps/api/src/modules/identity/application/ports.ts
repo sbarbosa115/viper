@@ -21,16 +21,35 @@ export interface BusinessRepository {
 
 export interface MemberRepository {
   findById(id: string): Promise<Member | null>;
+  /** Batch lookup (missing ids are skipped, order not guaranteed). */
+  findByIds(ids: readonly string[]): Promise<Member[]>;
   /** `email` is already lowercased. */
   findByEmail(email: string): Promise<Member | null>;
   findOwnerOf(businessId: string): Promise<Member | null>;
   findOwnersOf(businessIds: readonly string[]): Promise<Member[]>;
   /** Inserting a second Member with the same email throws EMAIL_TAKEN. */
   save(member: Member): Promise<void>;
+  /**
+   * FR-5 replay guard: records the TOTP time step a code just matched, atomically, only if it is
+   * newer than the last one used. False when it is not (the code was already used).
+   */
+  claimTotpStep(memberId: string, step: number): Promise<boolean>;
+  /** When the Member's two-factor lock ends; null when not locked (or never was). */
+  twoFactorLockedUntil(memberId: string): Promise<Date | null>;
+  /**
+   * Locks two-factor until `until` unless a lock is already running at `now`. True only for the
+   * call that set the lock, so the lock-out is audited once.
+   */
+  lockTwoFactor(memberId: string, until: Date, now: Date): Promise<boolean>;
 }
 
 export interface SessionRepository {
   findById(id: string): Promise<Session | null>;
+  /**
+   * FR-5: counts one two-factor code against the half-session, atomically (an SQL increment),
+   * and returns the count including it. Concurrent guesses each get their own number.
+   */
+  countTwoFactorAttempt(id: string): Promise<number>;
   save(session: Session): Promise<void>;
   delete(id: string): Promise<void>;
   /** Signs the Member out everywhere, optionally keeping one session. */
@@ -42,6 +61,11 @@ export interface EmailTokenRepository {
   save(token: EmailToken): Promise<void>;
   latestCreatedAt(memberId: string, purpose: EmailTokenPurpose): Promise<Date | null>;
   countSince(memberId: string, purpose: EmailTokenPurpose, since: Date): Promise<number>;
+  /**
+   * Marks the token used only if it still is unused (`UPDATE … WHERE used_at IS NULL`). False when
+   * another request used it first, so a link works once even when opened twice at the same time.
+   */
+  consume(id: string, at: Date): Promise<boolean>;
   /** Single use: a used reset link voids the Member's other reset links. */
   markAllUsed(memberId: string, purpose: EmailTokenPurpose, at: Date): Promise<void>;
 }
@@ -53,13 +77,23 @@ export interface LoginAttempt {
   at: Date;
 }
 
-/** `login_attempts` (FR-3), also counting sign-ups per IP (FR-1) under a marker email. */
+/**
+ * `login_attempts` (FR-3), also counting sign-ups per IP (FR-1) and Staff two-factor codes per
+ * Member (FR-5) under marker emails.
+ */
 export interface LoginAttemptRepository {
   record(attempt: LoginAttempt): Promise<void>;
   countFailuresForEmail(email: string, since: Date): Promise<number>;
   countFailuresForIp(ip: string, since: Date): Promise<number>;
   recordSignup(ip: string, at: Date): Promise<void>;
   countSignupsForIp(ip: string, since: Date): Promise<number>;
+  /**
+   * Records a two-factor code as a failure before it is checked (so concurrent guesses count) and
+   * returns the attempt's id; `markTwoFactorPassed` turns it into a success.
+   */
+  recordTwoFactorAttempt(memberId: string, ip: string, at: Date): Promise<string>;
+  markTwoFactorPassed(attemptId: string): Promise<void>;
+  countTwoFactorFailures(memberId: string, since: Date): Promise<number>;
 }
 
 export interface BusinessListItem {
@@ -114,7 +148,12 @@ export interface IdentityRepos {
   loginAttempts: LoginAttemptRepository;
   /** Bound to the transaction: published if and only if it commits. */
   events: EventPublisher<IdentityEvents>;
+  /** The Audit log, bound to the transaction: a Staff change and its entry commit together. */
+  audit: { record(entry: AuditEntry): Promise<void> };
 }
+
+/** The repositories outside a transaction (reads, and single-statement writes). */
+export type IdentityReadRepos = Omit<IdentityRepos, 'events' | 'audit'>;
 
 export type IdentityUnitOfWork = UnitOfWork<IdentityRepos>;
 
@@ -135,8 +174,8 @@ export interface TokenService {
 
 export interface TotpService {
   generateSecret(): string;
-  /** RFC 6238, 30 s, 6 digits, ±1 step. */
-  verify(secret: string, code: string, at: Date): Promise<boolean>;
+  /** RFC 6238, 30 s, 6 digits, ±1 step. The time step the code matched, or null when wrong. */
+  verify(secret: string, code: string, at: Date): Promise<number | null>;
   otpauthUrl(secret: string, accountName: string): string;
   qrSvg(otpauthUrl: string): Promise<string>;
 }
@@ -147,16 +186,21 @@ export interface SecretCipher {
   decrypt(cipher: string): string;
 }
 
-/** Implemented by platform (FR-7): append-only record of Staff access and changes. */
+export interface AuditEntry {
+  staffMemberId: string;
+  businessId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  details: Record<string, unknown>;
+}
+
+/**
+ * Implemented by platform (FR-7): append-only record of Staff access and changes. With `within`
+ * (identity's open transaction) the entry is written in that transaction.
+ */
 export interface AuditRecorder {
-  record(entry: {
-    staffMemberId: string;
-    businessId: string | null;
-    action: string;
-    targetType: string;
-    targetId: string | null;
-    details: Record<string, unknown>;
-  }): Promise<void>;
+  record(entry: AuditEntry, within?: object): Promise<void>;
 }
 
 /** Minimal logger (pino-compatible) for failures that must not fail the request. */
@@ -168,7 +212,7 @@ export interface IdentityLogger {
 export interface IdentityServices {
   uow: IdentityUnitOfWork;
   /** Non-transactional repositories for reads (the session lookup on every request). */
-  repos: Omit<IdentityRepos, 'events'>;
+  repos: IdentityReadRepos;
   directory: BusinessDirectory;
   clock: Clock;
   ids: IdGenerator;

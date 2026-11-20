@@ -20,7 +20,8 @@ export function mysqlSources(modules: ModuleQueries): ReportingSources {
       listBusinesses: (q) => modules.identity.listBusinesses(q),
       getBusiness: (id) => modules.identity.getBusiness(id),
       getOwnerContact: (id) => modules.identity.getOwnerContact(id),
-      setBusinessInternal: (id, internal) => modules.identity.setBusinessInternal(id, internal),
+      setBusinessInternal: (id, internal, by) =>
+        modules.identity.setBusinessInternal(id, internal, by),
     },
     billing: {
       creditsSummary: (f) => modules.billing.creditsSummary(f),

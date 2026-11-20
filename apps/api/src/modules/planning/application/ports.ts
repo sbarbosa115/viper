@@ -22,6 +22,8 @@ export interface PlanRepository {
   ): Promise<PlanSnapshot[]>;
   /** True when any Target segment of the Business's Plans pitches the Product. */
   productInUse(businessId: string, productId: string): Promise<boolean>;
+  /** Plans the Business created at or after `since` (the daily cap). */
+  countCreatedSince(businessId: string, since: Date): Promise<number>;
 }
 
 export type PlanningUnitOfWork = UnitOfWork<{ plans: PlanRepository }>;

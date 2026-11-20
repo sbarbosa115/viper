@@ -16,25 +16,27 @@ const codeAt = (secret: string, seconds: number) =>
   generate({ secret, epoch: seconds, guardrails });
 
 describe('FR-5: TOTP adapter (otplib)', () => {
-  test('accepts the current code for the seeded demo secret', async () => {
-    expect(await totp.verify(seeded, await codeAt(seeded, epoch), at)).toBe(true);
+  const step = Math.floor(epoch / 30);
+
+  test('accepts the current code for the seeded demo secret and returns its time step', async () => {
+    expect(await totp.verify(seeded, await codeAt(seeded, epoch), at)).toBe(step);
   });
 
   test('accepts ±1 step (30 s) and rejects 2 steps away', async () => {
-    expect(await totp.verify(seeded, await codeAt(seeded, epoch - 30), at)).toBe(true);
-    expect(await totp.verify(seeded, await codeAt(seeded, epoch + 30), at)).toBe(true);
-    expect(await totp.verify(seeded, await codeAt(seeded, epoch - 90), at)).toBe(false);
+    expect(await totp.verify(seeded, await codeAt(seeded, epoch - 30), at)).toBe(step - 1);
+    expect(await totp.verify(seeded, await codeAt(seeded, epoch + 30), at)).toBe(step + 1);
+    expect(await totp.verify(seeded, await codeAt(seeded, epoch - 90), at)).toBeNull();
   });
 
   test('rejects malformed codes', async () => {
-    expect(await totp.verify(seeded, 'abcdef', at)).toBe(false);
-    expect(await totp.verify(seeded, '12345', at)).toBe(false);
+    expect(await totp.verify(seeded, 'abcdef', at)).toBeNull();
+    expect(await totp.verify(seeded, '12345', at)).toBeNull();
   });
 
   test('new secrets are 20 bytes base32 and work end to end', async () => {
     const secret = totp.generateSecret();
     expect(secret).toMatch(/^[A-Z2-7]{32}$/);
-    expect(await totp.verify(secret, await codeAt(secret, epoch), at)).toBe(true);
+    expect(await totp.verify(secret, await codeAt(secret, epoch), at)).toBe(step);
   });
 
   test('otpauth URL names Llyner Leads; the QR code is an SVG', async () => {

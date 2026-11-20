@@ -50,6 +50,7 @@ import type { AnalyticsTracker } from './shared/application/analytics-tracker.js
 import type { Geocoder } from './shared/application/geocoder.js';
 import type { LlmClient } from './shared/application/llm-client.js';
 import type { Clock } from './shared/domain/clock.js';
+import { AppError, CodedError } from './shared/domain/errors.js';
 import type { IdGenerator } from './shared/domain/id-generator.js';
 import type { Database } from './shared/infrastructure/db/database.js';
 import type { DB } from './shared/infrastructure/db/schema.js';
@@ -106,27 +107,16 @@ export function createTotpCipher(secretBox: SecretBox): SecretCipher {
   };
 }
 
-/**
- * Staff emails and Business names for the Audit log (platform's AuditDirectory). Business names
- * come from identity's public queries; member emails are read from identity's `members` table
- * directly because identity has no batched member lookup yet.
- * TODO(identity): expose `getMemberEmails(ids)` on IdentityQueries and use it here.
- */
-export function createAuditDirectory(db: Database, identity: IdentityQueries): AuditDirectory {
+/** Staff emails and Business names for the Audit log (platform's AuditDirectory), from identity. */
+export function createAuditDirectory(identity: IdentityQueries): AuditDirectory {
   return {
     async lookup({ memberIds, businessIds }) {
-      const [members, businesses] = await Promise.all([
-        memberIds.length === 0
-          ? Promise.resolve([])
-          : db
-              .selectFrom('members')
-              .select(['id', 'email'])
-              .where('id', 'in', [...new Set(memberIds)])
-              .execute(),
+      const [emails, businesses] = await Promise.all([
+        identity.getMemberEmails(memberIds),
         identity.getBusinesses(businessIds),
       ]);
       return {
-        members: new Map(members.map((m) => [m.id, { email: m.email }])),
+        members: new Map([...emails].map(([id, email]) => [id, { email }])),
         businesses: new Map(businesses.map((b) => [b.id, { name: b.name }])),
       };
     },
@@ -145,9 +135,33 @@ export function createLlmClient(config: Config, settings: SettingsReader): LlmCl
   );
 }
 
-/** The Geocoder for profile, planning and the assistant: Google live, fixture places in fake mode. */
+/**
+ * The Geocoder for profile, planning and the assistant: Google live, fixture places in fake mode.
+ * No match is an empty list; any other failure (quota, key, network) is 503 GEOCODER_UNAVAILABLE.
+ */
 export function createGeocoder(config: Config, settings: SettingsReader): Geocoder {
-  return config.TOOLS_MODE === 'live' ? createGoogleGeocoder(settings) : new FixtureGeocoder();
+  return unavailableAs503(
+    config.TOOLS_MODE === 'live' ? createGoogleGeocoder(settings) : new FixtureGeocoder(),
+  );
+}
+
+/** Maps a geocoder's provider errors to 503 GEOCODER_UNAVAILABLE (the error handler's 500 otherwise). */
+export function unavailableAs503(geocoder: Geocoder): Geocoder {
+  return {
+    async search(query, limit) {
+      try {
+        return await geocoder.search(query, limit);
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new CodedError(
+          'GEOCODER_UNAVAILABLE',
+          "We couldn't look up places just now. Try again in a moment.",
+          undefined,
+          503,
+        );
+      }
+    },
+  };
 }
 
 /** Fake-mode Tool retries wait 10 ms instead of 1 s, 4 s, 16 s, so failure journeys are fast. */
@@ -210,7 +224,7 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
   const { clock, ids, settings, auditLog, analytics } = core;
   const testHooks = config.ENABLE_TEST_HOOKS && config.NODE_ENV !== 'production';
   const email = createSmtpEmailSender({ settings });
-  const identityQueries = createIdentityQueries({ db, clock, ids });
+  const identityQueries = createIdentityQueries({ db, clock, ids, audit: auditLog });
 
   const billing = createBilling({
     db,
@@ -440,7 +454,7 @@ export function composeApp(
       email,
       clock,
       ids,
-      directory: createAuditDirectory(db, identityQueries),
+      directory: createAuditDirectory(identityQueries),
     }),
   );
 
@@ -466,8 +480,8 @@ export function composeApp(
       listBusinesses: (query) => identityQueries.listBusinesses(query),
       getBusiness: (id) => identityQueries.getBusiness(id),
       getOwnerContact: (businessId) => identityQueries.getOwnerContact(businessId),
-      setBusinessInternal: (businessId, internal) =>
-        identityQueries.setBusinessInternal(businessId, internal),
+      setBusinessInternal: (businessId, internal, by) =>
+        identityQueries.setBusinessInternal(businessId, internal, by),
     },
     billing: {
       creditsSummary: (filter) => billing.billingQueries.creditsSummary(filter),

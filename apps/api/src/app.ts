@@ -19,6 +19,12 @@ import type { Features } from './shared/application/features.js';
 import type { Clock } from './shared/domain/clock.js';
 import type { IdGenerator } from './shared/domain/id-generator.js';
 import { registerActor, type ResolveActor } from './shared/http/actor-plugin.js';
+import {
+  clientIp,
+  DEFAULT_TRUST_PROXY_HOPS,
+  registerClientIp,
+  trustHops,
+} from './shared/http/client-ip.js';
 import { registerErrorHandling } from './shared/http/error-handler.js';
 import { healthRoutes, type HealthProbes } from './shared/http/health.routes.js';
 
@@ -59,11 +65,14 @@ export async function buildApp(
   modules: readonly AppModule[] = [],
   options: BuildAppOptions = {},
 ): Promise<FastifyInstance> {
+  // A hop count, never `true`: `true` makes req.ip the client-written left-most X-Forwarded-For.
+  const trustProxy = trustHops(config.TRUST_PROXY_HOPS ?? DEFAULT_TRUST_PROXY_HOPS);
   const app = Fastify(
     deps.logger
-      ? { loggerInstance: deps.logger, trustProxy: true }
-      : { logger: false, trustProxy: true },
+      ? { loggerInstance: deps.logger, trustProxy }
+      : { logger: false, trustProxy },
   );
+  registerClientIp(app, { header: config.CLIENT_IP_HEADER });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
@@ -73,7 +82,12 @@ export async function buildApp(
 
   await app.register(helmet);
   await app.register(cookie, { secret: config.SESSION_SECRET });
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: clientIp,
+  });
 
   if (config.NODE_ENV !== 'production') {
     await app.register(swagger, {

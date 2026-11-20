@@ -45,8 +45,15 @@ export interface ReportingIdentity {
   } | null>;
   /** identity.getOwnerContact. */
   getOwnerContact(businessId: string): Promise<{ email: string; emailVerified: boolean } | null>;
-  /** identity.setBusinessInternal: NotFoundError when unknown. */
-  setBusinessInternal(businessId: string, internal: boolean): Promise<void>;
+  /**
+   * identity.setBusinessInternal: NotFoundError when unknown. `by` is written to the Audit log in
+   * the same transaction as the change (FR-7).
+   */
+  setBusinessInternal(
+    businessId: string,
+    internal: boolean,
+    by: { staffMemberId: string; action: string; details: Record<string, unknown> },
+  ): Promise<void>;
 }
 
 // billing -----------------------------------------------------------------------------------------

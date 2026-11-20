@@ -77,7 +77,10 @@ export function leadOf(r: LeadRecord): Lead {
       verification: c.verification,
       source: { ...c.source },
     })),
-    evidence: r.evidence.map((e) => ({ fact: e.fact, points: e.points, source: { ...e.source } })),
+    // Facts worth 0 points (e.g. a website summary) inform the score but aren't shown as Evidence.
+    evidence: r.evidence
+      .filter((e) => e.points !== 0)
+      .map((e) => ({ fact: e.fact, points: e.points, source: { ...e.source } })),
     pitch: { ...r.pitch },
     feedbackReason: r.feedbackReason,
     planId: r.planId,

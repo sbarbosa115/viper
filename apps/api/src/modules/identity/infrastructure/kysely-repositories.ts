@@ -7,7 +7,7 @@ import type {
   BusinessListQuery,
   BusinessRepository,
   EmailTokenRepository,
-  IdentityRepos,
+  IdentityReadRepos,
   LoginAttempt,
   LoginAttemptRepository,
   MemberRepository,
@@ -18,7 +18,7 @@ import { EmailToken, type EmailTokenPurpose } from '../domain/email-token.js';
 import { identityErrors } from '../domain/errors.js';
 import { Member } from '../domain/member.js';
 import { Session } from '../domain/session.js';
-import { SIGNUP_MARKER } from './markers.js';
+import { SIGNUP_MARKER, twoFactorMarker } from './markers.js';
 import type { MembersTable } from './tables.js';
 
 type Db = Kysely<DB> | Transaction<DB>;
@@ -115,6 +115,16 @@ export class KyselyMemberRepository implements MemberRepository {
     return this.one('id', id);
   }
 
+  async findByIds(ids: readonly string[]): Promise<Member[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('members')
+      .selectAll()
+      .where('id', 'in', [...ids])
+      .execute();
+    return rows.map(toMember);
+  }
+
   findByEmail(email: string): Promise<Member | null> {
     return this.one('email', email);
   }
@@ -131,6 +141,37 @@ export class KyselyMemberRepository implements MemberRepository {
       .where('business_id', 'in', [...businessIds])
       .execute();
     return rows.map(toMember);
+  }
+
+  async claimTotpStep(memberId: string, step: number): Promise<boolean> {
+    const result = await this.db
+      .updateTable('members')
+      .set({ totp_last_step: step })
+      .where('id', '=', memberId)
+      .where((eb) => eb.or([eb('totp_last_step', 'is', null), eb('totp_last_step', '<', step)]))
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
+  }
+
+  async twoFactorLockedUntil(memberId: string): Promise<Date | null> {
+    const row = await this.db
+      .selectFrom('members')
+      .select('two_factor_locked_until')
+      .where('id', '=', memberId)
+      .executeTakeFirst();
+    return row?.two_factor_locked_until ?? null;
+  }
+
+  async lockTwoFactor(memberId: string, until: Date, now: Date): Promise<boolean> {
+    const result = await this.db
+      .updateTable('members')
+      .set({ two_factor_locked_until: until })
+      .where('id', '=', memberId)
+      .where((eb) =>
+        eb.or([eb('two_factor_locked_until', 'is', null), eb('two_factor_locked_until', '<=', now)]),
+      )
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
   }
 
   /** Insert or update by id. Never an upsert: a duplicate email must fail, not overwrite. */
@@ -194,19 +235,41 @@ export class KyselySessionRepository implements SessionRepository {
     });
   }
 
+  /** `two_factor_failures + 1` in SQL, then read back: concurrent requests never lose a count. */
+  async countTwoFactorAttempt(id: string): Promise<number> {
+    await this.db
+      .updateTable('sessions')
+      .set((eb) => ({ two_factor_failures: eb('two_factor_failures', '+', 1) }))
+      .where('id', '=', id)
+      .execute();
+    const row = await this.db
+      .selectFrom('sessions')
+      .select('two_factor_failures')
+      .where('id', '=', id)
+      .executeTakeFirst();
+    return row?.two_factor_failures ?? 0;
+  }
+
   async save(session: Session): Promise<void> {
     const s = session.toSnapshot();
     const changes = {
       acting_as_business_id: s.actingAsBusinessId,
       two_factor_passed: s.twoFactorPassed,
-      two_factor_failures: s.twoFactorFailures,
       last_seen_at: s.lastSeenAt,
       expires_at: s.expiresAt,
     };
+    // The code count is written only by countTwoFactorAttempt (atomic) and reset when the code
+    // passes; a whole-session save never writes back a stale count.
     await this.db
       .insertInto('sessions')
-      .values({ ...changes, id: s.id, member_id: s.memberId, created_at: s.createdAt })
-      .onDuplicateKeyUpdate(changes)
+      .values({
+        ...changes,
+        two_factor_failures: s.twoFactorFailures,
+        id: s.id,
+        member_id: s.memberId,
+        created_at: s.createdAt,
+      })
+      .onDuplicateKeyUpdate(s.twoFactorPassed ? { ...changes, two_factor_failures: 0 } : changes)
       .execute();
   }
 
@@ -294,6 +357,16 @@ export class KyselyEmailTokenRepository implements EmailTokenRepository {
     return Number(r.n);
   }
 
+  async consume(id: string, at: Date): Promise<boolean> {
+    const result = await this.db
+      .updateTable('email_tokens')
+      .set({ used_at: at })
+      .where('id', '=', id)
+      .where('used_at', 'is', null)
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
+  }
+
   async markAllUsed(memberId: string, purpose: EmailTokenPurpose, at: Date): Promise<void> {
     await this.db
       .updateTable('email_tokens')
@@ -348,6 +421,27 @@ export class KyselyLoginAttemptRepository implements LoginAttemptRepository {
 
   countSignupsForIp(ip: string, since: Date): Promise<number> {
     return this.count('ip', ip, since, { signups: true });
+  }
+
+  async recordTwoFactorAttempt(memberId: string, ip: string, at: Date): Promise<string> {
+    const id = this.newId();
+    await this.db
+      .insertInto('login_attempts')
+      .values({ id, email: twoFactorMarker(memberId), ip, success: false, created_at: at })
+      .execute();
+    return id;
+  }
+
+  async markTwoFactorPassed(attemptId: string): Promise<void> {
+    await this.db
+      .updateTable('login_attempts')
+      .set({ success: true })
+      .where('id', '=', attemptId)
+      .execute();
+  }
+
+  countTwoFactorFailures(memberId: string, since: Date): Promise<number> {
+    return this.count('email', twoFactorMarker(memberId), since, { failures: true });
   }
 }
 
@@ -467,7 +561,7 @@ export class KyselyBusinessDirectory implements BusinessDirectory {
 }
 
 /** Repositories on a connection or a transaction (events are bound by the Unit of Work). */
-export function kyselyIdentityRepos(db: Db, newId: () => string): Omit<IdentityRepos, 'events'> {
+export function kyselyIdentityRepos(db: Db, newId: () => string): IdentityReadRepos {
   return {
     businesses: new KyselyBusinessRepository(db),
     members: new KyselyMemberRepository(db),

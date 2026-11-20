@@ -175,7 +175,7 @@ export function bakeriesDraft(overrides: Partial<DraftInput> = {}): DraftInput {
 export const BAKERIES_GOAL = 'bakeries within 3 miles that could buy our sugar';
 
 /** The planning use cases on in-memory storage and fakes. */
-export function planningFixture() {
+export function planningFixture(options: { dailyPlanLimit?: number } = {}) {
   const store = new InMemoryPlans();
   const clock = new FixedClock(new Date('2026-11-19T10:00:00.000Z'));
   const ids = new SequentialIdGenerator();
@@ -199,6 +199,7 @@ export function planningFixture() {
     runStats,
     wallet,
     activity,
+    ...options,
   });
   const tick = (seconds = 1) => clock.set(new Date(clock.now().getTime() + seconds * 1000));
 

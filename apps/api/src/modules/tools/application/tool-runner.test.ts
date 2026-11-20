@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { NotFoundError } from '../../../shared/domain/errors.js';
 import { BUSINESS, NOW, RUN, ScriptedAdapter, runnerFixture } from '../test/fakes.js';
-import { ToolFailure } from './tool-adapter.js';
-import { inputHash } from './tool-runner.js';
+import type { ToolCallRecord } from './ports.js';
+import { adapterRegistry, ToolFailure } from './tool-adapter.js';
+import { inputHash, ToolRunner } from './tool-runner.js';
 
 const PLACES = 'google.places-text-search';
 
@@ -18,7 +19,11 @@ function request(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function priced(f: ReturnType<typeof runnerFixture>, credits: number, maxUnits = 20) {
+async function priced(
+  f: Pick<ReturnType<typeof runnerFixture>, 'tools'>,
+  credits: number,
+  maxUnits = 20,
+) {
   const tool = await f.tools.find(PLACES);
   if (!tool) throw new Error('missing');
   await f.tools.save({
@@ -243,5 +248,97 @@ describe('FR-20: retries', () => {
     const result = await f.runner.call(request());
     expect(result.error?.code).toBe('INVALID_OUTPUT');
     expect(result.millicredits).toBe(0);
+  });
+});
+
+describe('FR-19 / FR-36: deferred recording (the provider runs outside any transaction)', () => {
+  /** A runner whose repository logs which transaction each write used. */
+  function deferredFixture() {
+    const base = runnerFixture();
+    const log: { op: 'add' | 'complete'; within: string | undefined; statuses: string[] }[] = [];
+    const repo = (within?: { tx: string }) => ({
+      ...base.calls,
+      findReusable: base.calls.findReusable.bind(base.calls),
+      listForRun: base.calls.listForRun.bind(base.calls),
+      statsSince: base.calls.statsSince.bind(base.calls),
+      spendBetween: base.calls.spendBetween.bind(base.calls),
+      add: (records: readonly ToolCallRecord[]) => {
+        log.push({ op: 'add', within: within?.tx, statuses: records.map((r) => r.status) });
+        return base.calls.add(records);
+      },
+      complete: (record: ToolCallRecord) => {
+        log.push({ op: 'complete', within: within?.tx, statuses: [record.status] });
+        return base.calls.complete(record);
+      },
+    });
+    const runner = new ToolRunner<{ tx: string }>({
+      tools: base.tools,
+      calls: repo,
+      adapters: adapterRegistry([base.places.registered()]),
+      settings: base.settings,
+      clock: base.clock,
+      ids: base.ids,
+      sleeper: base.sleeper,
+    });
+    return { ...base, runner, log };
+  }
+
+  test('a provider call is stored as started first; commit(within) stores its outcome in that transaction', async () => {
+    const f = deferredFixture();
+    await priced(f, 1.5);
+    let seenWhileRunning: string[] = [];
+    f.places.then(() => {
+      seenWhileRunning = f.calls.rows.map((r) => r.status);
+      return Promise.resolve({ output: { items: ['a', 'b'] }, units: 2 });
+    });
+    const result = await f.runner.call({ ...request(), defer: true });
+    expect(seenWhileRunning).toEqual(['started']);
+    expect(result).toMatchObject({ status: 'ok', units: 2, millicredits: 3_000, reused: false });
+    // Nothing but the started row until the caller commits.
+    expect(f.calls.rows.map((r) => r.status)).toEqual(['started']);
+    expect(f.log).toEqual([{ op: 'add', within: undefined, statuses: ['started'] }]);
+
+    await result.commit?.({ tx: 'save-1' });
+    expect(f.log[1]).toEqual({ op: 'complete', within: 'save-1', statuses: ['ok'] });
+    expect(f.calls.rows).toHaveLength(1);
+    expect(f.calls.rows[0]).toMatchObject({
+      id: result.toolCallId,
+      status: 'ok',
+      units: 2,
+      millicredits: 3_000,
+      output: { items: ['a', 'b'] },
+    });
+  });
+
+  test('a started call is never reused and does not count in health or spend', async () => {
+    const f = deferredFixture();
+    const first = await f.runner.call({ ...request(), defer: true });
+    expect(first.status).toBe('ok');
+    // The worker stopped before committing: the next attempt calls the provider again.
+    const second = await f.runner.call({ ...request(), defer: true });
+    expect(second.reused).toBe(false);
+    expect(f.places.calls).toHaveLength(2);
+    expect(await f.calls.statsSince(NOW)).toEqual(new Map());
+    expect(await f.calls.spendBetween({ from: NOW, to: new Date(NOW.getTime() + 1) })).toEqual([]);
+  });
+
+  test('reused, skipped and refused calls write nothing until commit', async () => {
+    const f = deferredFixture();
+    const paid = await f.runner.call({ ...request(), defer: true });
+    await paid.commit?.({ tx: 'save-1' });
+    const reused = await f.runner.call({ ...request(), defer: true });
+    expect(reused).toMatchObject({ status: 'ok', reused: true, millicredits: 0 });
+    const tool = await f.tools.find(PLACES);
+    await f.tools.save({ ...tool!, enabled: false });
+    const disabled = await f.runner.call({ ...request({ input: { q: 'cafe' } }), defer: true });
+    expect(disabled.error?.code).toBe('TOOL_DISABLED');
+    expect(f.calls.rows).toHaveLength(1);
+
+    await reused.commit?.({ tx: 'save-2' });
+    await disabled.commit?.({ tx: 'save-3' });
+    expect(f.log.slice(2)).toEqual([
+      { op: 'add', within: 'save-2', statuses: ['ok'] },
+      { op: 'add', within: 'save-3', statuses: ['skipped'] },
+    ]);
   });
 });

@@ -29,7 +29,8 @@ export const APIFY_ACTORS = {
 } as const;
 
 const PROVIDER = 'Apify';
-const WAIT_SECS = 240;
+/** How long a run-sync call waits for the actor (one try; see LONGEST_TRY_MS). */
+export const APIFY_WAIT_SECS = 240;
 
 /** Runs an actor synchronously and returns at most `maxItems` dataset items. */
 export interface ApifyActorRunner {
@@ -43,7 +44,9 @@ export function apifyClientRunner(settings: ProviderSettings): ApifyActorRunner 
       const token = requireKey((await settings.provider('apify')).apiKey, PROVIDER);
       const client = new ApifyClient({ token, maxRetries: 0 });
       try {
-        const run = await client.actor(actorId).call(input, { maxItems, waitSecs: WAIT_SECS });
+        const run = await client
+          .actor(actorId)
+          .call(input, { maxItems, waitSecs: APIFY_WAIT_SECS });
         if (run.status !== 'SUCCEEDED') {
           throw ToolFailure.retryable(`Apify actor ${actorId} ended ${run.status}`);
         }

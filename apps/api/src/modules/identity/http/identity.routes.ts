@@ -17,6 +17,7 @@ import {
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { UnauthenticatedError } from '../../../shared/domain/errors.js';
+import { clientIp } from '../../../shared/http/client-ip.js';
 import type { SignedIn } from '../application/session-context.js';
 import type { IdentityUseCases } from '../application/use-cases.js';
 import {
@@ -42,7 +43,7 @@ export function identityRoutes(
     routePath(signup),
     { schema: { body: signup.body, response: { 201: signup.response } } },
     async (req, reply) => {
-      const result = await uc.signUp.execute({ ...req.body, ip: req.ip });
+      const result = await uc.signUp.execute({ ...req.body, ip: clientIp(req) });
       return reply.status(201).send(signIn(reply, result));
     },
   );
@@ -66,7 +67,7 @@ export function identityRoutes(
   api.post(
     routePath(login),
     { schema: { body: login.body, response: { 200: login.response } } },
-    async (req, reply) => signIn(reply, await uc.logIn.execute({ ...req.body, ip: req.ip })),
+    async (req, reply) => signIn(reply, await uc.logIn.execute({ ...req.body, ip: clientIp(req) })),
   );
 
   api.post(
@@ -78,7 +79,12 @@ export function identityRoutes(
   api.post(
     routePath(twoFactorVerify),
     { schema: { body: twoFactorVerify.body, response: { 200: twoFactorVerify.response } } },
-    (req) => uc.verifyTwoFactor.execute({ token: readSessionToken(req), code: req.body.code }),
+    (req) =>
+      uc.verifyTwoFactor.execute({
+        token: readSessionToken(req),
+        code: req.body.code,
+        ip: clientIp(req),
+      }),
   );
 
   api.post(routePath(logout), async (req, reply) => {

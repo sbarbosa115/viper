@@ -7,6 +7,7 @@ import {
   listStaffRuns,
   runSummary,
   staffRunDetail,
+  updateFlow,
 } from '@app/contracts/research';
 import { describe, expect, test } from 'vitest';
 import { buildTestApp } from '../../../../test/build-test-app.js';
@@ -282,6 +283,27 @@ describe('FR-37: Staff Research flows', () => {
     });
     expect(shares.statusCode).toBe(400);
     expect(JSON.stringify(json(shares))).toContain('Step budget shares must add up to 100%');
+  });
+
+  test('422 STEP_TIME_OVER_ACTIVE_TIME when Step time limits add up to more than the max active time', async () => {
+    const { app } = await setup(staff());
+    const steps = LOCAL_BUYERS_V1.steps.map((s, i) =>
+      i === 4 ? { ...s, timeLimitMinutes: s.timeLimitMinutes + 1 } : s,
+    );
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/staff/flows/local-buyers',
+      payload: flowBody({ steps }),
+    });
+    expect(res.statusCode).toBe(422);
+    expect(updateFlow.errors).toContainEqual(
+      expect.objectContaining({ status: 422, code: 'STEP_TIME_OVER_ACTIVE_TIME' }),
+    );
+    expect(errorResponse.parse(json(res)).error).toMatchObject({
+      code: 'STEP_TIME_OVER_ACTIVE_TIME',
+      message: 'Step time limits add up to 61 min, more than the max active time (60 min)',
+      details: { totalMinutes: 61, maxActiveMinutes: 60 },
+    });
   });
 });
 

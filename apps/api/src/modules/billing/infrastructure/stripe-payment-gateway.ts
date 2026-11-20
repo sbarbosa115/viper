@@ -38,6 +38,10 @@ export class StripePaymentGateway implements PaymentGateway {
     }
     const session = await this.stripe(settings.secretKey).checkout.sessions.create({
       mode: 'payment',
+      // Cards only: they settle at once. (This SDK's API version replaced `payment_method_types`
+      // with this filter.) Methods that settle days later are off; if one is ever allowed, the
+      // async_payment_succeeded / _failed webhooks fulfil or fail the purchase.
+      allowed_payment_method_types: ['card'],
       client_reference_id: request.businessId,
       metadata: { packId: request.packId, businessId: request.businessId },
       line_items: [

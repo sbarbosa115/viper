@@ -64,7 +64,8 @@ export class ConfirmPasswordReset {
       const token = await r.emailTokens.findByHash(tokenHash);
       if (token?.purpose !== 'reset') throw identityErrors.tokenExpired();
       token.use(now);
-      await r.emailTokens.save(token);
+      // Conditional: of two requests with the same link, only one gets the row.
+      if (!(await r.emailTokens.consume(token.id, now))) throw identityErrors.tokenExpired();
       await r.emailTokens.markAllUsed(token.memberId, 'reset', now);
       const member = await r.members.findById(token.memberId);
       if (!member) throw identityErrors.tokenExpired();

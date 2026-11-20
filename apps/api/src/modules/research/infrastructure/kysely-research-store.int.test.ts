@@ -209,7 +209,7 @@ describe('KyselyResearchStore (MySQL)', () => {
     const run = await f.runs.start(owner(), PLAN);
     await f.stopHook.set({ stepKey: 'websites', items: 12 });
     expect(await f.executor.runAttempt(run.id)).toBe('stopped');
-    f.clock.set(new Date(f.clock.now().getTime() + 3 * 60_000));
+    f.clock.set(new Date(f.clock.now().getTime() + 6 * 60_000));
     expect((await f.sweeper.sweep()).stalled).toBe(1);
     const attempts = await f.store.transaction((tx) => tx.attempts.list(run.id));
     expect(attempts[0]).toMatchObject({
@@ -224,6 +224,33 @@ describe('KyselyResearchStore (MySQL)', () => {
     f.clock.set(retry?.nextAttemptAt ?? f.clock.now());
     expect(await f.executor.runAttempt(run.id)).toBe('completed');
     expect(f.tools.callsOf('firecrawl.scrape')).toBe(25);
+  });
+
+  test('FR-36: no transaction is open during a provider call: the heartbeat renews at once, the sweeper finds nothing', async () => {
+    const f = await mysqlFixture();
+    const run = await f.runs.start(owner(), PLAN);
+    const within = <T>(p: Promise<T>, ms: number) =>
+      Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`blocked for ${ms} ms (a lock is held)`)), ms),
+        ),
+      ]);
+    const seen: { renewed: boolean; stalled: number }[] = [];
+    f.tools.duringCall = async (req) => {
+      if (req.toolKey !== 'firecrawl.scrape' || seen.length > 0) return;
+      // A long call: past the old lease, the heartbeat (its own connection) renews it…
+      f.clock.set(new Date(f.clock.now().getTime() + 4 * 60_000));
+      const renewed = await within(f.executor.renewLease(run.id, 1, 5), 5_000);
+      // …and the sweeper, later still, leaves the attempt alone.
+      f.clock.set(new Date(f.clock.now().getTime() + 4 * 60_000));
+      const { stalled } = await within(f.sweeper.sweep(), 5_000);
+      seen.push({ renewed, stalled });
+    };
+    expect(await f.executor.runAttempt(run.id)).toBe('completed');
+    expect(seen).toEqual([{ renewed: true, stalled: 0 }]);
+    const attempts = await f.store.transaction((tx) => tx.attempts.list(run.id));
+    expect(attempts.map((a) => a.status)).toEqual(['completed']);
   });
 
   test('leases: renewal only by the owner of a running attempt; expired leases are found', async () => {

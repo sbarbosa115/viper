@@ -2,6 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content Security Policy for the SPA. Scripts only from this origin; Google Fonts for type;
+      OpenStreetMap tiles for the Plan map (MapLibre runs its worker from a blob: URL); Sentry
+      ingest for error reports. Inline styles stay allowed (React style props, MapLibre).
+      frame-ancestors can't be set from a meta tag: clickjacking protection needs a response
+      header where the SPA is served.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io; worker-src 'self' blob:; child-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Llyner Leads</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

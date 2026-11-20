@@ -5,7 +5,7 @@ import { EmailToken } from './email-token.js';
 import { Member } from './member.js';
 import { assertNewPassword } from './password-policy.js';
 import { assertResendGap, assertUnderLimit, rateLimits } from './rate-limits.js';
-import { Session, sessionPolicy } from './session.js';
+import { halfSessionExhausted, Session, sessionPolicy } from './session.js';
 import { sessionAccess } from './session-access.js';
 
 const now = new Date('2026-11-19T10:00:00.000Z');
@@ -184,10 +184,8 @@ describe('FR-5: Staff two-factor (domain)', () => {
     expect([m.twoFactorSetUp, m.totpSecretEnc]).toEqual([false, null]);
   });
 
-  test('5 wrong codes exhaust the half-session', () => {
-    const s = Session.start({ id: 's', memberId: 'm1', now });
-    const outcomes = Array.from({ length: 5 }, () => s.recordWrongCode());
-    expect(outcomes).toEqual(['retry', 'retry', 'retry', 'retry', 'exhausted']);
+  test('the 5th code tried exhausts the half-session', () => {
+    expect([1, 4, 5, 6].map(halfSessionExhausted)).toEqual([false, false, true, true]);
   });
 
   test('a Staff session without the code is a half-session with no Actor', () => {

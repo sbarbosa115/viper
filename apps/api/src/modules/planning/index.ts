@@ -67,6 +67,8 @@ export interface PlanningDeps {
   runStats?: RunStats;
   /** research's last run and leads' Lead count per Plan; none when absent. */
   activity?: PlanActivity;
+  /** Plans per Business per UTC day (each calls the planning model); 30 when absent. */
+  dailyPlanLimit?: number;
 }
 
 /** What the assistant calls (FR-14: answering the Goal question creates a Plan). */

@@ -1,10 +1,53 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ApiError } from '../../../shared/api/client';
+import { useResendVerification } from '../../../shared/api/verification';
 import { Banner, Button, Chip, Field, Spinner, Textarea } from '../../../shared/ui';
 import { useCreatePlan, useProducts } from '../api/hooks';
 import { LinkButton } from '../components/link-button';
 import { copy, fill } from '../copy';
+
+/** 403 EMAIL_NOT_VERIFIED: drafting needs a verified email; offers a new link. */
+function VerifyEmailPrompt() {
+  const resend = useResendVerification();
+  const [message, setMessage] = useState<string | null>(null);
+  const onResend = () =>
+    resend.mutate(undefined, {
+      onSuccess: () => setMessage(copy.resendSent),
+      onError: (error) =>
+        setMessage(
+          error instanceof ApiError && error.status === 429
+            ? copy.resendTooMany
+            : copy.resendFailed,
+        ),
+    });
+  return (
+    <Banner
+      tone="warn"
+      action={
+        <Button size="sm" variant="secondary" loading={resend.isPending} onClick={onResend}>
+          {copy.resendEmail}
+        </Button>
+      }
+    >
+      {copy.emailNotVerified}
+      {message && (
+        <span role="status" className="ml-2 text-muted">
+          {' '}
+          · {message}
+        </span>
+      )}
+    </Banner>
+  );
+}
+
+/** 429 TOO_MANY_REQUESTS: the daily limit of new Plans, with the limit the server sent. */
+function dailyLimitText(error: ApiError): string {
+  const limit = error.details?.limit;
+  return typeof limit === 'number'
+    ? fill(copy.dailyPlanLimit, { limit })
+    : copy.dailyPlanLimitNoCount;
+}
 
 /** FR-16: a goal box that drafts a Plan. */
 export function NewPlanPage() {
@@ -36,6 +79,9 @@ export function NewPlanPage() {
   const error = create.error;
   const incomplete = error instanceof ApiError && error.code === 'PROFILE_INCOMPLETE';
   const invalid = error instanceof ApiError && Boolean(error.fields?.goal);
+  const unverified = error instanceof ApiError && error.code === 'EMAIL_NOT_VERIFIED';
+  const limited = error instanceof ApiError && error.code === 'TOO_MANY_REQUESTS';
+  const handled = incomplete || invalid || unverified || limited;
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8 md:px-7">
@@ -76,9 +122,11 @@ export function NewPlanPage() {
             {copy.profileIncomplete}
           </Banner>
         )}
-        {create.isError && !incomplete && !invalid && (
-          <Banner tone="warn">{copy.draftFailed}</Banner>
+        {create.isError && unverified && <VerifyEmailPrompt />}
+        {create.isError && limited && error instanceof ApiError && (
+          <Banner tone="warn">{dailyLimitText(error)}</Banner>
         )}
+        {create.isError && !handled && <Banner tone="warn">{copy.draftFailed}</Banner>}
         <div className="flex items-center gap-3">
           <Button type="submit" variant="primary" disabled={create.isPending}>
             {copy.draft}

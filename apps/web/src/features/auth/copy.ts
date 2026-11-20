@@ -38,6 +38,8 @@ export const copy = {
     submit: 'Verify',
     wrong: 'That code is not right. Check your authenticator app and try again.',
     tooMany: 'Too many wrong codes. Log in again to start over.',
+    locked: 'Too many wrong codes. Two-factor sign-in is locked for an hour.',
+    lockedUntil: 'Try again after {time}.',
     expired: 'Your sign-in expired. Log in again.',
     otherAccount: 'Use a different account',
     setupTitle: 'Set up two-factor sign-in',

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { TOOL_KEYS } from '../domain/local-buyers.js';
 import {
   actingAs,
+  bakeriesPlan,
   BUSINESS,
   owner,
   PLAN,
@@ -51,6 +52,38 @@ describe('FR-22: run emails', () => {
     expect(f.email.sent[0]?.text).toContain(`${s?.leadsDelivered} leads are ready`);
     expect(f.email.sent[0]?.text).toContain(`Credits spent: ${s?.creditsSpent}`);
     expect(f.email.sent[0]?.text).toContain(`http://localhost:5173/app/plans/${PLAN}/leads`);
+  });
+
+  test('a completed run with 0 new leads sends "No new leads this time", not "Your leads are ready"', async () => {
+    const f = await researchFixture();
+    // No Prospect can reach a Fit score of 100: the run completes and delivers nothing.
+    f.plans.plans.set(
+      PLAN,
+      bakeriesPlan({ guardrails: { maxCredits: 400, maxLeads: 10, minFitScore: 100 } }),
+    );
+    const run = await f.runs.start(owner(), PLAN);
+    await f.runToEnd(run.id);
+    const s = f.store.run(run.id)?.toSnapshot();
+    expect(s).toMatchObject({ status: 'completed', leadsDelivered: 0 });
+
+    const event = eventFor(f, run.id);
+    expect(event.type).toBe('RunCompleted');
+    await f.emails.handle(event);
+    await f.emails.handle(event);
+    expect(f.email.sent).toHaveLength(1);
+    const sent = f.email.sent[0];
+    expect(sent).toMatchObject({
+      to: 'owner@demo.test',
+      subject: 'No new leads this time: Bakeries near Austin',
+    });
+    expect(sent?.subject).not.toContain('ready');
+    expect(sent?.text).toContain('Hi Sam,');
+    expect(sent?.text).toContain('we didn\'t find any new leads for "Bakeries near Austin"');
+    expect(sent?.text).toContain(`Credits spent: ${s?.creditsSpent}.`);
+    expect(sent?.text).toContain(`http://localhost:5173/app/plans/${PLAN}`);
+    expect(sent?.text).not.toContain('/leads');
+    expect(sent?.text?.trim().endsWith('Llyner Leads')).toBe(true);
+    expect(sent?.text).not.toContain('Viper');
   });
 
   test('RunFailed emails the Owner (credits charged, link to the Plan) and the support address', async () => {

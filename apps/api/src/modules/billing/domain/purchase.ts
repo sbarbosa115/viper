@@ -8,7 +8,7 @@ export interface PurchaseSnapshot {
   stripeEventId: string | null;
   amountCents: number;
   taxCents: number;
-  status: 'pending' | 'paid';
+  status: 'pending' | 'paid' | 'failed';
   createdAt: Date;
   paidAt: Date | null;
 }
@@ -62,6 +62,20 @@ export class Purchase {
   }
   get isPaid(): boolean {
     return this.s.status === 'paid';
+  }
+
+  get status(): PurchaseSnapshot['status'] {
+    return this.s.status;
+  }
+
+  /**
+   * A delayed payment failed (Stripe `checkout.session.async_payment_failed`). Only a pending
+   * purchase fails; returns false otherwise (a paid one stays paid).
+   */
+  markFailed(): boolean {
+    if (this.s.status !== 'pending') return false;
+    this.s = { ...this.s, status: 'failed' };
+    return true;
   }
 
   /** Returns false when already paid, so a repeated webhook changes nothing. */

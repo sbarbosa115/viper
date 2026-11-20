@@ -48,3 +48,18 @@ export async function api<T = void>(path: string, options: RequestOptions<T> = {
   const json: unknown = JSON.parse(text);
   return options.schema ? options.schema.parse(json) : (json as T);
 }
+
+/**
+ * For 202 answers that carry no body (contract `noContent`): an empty-body SyntaxError after a
+ * 2xx is treated as success.
+ */
+export async function apiAccepted(
+  path: string,
+  options: { method: 'POST'; body?: unknown },
+): Promise<void> {
+  try {
+    await api(path, options);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+}

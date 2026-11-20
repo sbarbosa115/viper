@@ -179,11 +179,14 @@ export interface AttemptRepository {
   /** The attempt with the highest n. */
   latest(runId: string): Promise<AttemptRecord | null>;
   list(runId: string): Promise<AttemptRecord[]>;
+  /** Locks the attempt row for the rest of the transaction (lock order: attempt, then run). */
+  findForUpdate(runId: string, n: number): Promise<AttemptRecord | null>;
   /** Running attempts whose lease expired before `now` (the sweeper ends them). */
   expiredLeases(now: Date, limit: number): Promise<AttemptRecord[]>;
   /**
-   * Extends the lease of a running attempt held by `owner`. False when the attempt is no longer
-   * running or no longer ours (the sweeper ended it): the worker must stop writing.
+   * Extends the lease of a running attempt held by `owner`, with one conditional update (no
+   * read lock). False when the attempt is no longer running or no longer ours (the sweeper ended
+   * it): the worker must stop writing.
    */
   renewLease(runId: string, n: number, owner: string, until: Date): Promise<boolean>;
 }
@@ -274,6 +277,11 @@ export interface ToolCallRequest {
   readonly budget: { readonly remainingMillicredits: number };
   /** research's open transaction: the Tool call record commits with the handoff (FR-36). */
   readonly within?: object;
+  /**
+   * Record later (FR-19, FR-36): the provider runs outside any transaction; a provider call is
+   * stored as started first, and `commit(within)` stores its outcome with the handoff.
+   */
+  readonly defer?: boolean;
 }
 
 export interface ToolCallResult {
@@ -285,6 +293,8 @@ export interface ToolCallResult {
   /** Answered from a stored call with the same Tool and input hash: not called, 0 credits. */
   readonly reused: boolean;
   readonly error: ToolCallError | null;
+  /** Deferred requests: stores the Tool call in research's transaction (`tx.handle`). */
+  commit?(within: object): Promise<void>;
 }
 
 /**
@@ -496,16 +506,22 @@ export interface PlatformSettingsPort {
   support(): Promise<{ supportEmail: string | null }>;
 }
 
-/** platform's Audit log (FR-7). */
+/**
+ * platform's Audit log (FR-7). `within` is research's open transaction (`tx.handle`), so a change
+ * and its entry commit together.
+ */
 export interface AuditPort {
-  record(entry: {
-    staffMemberId: string;
-    businessId: string | null;
-    action: string;
-    targetType: string;
-    targetId: string | null;
-    details?: Record<string, unknown>;
-  }): Promise<void>;
+  record(
+    entry: {
+      staffMemberId: string;
+      businessId: string | null;
+      action: string;
+      targetType: string;
+      targetId: string | null;
+      details?: Record<string, unknown>;
+    },
+    within?: object,
+  ): Promise<void>;
 }
 
 /** The research-runs queue (BullMQ in the worker). Jobs are de-duplicated by run and attempt. */

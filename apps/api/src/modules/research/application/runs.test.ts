@@ -3,6 +3,7 @@ import { runSummary, staffRunDetail, staffRunSummary } from '@app/contracts/rese
 import { describe, expect, test } from 'vitest';
 import { CodedError, ForbiddenError, NotFoundError } from '../../../shared/domain/errors.js';
 import { TOOL_KEYS } from '../domain/local-buyers.js';
+import type { ResearchTx } from './ports.js';
 import {
   actingAs,
   bakeriesPlan,
@@ -228,10 +229,55 @@ describe('FR-21 / FR-32 / FR-36: Try again and Resume', () => {
       ['final_error', 'search-terms'],
       ['completed', 'socials-reviews'],
     ]);
-    // Charged once, for all the work (the first failure was free).
+    // Charged once, for the work after the resume: the first failure's cost stays waived.
     const s = f.store.run(run.id)?.toSnapshot();
     expect(await f.available()).toBe(1000 - (s?.creditsSpent ?? 0));
-    expect(s?.creditsSpent).toBe(Math.ceil((s?.millicreditsSpent ?? 0) / 1000));
+    expect(s?.creditsSpent).toBe(
+      Math.ceil(((s?.millicreditsSpent ?? 0) - (s?.state.waivedMillicredits ?? 0)) / 1000),
+    );
+  });
+
+  test('waived cost stays waived: after Try again, only the spend after the resume is charged', async () => {
+    const { f, run } = await failedInStep6();
+    const waived = f.store.run(run.id)!.toSnapshot().millicreditsSpent;
+    expect(waived).toBeGreaterThan(10_000);
+    expect(await f.available()).toBe(1000);
+
+    await f.runs.resume(owner(), run.id);
+    expect(await f.runToEnd(run.id)).toEqual(['completed']);
+    const s = f.store.run(run.id)!.toSnapshot();
+    const after = s.millicreditsSpent - waived;
+    expect(after).toBeGreaterThan(0);
+    expect(s.creditsSpent).toBe(Math.ceil(after / 1000));
+    expect(s.creditsSpent).toBeLessThan(Math.ceil(s.millicreditsSpent / 1000));
+    expect(await f.available()).toBe(1000 - s.creditsSpent);
+  });
+
+  test('Try again takes the wallet lock (the top-up) before checking for another active run', async () => {
+    const { f, run } = await failedInStep6();
+    const order: string[] = [];
+    const commands = f.billing.billingCommands;
+    const topUp = commands.topUpReservation.bind(commands);
+    commands.topUpReservation = (cmd, within) => {
+      order.push('topUp');
+      return topUp(cmd, within);
+    };
+    const transaction = f.store.transaction.bind(f.store);
+    f.store.transaction = <T>(fn: (tx: ResearchTx) => Promise<T>) =>
+      transaction((tx) =>
+        fn({
+          ...tx,
+          runs: {
+            ...tx.runs,
+            hasActive: (businessId: string) => {
+              order.push('hasActive');
+              return tx.runs.hasActive(businessId);
+            },
+          },
+        }),
+      );
+    await f.runs.resume(owner(), run.id);
+    expect(order).toEqual(['topUp', 'hasActive']);
   });
 
   test('the Owner’s Try again needs credits for the remaining budget (402) and a failed run (409)', async () => {
@@ -274,7 +320,7 @@ describe('FR-32: Staff runs monitor and queue health', () => {
     const run = await f.runs.start(owner(), PLAN);
     await f.stopHook.set({ stepKey: 'websites', items: 2 });
     await f.executor.runAttempt(run.id);
-    f.advance(3 * 60_000);
+    f.advance(6 * 60_000);
     await f.sweeper.sweep();
     await f.runToEnd(run.id);
 

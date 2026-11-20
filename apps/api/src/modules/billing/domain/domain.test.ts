@@ -215,4 +215,25 @@ describe('FR-12: Purchase', () => {
       paidAt: later,
     });
   });
+
+  test('a delayed payment that fails marks a pending purchase failed, never a paid one', () => {
+    const start = (id: string) =>
+      Purchase.start({
+        id,
+        businessId: 'b',
+        packId: 'k',
+        credits: 2500,
+        amountCents: 2500,
+        stripeSessionId: `cs_${id}`,
+        now,
+      });
+    const pending = start('p1');
+    expect(pending.markFailed()).toBe(true);
+    expect(pending.status).toBe('failed');
+    expect(pending.markFailed()).toBe(false);
+    const paid = start('p2');
+    paid.markPaid({ eventId: 'evt_1', taxCents: 0, now: later });
+    expect(paid.markFailed()).toBe(false);
+    expect(paid.status).toBe('paid');
+  });
 });

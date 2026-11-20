@@ -38,6 +38,8 @@ import type {
   StepProgress,
   StepRecord,
   StopHook,
+  ToolCallRequest,
+  ToolCallResult,
   ToolCatalogPort,
   ToolRunnerPort,
 } from './ports.js';
@@ -52,6 +54,7 @@ import {
   RETRYABLE_TOOL_ERRORS,
   RetryableRunError,
   TOOL_OFF_ERRORS,
+  WorkerShutdownSignal,
   WorkerStopSignal,
 } from './run-errors.js';
 import {
@@ -84,8 +87,20 @@ export interface ExecutorDeps {
   stopHook?: StopHook;
   /** Renews the lease every 30 s while an attempt runs (FR-36); none in unit tests. */
   heartbeat?: Heartbeat;
+  /**
+   * At shutdown, how long a Tool call already in flight may still finish (and be stored) before
+   * the attempt stops without it. Default 10 s (the worker has about 25 s to stop).
+   */
+  shutdownGraceMs?: number;
   logger?: { warn(obj: object, msg: string): void };
 }
+
+export interface AttemptOptions {
+  /** Aborted when the worker shuts down: the attempt ends as `worker_stopped` (FR-36). */
+  signal?: AbortSignal;
+}
+
+const SHUTDOWN_GRACE_MS = 10_000;
 
 /** FR-36: the worker holding an attempt renews its lease every 30 s. */
 export const LEASE_RENEW_MS = 30_000;
@@ -100,7 +115,9 @@ export type AttemptResult =
   /** The sweeper took the attempt over; nothing was written. */
   | 'lease_lost'
   /** The test hook stopped the worker; the attempt is left for the sweeper. */
-  | 'stopped';
+  | 'stopped'
+  /** The worker shut down: the attempt ended as `worker_stopped` and the next one is queued. */
+  | 'worker_stopped';
 
 const FINISH_STEP = 'finish_step';
 const SESSION_TAIL = 6;
@@ -145,13 +162,16 @@ export class RunExecutor {
     });
   }
 
-  async runAttempt(runId: string): Promise<AttemptResult> {
+  async runAttempt(runId: string, options: AttemptOptions = {}): Promise<AttemptResult> {
+    if (options.signal?.aborted) return 'skipped';
     const claim = await this.claim(runId);
     if (!claim) return 'skipped';
-    const session = new AttemptSession(this.deps, this.specs, claim);
+    const session = new AttemptSession(this.deps, this.specs, claim, options.signal);
     const lease = claim.run.settings.workerStoppedAfterMinutes;
+    // The heartbeat is a single conditional update: it never waits on the attempt's work, which
+    // holds no transaction while a provider runs (FR-36).
     const stop = this.deps.heartbeat?.start(async () => {
-      await this.renewLease(runId, claim.attempt.n, lease);
+      if (!(await this.renewLease(runId, claim.attempt.n, lease))) session.leaseLost();
     }, LEASE_RENEW_MS);
     try {
       return await session.execute();
@@ -231,11 +251,13 @@ class AttemptSession {
   private position: Position;
   private pendingMessages: RunMessageRecord[] = [];
   private stopHook: { stepKey: string; items: number } | null = null;
+  private lost = false;
 
   constructor(
     private readonly deps: ExecutorDeps,
     private readonly specs: ReadonlyMap<string, StepSpec>,
     claim: Claim,
+    private readonly signal?: AbortSignal,
   ) {
     this.run = claim.run;
     this.steps = new Map(claim.steps.map((s) => [s.key, s]));
@@ -249,6 +271,11 @@ class AttemptSession {
       itemsDone: claim.attempt.fromItem,
       itemsLeft: claim.handoff?.itemsLeft ?? 0,
     };
+  }
+
+  /** The heartbeat found the lease gone: stop before the next Tool call. */
+  leaseLost(): void {
+    this.lost = true;
   }
 
   async execute(): Promise<AttemptResult> {
@@ -759,17 +786,9 @@ class AttemptSession {
       purpose: `research.step.${def.key}`,
     };
     for (let tryN = 0; ; tryN += 1) {
+      const result = await this.callTool(def.key, toolKey, input);
       const outcome = await this.save(async (tx) => {
-        const result = await this.deps.tools.call({
-          businessId: this.run.businessId,
-          runId: this.run.id,
-          stepKey: def.key,
-          attemptN: this.attempt.n,
-          toolKey,
-          input,
-          budget: { remainingMillicredits: this.run.remainingMillicredits },
-          within: tx.handle,
-        });
+        await result.commit?.(tx.handle);
         this.spend(def.key, result.millicredits, result.providerCostMicros ?? 0);
         if (result.status === 'ok') return { response: toLlmResponse(result.output) };
         const code = result.error?.code ?? 'PROVIDER_ERROR';
@@ -785,8 +804,66 @@ class AttemptSession {
       if (outcome.wait === undefined) {
         throw new RetryableRunError('PROVIDER_ERROR', this.lastError ?? 'Claude is unavailable');
       }
-      await this.deps.sleeper.sleep(outcome.wait);
+      await this.whileRunning(this.deps.sleeper.sleep(outcome.wait), 0);
     }
+  }
+
+  /**
+   * One Tool call, outside any transaction (FR-19, FR-36): the tools module stores a provider
+   * call as started, and the caller's next save stores its outcome with the progress and the
+   * handoff (`commit`). No new paid call starts once the lease is lost or shutdown began.
+   */
+  private async callTool(
+    stepKey: string,
+    toolKey: string,
+    input: ToolCallRequest['input'],
+  ): Promise<ToolCallResult> {
+    if (this.lost) throw new LeaseLostError();
+    if (this.signal?.aborted) throw new WorkerShutdownSignal();
+    return this.whileRunning(
+      this.deps.tools.call({
+        businessId: this.run.businessId,
+        runId: this.run.id,
+        stepKey,
+        attemptN: this.attempt.n,
+        toolKey,
+        input,
+        budget: { remainingMillicredits: this.run.remainingMillicredits },
+        defer: true,
+      }),
+      this.deps.shutdownGraceMs ?? SHUTDOWN_GRACE_MS,
+    );
+  }
+
+  /**
+   * Waits for `work`; once the worker is shutting down, at most `graceMs` more, then the attempt
+   * stops (WorkerShutdownSignal) and the work's result is dropped.
+   */
+  private whileRunning<T>(work: Promise<T>, graceMs: number): Promise<T> {
+    const signal = this.signal;
+    if (!signal) return work;
+    return new Promise<T>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const onAbort = () => {
+        timer = setTimeout(() => reject(new WorkerShutdownSignal()), graceMs);
+      };
+      const settle = () => {
+        if (timer) clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+      work.then(
+        (value) => {
+          settle();
+          resolve(value);
+        },
+        (error: unknown) => {
+          settle();
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+    });
   }
 
   /** One provider Tool call with FR-20 retries (1 s, 4 s, 16 s); each try is saved on its own. */
@@ -804,17 +881,9 @@ class AttemptSession {
     const kind = TOOL_KINDS[toolKey];
     if (!kind) return { error: 'Unknown tool' };
     for (let tryN = 0; ; tryN += 1) {
+      const result = await this.callTool(def.key, toolKey, input);
       const outcome = await this.save(async (tx) => {
-        const result = await this.deps.tools.call({
-          businessId: this.run.businessId,
-          runId: this.run.id,
-          stepKey: def.key,
-          attemptN: this.attempt.n,
-          toolKey,
-          input,
-          budget: { remainingMillicredits: this.run.remainingMillicredits },
-          within: tx.handle,
-        });
+        await result.commit?.(tx.handle);
         this.spend(def.key, result.millicredits, result.providerCostMicros ?? 0);
         if (result.status === 'ok') {
           this.run.recordToolSuccess(toolKey);
@@ -858,7 +927,7 @@ class AttemptSession {
         };
       });
       if (outcome.kind !== 'error' || outcome.wait === undefined) return outcome.view;
-      await this.deps.sleeper.sleep(outcome.wait);
+      await this.whileRunning(this.deps.sleeper.sleep(outcome.wait), 0);
     }
   }
 
@@ -962,23 +1031,18 @@ class AttemptSession {
   }
 
   /**
-   * A save point (FR-19, FR-36): `work` (usually one Tool call, recorded by the ToolRunner in
-   * this transaction) commits together with step progress, spend, the handoff and the agent's
-   * messages. The lease is checked first (the sweeper may have ended the attempt) and renewed.
+   * A save point (FR-19, FR-36), one short transaction with no provider call in it: `work`
+   * (usually storing a finished Tool call through its `commit`, and its effects) commits together
+   * with step progress, spend, the handoff and the agent's messages. The lease is renewed first
+   * (false: the sweeper ended the attempt). Locks are taken attempt first, then run, like the
+   * sweeper. After the save, a cancel request or a shutdown stops the attempt.
    */
   private async save<T>(work: (tx: ResearchTx) => Promise<T>): Promise<T> {
     const lease = this.run.settings.workerStoppedAfterMinutes;
     const owner = this.deps.workerId;
     const result = await this.deps.store.transaction(async (tx) => {
-      const n = this.attempt.n;
-      if (
-        !(await tx.attempts.renewLease(
-          this.run.id,
-          n,
-          owner,
-          leaseUntil(this.deps.clock.now(), lease),
-        ))
-      ) {
+      const until = leaseUntil(this.deps.clock.now(), lease);
+      if (!(await tx.attempts.renewLease(this.run.id, this.attempt.n, owner, until))) {
         throw new LeaseLostError();
       }
       const value = await work(tx);
@@ -986,15 +1050,14 @@ class AttemptSession {
       if (stored) this.run.adoptCancelRequest(stored);
       await tx.runs.save(this.run);
       for (const key of this.dirty) await tx.steps.save(this.step(key));
-      const now = this.deps.clock.now();
-      await tx.handoffs.save(this.handoff(now));
+      await tx.handoffs.save(this.handoff(this.deps.clock.now()));
       if (this.pendingMessages.length) await tx.messages.append(this.pendingMessages);
-      await tx.attempts.renewLease(this.run.id, n, owner, leaseUntil(now, lease));
       return value;
     });
     this.dirty.clear();
     this.pendingMessages = [];
     if (this.run.cancelRequested) throw new CancelRequestedSignal();
+    if (this.signal?.aborted) throw new WorkerShutdownSignal();
     return result;
   }
 
@@ -1044,10 +1107,14 @@ class AttemptSession {
   private async handle(error: unknown): Promise<AttemptResult> {
     if (error instanceof LeaseLostError) return 'lease_lost';
     if (error instanceof WorkerStopSignal) return 'stopped';
-    let status: 'cancelled' | 'final_error' | 'retryable_error';
+    let status: 'cancelled' | 'final_error' | 'retryable_error' | 'worker_stopped';
     let failure: { code: RunFailureCode; message: string } | null = null;
     if (error instanceof CancelRequestedSignal) status = 'cancelled';
-    else if (error instanceof FinalRunError) {
+    else if (error instanceof WorkerShutdownSignal) {
+      // Retryable: the next attempt continues after the flow's wait (FR-36).
+      status = 'worker_stopped';
+      failure = { code: 'INTERNAL_ERROR', message: error.message };
+    } else if (error instanceof FinalRunError) {
       status = 'final_error';
       failure = { code: error.code, message: error.message };
     } else {

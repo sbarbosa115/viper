@@ -27,6 +27,8 @@ export interface PlanningApplicationDeps {
   runStats: RunStats;
   wallet: WalletReader;
   activity: PlanActivity;
+  /** Plans per Business per UTC day (default 30). */
+  dailyPlanLimit?: number;
 }
 
 export interface PlanningApplication {

@@ -78,6 +78,11 @@ export class InMemoryToolCallRepository implements ToolCallRepository {
     this.rows.push(...records.map((r) => structuredClone(r)));
     return Promise.resolve();
   }
+  complete(record: ToolCallRecord): Promise<void> {
+    const i = this.rows.findIndex((r) => r.id === record.id && r.status === 'started');
+    if (i >= 0) this.rows[i] = { ...structuredClone(record), createdAt: this.rows[i]!.createdAt };
+    return Promise.resolve();
+  }
   findReusable(q: {
     runId: string;
     stepKey: string | null;
@@ -99,7 +104,7 @@ export class InMemoryToolCallRepository implements ToolCallRepository {
     const spend = new Map<string, ToolSpend>();
     for (const r of this.rows) {
       if (r.createdAt < window.from || r.createdAt >= window.to) continue;
-      if (r.reused || r.status === 'skipped') continue;
+      if (r.reused || r.status === 'skipped' || r.status === 'started') continue;
       const s = spend.get(r.toolKey) ?? {
         toolKey: r.toolKey,
         providerCostMicros: 0,
@@ -118,7 +123,10 @@ export class InMemoryToolCallRepository implements ToolCallRepository {
   statsSince(since: Date): Promise<Map<string, ToolStats>> {
     const stats = new Map<string, ToolStats>();
     const counted = this.rows
-      .filter((r) => r.createdAt >= since && !r.reused && r.status !== 'skipped')
+      .filter(
+        (r) =>
+          r.createdAt >= since && !r.reused && r.status !== 'skipped' && r.status !== 'started',
+      )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     for (const r of counted) {
       const s = stats.get(r.toolKey) ?? { calls: 0, errors: 0, lastErrorAt: null, lastError: null };

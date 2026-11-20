@@ -90,19 +90,29 @@ export function fakeResearchAgent(request: LlmRequest): Partial<LlmResponse> {
   const done = Number(state?.itemsDone ?? 0);
   const total = done + Number(state?.itemsLeft ?? 0);
   const item = items[0];
-  const notes = item
-    ? `${step}: ${done} of ${total} items done; next "${item.label}".`
-    : `${step}: all ${total} items done.`;
-  if (!state || !item) return respond('finish_step', { notes }, request);
+  /**
+   * Working notes as they stand once this turn's work is stored (the handoff keeps them): the
+   * items this turn completes are counted as done.
+   */
+  const notesAfter = (completes: number) => {
+    const doneAfter = done + completes;
+    const next = items[completes];
+    if (doneAfter >= total) return `${step}: all ${total} items done.`;
+    return next
+      ? `${step}: ${doneAfter} of ${total} items done; next "${next.label}".`
+      : `${step}: ${doneAfter} of ${total} items done.`;
+  };
+  if (!state || !item) return respond('finish_step', { notes: notesAfter(0) }, request);
 
   const providerTool = (it: StateItem) => it.tools?.[0] ?? tools.find((t) => t.includes('__'));
   /** One provider turn for the first item and the next items that use the same Tool. */
-  const callProvider = (extra: Record<string, unknown> = {}, batch = true) => {
+  const callProvider = (extra: Record<string, unknown> = {}, batch = true, completes = true) => {
     const tool = providerTool(item);
-    if (!tool) return respond('finish_step', { notes }, request);
+    if (!tool) return respond('finish_step', { notes: notesAfter(0) }, request);
     const ids = batch
       ? items.filter((it) => providerTool(it) === tool).map((it) => it.id)
       : [item.id];
+    const notes = notesAfter(completes ? ids.length : 0);
     return respond(tool, { items: ids, ...extra, notes }, request);
   };
 
@@ -110,7 +120,7 @@ export function fakeResearchAgent(request: LlmRequest): Partial<LlmResponse> {
     case 'search-terms':
       return respond(
         'save_search_terms',
-        { item: item.id, terms: termsFor(item.label), notes },
+        { item: item.id, terms: termsFor(item.label), notes: notesAfter(1) },
         request,
       );
     case 'maps-places':
@@ -118,7 +128,10 @@ export function fakeResearchAgent(request: LlmRequest): Partial<LlmResponse> {
     case 'pre-score':
       return respond(
         'save_pre_scores',
-        { scores: items.map((it) => ({ item: it.id, score: preScore(it.data) })), notes },
+        {
+          scores: items.map((it) => ({ item: it.id, score: preScore(it.data) })),
+          notes: notesAfter(items.length),
+        },
         request,
       );
     case 'websites': {
@@ -127,12 +140,21 @@ export function fakeResearchAgent(request: LlmRequest): Partial<LlmResponse> {
       if (read) {
         const output = record(read.output);
         const facts = websiteFacts(typeof output.markdown === 'string' ? output.markdown : '');
-        return respond('record_website_facts', { item: item.id, ...facts, notes }, request);
+        return respond(
+          'record_website_facts',
+          { item: item.id, ...facts, notes: notesAfter(1) },
+          request,
+        );
       }
-      return callProvider({}, false);
+      // Reading a website doesn't finish its item: recording the facts does.
+      return callProvider({}, false, false);
     }
     case 'score-pitch':
-      return respond('save_scores', { scores: items.map(scoreFor), notes }, request);
+      return respond(
+        'save_scores',
+        { scores: items.map(scoreFor), notes: notesAfter(items.length) },
+        request,
+      );
     default:
       return callProvider();
   }

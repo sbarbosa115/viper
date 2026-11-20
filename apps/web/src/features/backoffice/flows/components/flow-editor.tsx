@@ -65,9 +65,16 @@ function NumberField({
   );
 }
 
-/** Server 400 `fields` (paths like `runSettings.maxTotalHours`) mapped onto the form's error keys. */
+/**
+ * Server errors mapped onto the form's error keys: 400 `fields` (paths like
+ * `runSettings.maxTotalHours`), and 422 STEP_TIME_OVER_ACTIVE_TIME's message under the steps.
+ */
 function serverErrors(error: unknown): Errors | null {
-  if (!(error instanceof ApiError) || error.status !== 400 || !error.fields) return null;
+  if (!(error instanceof ApiError)) return null;
+  if (error.status === 422 && error.code === 'STEP_TIME_OVER_ACTIVE_TIME') {
+    return { 'steps.time': error.message };
+  }
+  if (error.status !== 400 || !error.fields) return null;
   return { ...error.fields };
 }
 

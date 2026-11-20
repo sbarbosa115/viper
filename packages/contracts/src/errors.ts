@@ -22,6 +22,7 @@ export const errorCode = z.enum([
   'INVALID_CREDENTIALS',
   'INVALID_CODE',
   'TWO_FACTOR_REQUIRED',
+  'TWO_FACTOR_LOCKED',
   'ACTING_AS_FORBIDDEN',
   'EMAIL_NOT_VERIFIED',
   // Billing
@@ -33,11 +34,13 @@ export const errorCode = z.enum([
   'ADDRESS_NOT_FOUND',
   'ASSISTANT_UNAVAILABLE',
   'PROFILE_INCOMPLETE',
+  'GEOCODER_UNAVAILABLE',
   // Research
   'RUN_IN_PROGRESS',
   'RESEARCH_UNAVAILABLE',
   'RUN_NOT_ACTIVE',
   'RUN_NOT_FAILED',
+  'STEP_TIME_OVER_ACTIVE_TIME',
 ]);
 export type ErrorCode = z.infer<typeof errorCode>;
 

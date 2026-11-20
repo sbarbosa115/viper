@@ -591,23 +591,29 @@ class KyselyAttemptRepository implements AttemptRepository {
     return rows.map(toAttempt);
   }
 
-  async renewLease(runId: string, n: number, owner: string, until: Date): Promise<boolean> {
-    // Locks the attempt row: the sweeper's update waits for this transaction (FR-36).
+  async findForUpdate(runId: string, n: number): Promise<AttemptRecord | null> {
     const row = await this.db
       .selectFrom('run_attempts')
-      .select(['status', 'lease_owner'])
+      .selectAll()
       .where('run_id', '=', runId)
       .where('n', '=', n)
       .forUpdate()
       .executeTakeFirst();
-    if (row?.status !== 'running' || row.lease_owner !== owner) return false;
-    await this.db
+    return row ? toAttempt(row) : null;
+  }
+
+  async renewLease(runId: string, n: number, owner: string, until: Date): Promise<boolean> {
+    // One conditional update: no read lock held while the caller works (FR-36). MySQL counts
+    // matched rows (mysql2 sets FOUND_ROWS), so renewing to the same time still returns true.
+    const result = await this.db
       .updateTable('run_attempts')
       .set({ lease_expires_at: until })
       .where('run_id', '=', runId)
       .where('n', '=', n)
-      .execute();
-    return true;
+      .where('status', '=', 'running')
+      .where('lease_owner', '=', owner)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 }
 

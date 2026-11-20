@@ -23,6 +23,19 @@ import {
 /** FR-20: a provider error is retried up to 3 times, after 1 s, 4 s and 16 s. */
 export const RETRY_DELAYS_MS: readonly number[] = [1_000, 4_000, 16_000];
 
+/**
+ * The longest one try of any adapter may take: Apify's run-sync wait (240 s) plus reading the
+ * run's dataset (30 s). Claude (90 s) and the HTTP providers (30 s) are shorter.
+ */
+export const LONGEST_TRY_MS = 270_000;
+
+/**
+ * The longest Tool call: its longest try plus the retry waits. A run's lease (the flow's
+ * worker-stopped timeout) must be longer (FR-36), and the worker renews it every 30 s meanwhile.
+ */
+export const LONGEST_TOOL_CALL_MS =
+  LONGEST_TRY_MS + RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0);
+
 const MAX_ERROR_LENGTH = 1_000;
 
 export interface ToolCallRequest<Tx = never> {
@@ -37,6 +50,12 @@ export interface ToolCallRequest<Tx = never> {
   readonly budget?: { readonly remainingMillicredits: number };
   /** Record the Tool call in this transaction (research saves its handoff in the same one). */
   readonly within?: Tx;
+  /**
+   * Record later, so no caller transaction stays open while a provider runs (FR-19, FR-36): a
+   * provider call is stored as `started` first (a short write of its own), and the result's
+   * `commit(within)` stores the outcome, in the caller's transaction.
+   */
+  readonly defer?: boolean;
 }
 
 export interface ToolCallError {
@@ -46,9 +65,12 @@ export interface ToolCallError {
   readonly retryable: boolean;
 }
 
+/** How a call ended (`started` is only a stored row's state while the provider runs). */
+export type ToolCallOutcome = Exclude<ToolCallStatus, 'started'>;
+
 export interface ToolCallResult<O = unknown> {
   readonly toolCallId: string;
-  readonly status: ToolCallStatus;
+  readonly status: ToolCallOutcome;
   readonly output: O | null;
   readonly units: number;
   /** Including companion meters (Claude output tokens). */
@@ -57,6 +79,11 @@ export interface ToolCallResult<O = unknown> {
   /** Answered from a stored call of this run (same Step, Tool and input): not charged again. */
   readonly reused: boolean;
   readonly error: ToolCallError | null;
+  /**
+   * Deferred requests only: stores the Tool call, in `within` (the runner's transaction type)
+   * when given. Calling it again does nothing.
+   */
+  commit?(within?: unknown): Promise<void>;
 }
 
 export interface ToolRunnerDeps<Tx> {
@@ -127,13 +154,57 @@ export class ToolRunner<Tx = never> {
       }
     }
 
+    let started: ToolCallRecord | null = null;
+    if (req.defer) {
+      // Stored on its own (no caller transaction): Staff see a call that never finished.
+      started = this.record(ctx, {
+        toolKey: tool.key,
+        status: 'started',
+        reused: false,
+        output: null,
+        units: 0,
+        millicredits: 0,
+        providerCostMicros: 0,
+        error: null,
+      });
+      await this.deps.calls().add([started]);
+    }
+    const startedId = started?.id ?? null;
     const outcome = await this.runWithRetries(() => adapter.run(input));
-    if ('error' in outcome) return this.finish(ctx, 'error', outcome.error);
+    if ('error' in outcome) return this.finish(ctx, 'error', outcome.error, undefined, startedId);
     const output = adapter.parseOutput(outcome.result.output);
     if (!output.ok) {
-      return this.finish(ctx, 'error', failure('INVALID_OUTPUT', output.message));
+      const invalid = failure('INVALID_OUTPUT', output.message);
+      return this.finish(ctx, 'error', invalid, undefined, startedId);
     }
-    return this.finish(ctx, 'ok', null, { ...outcome.result, output: output.value });
+    return this.finish(ctx, 'ok', null, { ...outcome.result, output: output.value }, startedId);
+  }
+
+  /** Stores records now, or hands them to the caller's `commit` for a deferred request. */
+  private async store(
+    req: ToolCallRequest<Tx>,
+    records: readonly ToolCallRecord[],
+    startedId: string | null = null,
+  ): Promise<Pick<ToolCallResult, 'commit'>> {
+    const write = async (within?: Tx) => {
+      const calls = this.deps.calls(within);
+      const primary = startedId ? records.find((r) => r.id === startedId) : undefined;
+      if (primary) await calls.complete(primary);
+      const rest = records.filter((r) => r !== primary);
+      if (rest.length > 0) await calls.add(rest);
+    };
+    if (!req.defer) {
+      await write(req.within);
+      return {};
+    }
+    let done = false;
+    return {
+      commit: async (within?: unknown) => {
+        if (done) return;
+        done = true;
+        await write(within as Tx | undefined);
+      },
+    };
   }
 
   private async reuse(ctx: CallContext<Tx>): Promise<ToolCallResult | null> {
@@ -157,8 +228,9 @@ export class ToolRunner<Tx = never> {
       providerCostMicros: 0,
       error: null,
     });
-    await calls.add([record]);
+    const saved = await this.store(req, [record]);
     return {
+      ...saved,
       toolCallId: record.id,
       status: 'ok',
       output: stored.output,
@@ -201,13 +273,14 @@ export class ToolRunner<Tx = never> {
 
   private async finish(
     ctx: CallContext<Tx>,
-    status: ToolCallStatus,
+    status: ToolCallOutcome,
     error: ToolCallError | null,
     result?: AdapterResult<unknown>,
+    startedId: string | null = null,
   ): Promise<ToolCallResult> {
     const units = result?.units ?? 0;
     const card = ctx.tool.rateCard;
-    const primary = this.record(ctx, {
+    const fresh = this.record(ctx, {
       toolKey: ctx.tool.key,
       status,
       reused: false,
@@ -217,6 +290,7 @@ export class ToolRunner<Tx = never> {
       providerCostMicros: card.providerCostMicrosFor(units),
       error: error ? `${error.code}: ${error.message}` : null,
     });
+    const primary = startedId ? { ...fresh, id: startedId } : fresh;
     const companions: ToolCallRecord[] = [];
     for (const meter of result?.meters ?? []) {
       const snapshot = await this.deps.tools.find(meter.toolKey);
@@ -235,9 +309,10 @@ export class ToolRunner<Tx = never> {
         }),
       );
     }
-    await this.deps.calls(ctx.req.within).add([primary, ...companions]);
     const all = [primary, ...companions];
+    const stored = await this.store(ctx.req, all, startedId);
     return {
+      ...stored,
       toolCallId: primary.id,
       status,
       output: result ? result.output : null,

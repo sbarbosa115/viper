@@ -45,6 +45,15 @@ envs:
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
+  # The client's address for every IP limit (sign-ups, log-ins, the site forms, the global rate
+  # limit). App Platform's edge sets do-connecting-ip and overwrites a client-sent one; when it is
+  # missing, the api trusts exactly one X-Forwarded-For hop (the edge), never the client's entries.
+  - key: CLIENT_IP_HEADER
+    scope: RUN_TIME
+    value: do-connecting-ip
+  - key: TRUST_PROXY_HOPS
+    scope: RUN_TIME
+    value: '1'
 
 services:
   - name: api

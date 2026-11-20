@@ -19,18 +19,30 @@ import {
 } from './ports.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const STARTED_WITHOUT_RESULT = 'No result stored: the worker stopped during this call';
 
-/** platform's AuditRecorder (FR-7). */
+/**
+ * platform's AuditRecorder (FR-7). `within` is the open transaction of the change being audited,
+ * so the change and its entry commit together.
+ */
 export interface ToolAudit {
-  record(entry: {
-    staffMemberId: string;
-    businessId: string | null;
-    action: string;
-    targetType: string;
-    targetId: string | null;
-    details?: Readonly<Record<string, unknown>>;
-  }): Promise<void>;
+  record(
+    entry: {
+      staffMemberId: string;
+      businessId: string | null;
+      action: string;
+      targetType: string;
+      targetId: string | null;
+      details?: Readonly<Record<string, unknown>>;
+    },
+    within?: object,
+  ): Promise<void>;
 }
+
+/** Runs `fn` in one database transaction: the Tools on it, and its handle for the Audit log. */
+export type ToolCatalogTransaction = <T>(
+  fn: (scope: { tools: ToolRepository; within: object | undefined }) => Promise<T>,
+) => Promise<T>;
 
 function requireStaff(actor: Actor | null): Actor {
   if (!actor) throw new UnauthenticatedError('Sign in required');
@@ -106,7 +118,13 @@ export class ListTools {
 
 /** PATCH /api/staff/tools/:key (FR-23): enable/disable or reprice; Audit log `tool.updated`. */
 export class UpdateTool {
-  constructor(private readonly deps: CatalogDeps & { audit: ToolAudit }) {}
+  constructor(
+    private readonly deps: CatalogDeps & {
+      audit: ToolAudit;
+      /** The Rate card change and its Audit log entry commit together (default: no transaction). */
+      transaction?: ToolCatalogTransaction;
+    },
+  ) {}
 
   async execute(cmd: {
     actor: Actor | null;
@@ -114,34 +132,41 @@ export class UpdateTool {
     changes: UpdateToolBody;
   }): Promise<ToolDto> {
     const actor = requireStaff(cmd.actor);
-    const snapshot = await this.deps.tools.find(cmd.key);
-    if (!snapshot) throw new NotFoundError('Tool not found', { key: cmd.key });
-    const tool = Tool.restore(snapshot);
-    const before = tool.toSnapshot();
-    const changed = tool.change(cmd.changes, this.deps.clock.now());
-    if (changed.length > 0) {
-      const after = tool.toSnapshot();
-      await this.deps.tools.save(after);
-      await this.deps.audit.record({
-        staffMemberId: actor.memberId,
-        businessId: null,
-        action: 'tool.updated',
-        targetType: 'tool',
-        targetId: tool.key,
-        details: {
-          fields: changed,
-          ...Object.fromEntries(
-            changed.map((f) => [
-              f,
-              {
-                from: before[f as keyof ToolSnapshot],
-                to: after[f as keyof ToolSnapshot],
-              },
-            ]),
-          ),
+    const transaction: ToolCatalogTransaction =
+      this.deps.transaction ?? ((fn) => fn({ tools: this.deps.tools, within: undefined }));
+    const tool = await transaction(async ({ tools, within }) => {
+      const snapshot = await tools.find(cmd.key);
+      if (!snapshot) throw new NotFoundError('Tool not found', { key: cmd.key });
+      const found = Tool.restore(snapshot);
+      const before = found.toSnapshot();
+      const changed = found.change(cmd.changes, this.deps.clock.now());
+      if (changed.length === 0) return found;
+      const after = found.toSnapshot();
+      await tools.save(after);
+      await this.deps.audit.record(
+        {
+          staffMemberId: actor.memberId,
+          businessId: null,
+          action: 'tool.updated',
+          targetType: 'tool',
+          targetId: found.key,
+          details: {
+            fields: changed,
+            ...Object.fromEntries(
+              changed.map((f) => [
+                f,
+                {
+                  from: before[f as keyof ToolSnapshot],
+                  to: after[f as keyof ToolSnapshot],
+                },
+              ]),
+            ),
+          },
         },
-      });
-    }
+        within,
+      );
+      return found;
+    });
     const since = new Date(this.deps.clock.now().getTime() - DAY_MS);
     const [stats, configured] = await Promise.all([
       this.deps.calls.statsSince(since),
@@ -207,8 +232,9 @@ export class ToolQueries {
       units: c.units,
       millicredits: c.millicredits,
       providerCostMicros: c.providerCostMicros,
-      status: c.status,
-      error: c.error,
+      // A call left `started` never got a result: its worker stopped mid-call.
+      status: c.status === 'started' ? 'error' : c.status,
+      error: c.status === 'started' ? STARTED_WITHOUT_RESULT : c.error,
       durationMs: c.durationMs,
       reused: c.reused,
       createdAt: c.createdAt,

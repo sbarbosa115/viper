@@ -224,6 +224,41 @@ describe('FR-16: Create a Plan from a Goal', () => {
     expect(f.analytics.events).toHaveLength(0);
   });
 
+  test('403 EMAIL_NOT_VERIFIED before the email is verified; the model is not called', async () => {
+    const f = planningFixture();
+    f.llm.reply(draftReply(bakeriesDraft()));
+    expect(await codeOf(f.app.createPlan.execute(owner({ emailVerified: false }), BAKERIES_GOAL))).toBe(
+      'EMAIL_NOT_VERIFIED',
+    );
+    expect(f.llm.requests).toHaveLength(0);
+    expect(f.store.all()).toHaveLength(0);
+  });
+
+  test('at most 30 Plans per Business per day (429 TOO_MANY_REQUESTS); a new UTC day resets it', async () => {
+    const f = planningFixture();
+    for (let i = 0; i < 30; i += 1) {
+      f.tick();
+      await f.createBakeries();
+    }
+    f.llm.reply(draftReply(bakeriesDraft()));
+    const error = await f.app.createPlan.execute(owner(), BAKERIES_GOAL).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'TOO_MANY_REQUESTS', details: { limit: 30 } });
+    expect(f.llm.requests).toHaveLength(30);
+    // Another Business has its own allowance.
+    expect((await f.createBakeries(otherOwner())).plan.businessId).toBe(OTHER_BUSINESS);
+    f.clock.set(new Date('2026-11-20T00:00:01.000Z'));
+    expect((await f.app.createPlan.execute(owner(), BAKERIES_GOAL)).plan.businessId).toBe(BUSINESS);
+  });
+
+  test('the daily Plan cap is configurable', async () => {
+    const f = planningFixture({ dailyPlanLimit: 1 });
+    await f.createBakeries();
+    f.llm.reply(draftReply(bakeriesDraft()));
+    expect(await codeOf(f.app.createPlan.execute(owner(), BAKERIES_GOAL))).toBe(
+      'TOO_MANY_REQUESTS',
+    );
+  });
+
   test('Staff Acting as create the Plan in the target Business', async () => {
     const f = planningFixture();
     const { plan } = await f.createBakeries(actingAs());

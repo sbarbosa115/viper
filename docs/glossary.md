@@ -8,6 +8,7 @@ Use these exact terms in code, UI, tests and PRDs.
 | Member | A person who can sign in to a Business | identity | user (in UI), seat |
 | Owner | The Member who created the Business; can manage Members and buy credits | identity | admin |
 | Staff | A Viper operator who can open the back office (signs in with two-factor) | identity | admin, superuser, super admin |
+| Two-factor lock | An hour in which a Staff Member can't pass two-factor, after 10 wrong codes within an hour | identity | lockout, ban |
 | Acting as | Staff using a Business's account as its Owner would see it, for support | identity | impersonate, assume, log in as |
 | Business Profile | What we know about a Business: what it sells, location, delivery area, current customers, price range | profile | settings, company info |
 | Product | Something the Business sells, as listed in its Business Profile (e.g. "cane sugar, 50 lb bag") | profile | item, SKU |
@@ -48,6 +49,7 @@ Use these exact terms in code, UI, tests and PRDs.
 | Credit pack | A one-time purchase that adds credits | billing | plan, subscription |
 | Reservation | Credits held for a running Research run, settled when it ends | billing | hold |
 | Settlement | Charging a run's real cost and releasing the rest of its Reservation | billing | |
+| Waived cost | Spend a failed run with 0 Leads isn't charged for; it stays waived if the run is resumed, so only work after the resume can be charged | billing / research | refund, credit back |
 | Ledger entry | One immutable movement of credits (grant, purchase, reservation, settlement, adjustment) | billing | transaction |
 | Platform settings | Staff-managed configuration: provider and model keys, SMTP, Stripe, analytics, run limits; secrets encrypted | platform | config, env |
 | Audit log | Append-only record of Staff access and changes, including everything done while Acting as | platform | history, activity |

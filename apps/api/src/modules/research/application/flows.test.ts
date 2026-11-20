@@ -1,6 +1,13 @@
 import { flow as flowContract, flowListItem, type FlowInput } from '@app/contracts/research';
 import { describe, expect, test } from 'vitest';
-import { ForbiddenError, NotFoundError, ValidationError } from '../../../shared/domain/errors.js';
+import {
+  CodedError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../../../shared/domain/errors.js';
+import { LONGEST_TOOL_CALL_MS } from '../../tools/index.js';
+import { MIN_WORKER_STOPPED_MINUTES } from '../domain/flow.js';
 import { ResearchFlowDefaults, ResearchPlanActivity, ResearchRunStats } from './flows.js';
 import { owner, PLAN, researchFixture, staff, STAFF_ID } from '../test/research-fixture.js';
 import { ResearchRun } from '../domain/run.js';
@@ -45,7 +52,7 @@ describe('FR-37: Research flow settings', () => {
       maxTotalHours: 3,
       maxAttempts: 3,
       retryWaitsMinutes: [1, 5, 15],
-      workerStoppedAfterMinutes: 2,
+      workerStoppedAfterMinutes: 5,
       scoreAtBudgetPct: 80,
       scoreAtMinutes: 45,
     });
@@ -132,6 +139,65 @@ describe('FR-37: Research flow settings', () => {
     expect(await fieldsOf(f.flows.update(staff(), 'local-buyers', next))).toEqual({
       'steps.7.required': 'Verify is always required',
     });
+  });
+
+  test('the seeded flow fits its own limits: Step time limits within max active time, a safe lease', () => {
+    const total = LOCAL_BUYERS_V1.steps.reduce((sum, s) => sum + s.timeLimitMinutes, 0);
+    expect(total).toBeLessThanOrEqual(LOCAL_BUYERS_V1.runSettings.maxActiveMinutes);
+    expect(LOCAL_BUYERS_V1.runSettings.workerStoppedAfterMinutes).toBeGreaterThanOrEqual(
+      MIN_WORKER_STOPPED_MINUTES,
+    );
+    // The lease outlives the longest Tool call with its retries (FR-20, FR-36).
+    expect(MIN_WORKER_STOPPED_MINUTES * 60_000).toBeGreaterThan(LONGEST_TOOL_CALL_MS);
+  });
+
+  test('Step time limits adding up to more than the max active time: 422 STEP_TIME_OVER_ACTIVE_TIME', async () => {
+    const f = await researchFixture();
+    const next = input();
+    next.steps[4] = { ...next.steps[4]!, timeLimitMinutes: next.steps[4]!.timeLimitMinutes + 1 };
+    const error = await f.flows.update(staff(), 'local-buyers', next).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CodedError);
+    expect(error).toMatchObject({
+      code: 'STEP_TIME_OVER_ACTIVE_TIME',
+      status: 422,
+      message: 'Step time limits add up to 61 min, more than the max active time (60 min)',
+      details: { field: 'steps', totalMinutes: 61, maxActiveMinutes: 60 },
+    });
+    expect((await f.flows.get(staff(), 'local-buyers')).version).toBe(1);
+    // Exactly the max active time is fine.
+    next.steps[3] = { ...next.steps[3]!, timeLimitMinutes: next.steps[3]!.timeLimitMinutes - 1 };
+    expect(await f.flows.update(staff(), 'local-buyers', next)).toMatchObject({ version: 2 });
+  });
+
+  test('a worker-stopped timeout shorter than the longest Tool call is rejected', async () => {
+    const f = await researchFixture();
+    const fields = await fieldsOf(
+      f.flows.update(
+        staff(),
+        'local-buyers',
+        input({ runSettings: { ...input().runSettings, workerStoppedAfterMinutes: 2 } }),
+      ),
+    );
+    expect(fields).toEqual({
+      'runSettings.workerStoppedAfterMinutes': `At least ${MIN_WORKER_STOPPED_MINUTES} min (the longest Tool call with its retries)`,
+    });
+  });
+
+  test('the new version and its Audit log entry commit together', async () => {
+    const f = await researchFixture();
+    const record = f.audit.record.bind(f.audit);
+    const within: unknown[] = [];
+    f.audit.record = (entry, tx) => {
+      within.push(tx);
+      return Promise.reject(new Error('audit log down'));
+    };
+    const next = input({ runSettings: { ...input().runSettings, maxAttempts: 4 } });
+    await expect(f.flows.update(staff(), 'local-buyers', next)).rejects.toThrow('audit log down');
+    // Rolled back with the failed entry: still v1.
+    expect((await f.flows.get(staff(), 'local-buyers')).version).toBe(1);
+    expect(within).toEqual([{ inMemory: true }]);
+    f.audit.record = record;
+    expect(await f.flows.update(staff(), 'local-buyers', next)).toMatchObject({ version: 2 });
   });
 
   test('a run in progress on v1 keeps v1’s limits when Staff save v2; new runs use v2', async () => {

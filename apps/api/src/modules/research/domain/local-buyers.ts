@@ -34,7 +34,9 @@ export const COLLECTION_STEPS: readonly string[] = [
  * Flow template "Local buyers" v1 with the seeded settings (FR-19, FR-37, PRD section 13). Each
  * agent Step lists the Claude Tool it runs on: the fast model routes Tool calls in Steps 2 and
  * 6–8 (one planning-model turn per item would spend most of a 400-credit budget); Score & pitch
- * uses the planning model. Staff can change a Step's model in the flow settings.
+ * uses the planning model. Staff can change a Step's model in the flow settings. The Steps' time
+ * limits add up to the max active time (60 min); the lease (worker-stopped timeout) outlasts the
+ * longest Tool call with its retries.
  */
 export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
   key: LOCAL_BUYERS_KEY,
@@ -45,7 +47,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
     maxTotalHours: 3,
     maxAttempts: 3,
     retryWaitsMinutes: [1, 5, 15],
-    workerStoppedAfterMinutes: 2,
+    workerStoppedAfterMinutes: 5,
     scoreAtBudgetPct: 80,
     scoreAtMinutes: 45,
   },
@@ -56,7 +58,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
       name: 'Search terms',
       tools: [TOOL_KEYS.claudeFast],
       budgetPct: 2,
-      timeLimitMinutes: 3,
+      timeLimitMinutes: 2,
       required: true,
     },
     {
@@ -69,16 +71,16 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
         TOOL_KEYS.claudeFast,
       ],
       budgetPct: 30,
-      timeLimitMinutes: 15,
+      timeLimitMinutes: 12,
       required: true,
     },
-    { key: 'merge', name: 'Merge', tools: [], budgetPct: 0, timeLimitMinutes: 2, required: true },
+    { key: 'merge', name: 'Merge', tools: [], budgetPct: 0, timeLimitMinutes: 1, required: true },
     {
       key: 'pre-score',
       name: 'Pre-score',
       tools: [TOOL_KEYS.claudeFast],
       budgetPct: 5,
-      timeLimitMinutes: 5,
+      timeLimitMinutes: 4,
       required: true,
     },
     {
@@ -86,7 +88,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
       name: 'Websites',
       tools: [TOOL_KEYS.firecrawl, TOOL_KEYS.claudeFast],
       budgetPct: 20,
-      timeLimitMinutes: 15,
+      timeLimitMinutes: 12,
       required: true,
     },
     {
@@ -94,7 +96,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
       name: 'Socials & reviews',
       tools: [TOOL_KEYS.instagram, TOOL_KEYS.yelp, TOOL_KEYS.claudeFast],
       budgetPct: 13,
-      timeLimitMinutes: 8,
+      timeLimitMinutes: 6,
       required: false,
     },
     {
@@ -102,7 +104,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
       name: 'Contacts',
       tools: [TOOL_KEYS.apolloPeople, TOOL_KEYS.hunter, TOOL_KEYS.claudeFast],
       budgetPct: 10,
-      timeLimitMinutes: 6,
+      timeLimitMinutes: 5,
       required: false,
     },
     {
@@ -110,7 +112,7 @@ export const LOCAL_BUYERS_V1: FlowSettingsSnapshot = {
       name: 'Verify',
       tools: [TOOL_KEYS.zerobounce, TOOL_KEYS.twilio, TOOL_KEYS.claudeFast],
       budgetPct: 8,
-      timeLimitMinutes: 8,
+      timeLimitMinutes: 6,
       required: true,
     },
     {

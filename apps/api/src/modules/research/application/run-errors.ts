@@ -74,3 +74,14 @@ export const RETRYABLE_TOOL_ERRORS: readonly string[] = [
 export const TOOL_OFF_ERRORS: readonly string[] = ['TOOL_DISABLED', 'PROVIDER_NOT_CONFIGURED'];
 
 export const PROVIDER_BACKOFF_MS: readonly number[] = [1_000, 4_000, 16_000];
+
+/**
+ * The worker is shutting down (SIGTERM, a deploy): the attempt stops at its next save, or after a
+ * short grace if a call is in flight, and ends as a retryable `worker_stopped` (FR-36).
+ */
+export class WorkerShutdownSignal extends Error {
+  constructor() {
+    super('The worker shut down');
+    this.name = 'WorkerShutdownSignal';
+  }
+}

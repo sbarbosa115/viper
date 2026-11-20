@@ -6,6 +6,12 @@ import { createIdentityUseCases } from '../../modules/identity/application/use-c
 import { actorResolverFrom } from '../../modules/identity/index.js';
 import { fakeIdentity, type FakeIdentity } from '../../modules/identity/test/fakes.js';
 import { registerActor } from '../../shared/http/actor-plugin.js';
+import {
+  clientIp,
+  DEFAULT_TRUST_PROXY_HOPS,
+  registerClientIp,
+  trustHops,
+} from '../../shared/http/client-ip.js';
 import { registerErrorHandling } from '../../shared/http/error-handler.js';
 import type { SitePack } from '../../../../web/src/site/index.js';
 import { fileLegalContent } from '../legal-content.js';
@@ -63,12 +69,18 @@ export async function buildSiteApp(
   world: SiteWorld,
   overrides: Partial<SiteDeps> = {},
 ): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false, trustProxy: true });
+  const app = Fastify({ logger: false, trustProxy: trustHops(DEFAULT_TRUST_PROXY_HOPS) });
+  registerClientIp(app);
   registerErrorHandling(app);
   registerActor(app, actorResolverFrom(world.identity));
   await app.register(helmet);
   await app.register(cookie, { secret: 'site-test-secret-site-test-secret' });
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: clientIp,
+  });
   await app.register(siteRoutes, { site: world.deps(overrides) });
   await app.ready();
   return app;

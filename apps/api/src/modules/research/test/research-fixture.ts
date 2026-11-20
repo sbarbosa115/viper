@@ -18,7 +18,7 @@ import type {
   Sleeper,
   StopHook,
 } from '../application/ports.js';
-import { RunExecutor, type AttemptResult } from '../application/run-executor.js';
+import { RunExecutor, type AttemptResult, type ExecutorDeps } from '../application/run-executor.js';
 import { RunEmails } from '../application/run-emails.js';
 import { RunUseCases } from '../application/runs.js';
 import { RunSweeper } from '../application/sweeper.js';
@@ -183,9 +183,17 @@ export class ClockSleeper implements Sleeper {
 
 export class RecordingAudit implements AuditPort {
   readonly entries: Parameters<AuditPort['record']>[0][] = [];
-  record(entry: Parameters<AuditPort['record']>[0]): Promise<void> {
+  record(entry: Parameters<AuditPort['record']>[0], _within?: object): Promise<void> {
     this.entries.push(entry);
     return Promise.resolve();
+  }
+}
+
+/** Collects warnings (the sweeper's and the heartbeat's). */
+export class RecordingLogger {
+  readonly warnings: { obj: object; msg: string }[] = [];
+  warn(obj: object, msg: string): void {
+    this.warnings.push({ obj, msg });
   }
 }
 
@@ -237,8 +245,15 @@ export async function researchFixture(options: { credits?: number } = {}) {
     ids,
     analytics,
   });
-  const makeExecutor = (workerId = 'worker-1') =>
+  const logger = new RecordingLogger();
+  const makeExecutor = (
+    workerId = 'worker-1',
+    extra: Partial<Pick<ExecutorDeps, 'heartbeat'>> = {},
+  ) =>
     new RunExecutor({
+      // A call still running at shutdown gets 20 ms (10 s in the worker).
+      shutdownGraceMs: 20,
+      ...extra,
       store,
       tools,
       catalog: tools,
@@ -260,6 +275,7 @@ export async function researchFixture(options: { credits?: number } = {}) {
     monitor,
     clock,
     analytics,
+    logger,
   });
   const emails = new RunEmails({
     store,
@@ -320,6 +336,7 @@ export async function researchFixture(options: { credits?: number } = {}) {
     makeExecutor,
     sweeper,
     emails,
+    logger,
     advance,
     available,
     runToEnd,

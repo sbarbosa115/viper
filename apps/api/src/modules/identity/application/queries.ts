@@ -15,6 +15,13 @@ export interface BusinessSummary {
   lastActiveAt: Date | null;
 }
 
+/** Who made a Staff change, for its Audit log entry (FR-7). */
+export interface StaffChange {
+  staffMemberId: string;
+  action: string;
+  details: Record<string, unknown>;
+}
+
 export interface OwnerContact {
   email: string;
   name: string;
@@ -35,8 +42,13 @@ export interface IdentityQueries {
   getOwnerContact(businessId: string): Promise<OwnerContact | null>;
   /** Business name edits (2–120 characters); 404 when unknown. */
   renameBusiness(businessId: string, name: string): Promise<void>;
-  /** FR-31 "mark internal": excluded from customer and revenue tiles. */
-  setBusinessInternal(businessId: string, internal: boolean): Promise<void>;
+  /**
+   * FR-31 "mark internal": excluded from customer and revenue tiles. With `by`, the Audit log
+   * entry is written in the same transaction (nothing is written for an unknown Business: 404).
+   */
+  setBusinessInternal(businessId: string, internal: boolean, by?: StaffChange): Promise<void>;
+  /** Member emails by id, for the Audit log (missing ids are skipped). */
+  getMemberEmails(memberIds: readonly string[]): Promise<Map<string, string>>;
 }
 
 function summary(b: Business): BusinessSummary {
@@ -52,12 +64,26 @@ function summary(b: Business): BusinessSummary {
 export function identityQueriesFrom(
   s: Pick<IdentityServices, 'repos' | 'uow' | 'directory'>,
 ): IdentityQueries {
-  async function update(businessId: string, change: (b: Business) => void): Promise<void> {
+  async function update(
+    businessId: string,
+    change: (b: Business) => void,
+    by?: StaffChange,
+  ): Promise<void> {
     await s.uow.run(async (r) => {
       const business = await r.businesses.findById(businessId);
       if (!business) throw new NotFoundError('Business not found', { businessId });
       change(business);
       await r.businesses.save(business);
+      if (by) {
+        await r.audit.record({
+          staffMemberId: by.staffMemberId,
+          businessId,
+          action: by.action,
+          targetType: 'business',
+          targetId: businessId,
+          details: by.details,
+        });
+      }
     });
   }
 
@@ -79,7 +105,13 @@ export function identityQueriesFrom(
         : null;
     },
     renameBusiness: (businessId, name) => update(businessId, (b) => b.rename(name)),
-    setBusinessInternal: (businessId, internal) =>
-      update(businessId, (b) => b.markInternal(internal)),
+    setBusinessInternal: (businessId, internal, by) =>
+      update(businessId, (b) => b.markInternal(internal), by),
+    async getMemberEmails(memberIds) {
+      const ids = [...new Set(memberIds)];
+      if (ids.length === 0) return new Map();
+      const members = await s.repos.members.findByIds(ids);
+      return new Map(members.map((m) => [m.id, m.email]));
+    },
   };
 }

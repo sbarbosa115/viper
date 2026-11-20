@@ -7,8 +7,8 @@ export const sessionPolicy = {
   ttlMs: 30 * DAY,
   idleMs: 14 * DAY,
   touchEveryMs: HOUR,
-  /** Wrong two-factor codes before the half-session is deleted (FR-5). */
-  maxTwoFactorFailures: 5,
+  /** Two-factor codes a half-session may try; the 5th wrong one deletes it (FR-5). */
+  maxTwoFactorAttempts: 5,
 } as const;
 
 export interface SessionSnapshot {
@@ -17,13 +17,20 @@ export interface SessionSnapshot {
   memberId: string;
   actingAsBusinessId: string | null;
   twoFactorPassed: boolean;
+  /** Two-factor codes tried on this half-session (counted atomically by the repository). */
   twoFactorFailures: number;
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
 }
 
-export type WrongCodeOutcome = 'retry' | 'exhausted';
+/**
+ * FR-5: once a half-session has tried this many codes, a wrong one deletes it; any code past it is
+ * refused unchecked (concurrent guesses).
+ */
+export function halfSessionExhausted(attempts: number): boolean {
+  return attempts >= sessionPolicy.maxTwoFactorAttempts;
+}
 
 /** A signed-in browser. Staff sessions are "half" until the two-factor code passes (FR-5). */
 export class Session {
@@ -78,14 +85,6 @@ export class Session {
   passTwoFactor(): void {
     this.state.twoFactorPassed = true;
     this.state.twoFactorFailures = 0;
-  }
-
-  /** 5 wrong codes and the half-session must be deleted; the Member starts over. */
-  recordWrongCode(): WrongCodeOutcome {
-    this.state.twoFactorFailures += 1;
-    return this.state.twoFactorFailures >= sessionPolicy.maxTwoFactorFailures
-      ? 'exhausted'
-      : 'retry';
   }
 
   /** Only one Business at a time: starting another replaces the first (FR-6). */

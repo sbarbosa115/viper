@@ -42,16 +42,19 @@ export class OtplibTotpService implements TotpService {
     return generateSecret({ length: 20 });
   }
 
-  async verify(secret: string, code: string, at: Date): Promise<boolean> {
-    if (!/^\d{6}$/.test(code)) return false;
+  async verify(secret: string, code: string, at: Date): Promise<number | null> {
+    if (!/^\d{6}$/.test(code)) return null;
+    const epoch = Math.floor(at.getTime() / 1000);
     const result = await verify({
       secret,
       token: code,
-      epoch: Math.floor(at.getTime() / 1000),
+      epoch,
       epochTolerance: PERIOD_S,
       guardrails,
     });
-    return result.valid;
+    if (!result.valid) return null;
+    // The RFC 6238 time step the code belongs to (the replay guard stores the last one used).
+    return 'timeStep' in result ? result.timeStep : Math.floor(epoch / PERIOD_S) + result.delta;
   }
 
   otpauthUrl(secret: string, accountName: string): string {

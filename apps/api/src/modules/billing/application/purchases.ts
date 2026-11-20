@@ -123,13 +123,46 @@ export class FulfilPurchase {
   }
 }
 
-/** POST /api/webhooks/stripe: verify the raw body, then fulfil `checkout.session.completed`. */
+/**
+ * FR-12: a delayed payment failed (`checkout.session.async_payment_failed`): the pending purchase
+ * is marked failed and no credits are added. A paid purchase is left as it is.
+ */
+export class FailPurchase {
+  constructor(private readonly deps: { uow: BillingUnitOfWork }) {}
+
+  execute(cmd: { sessionId: string }): Promise<{ failed: boolean }> {
+    return this.deps.uow.run(async ({ purchases }) => {
+      const purchase = await purchases.findBySessionIdForUpdate(cmd.sessionId);
+      if (!purchase?.markFailed()) return { failed: false };
+      await purchases.save(purchase);
+      return { failed: true };
+    });
+  }
+}
+
+/**
+ * POST /api/webhooks/stripe: verify the raw body, then act on the Checkout Session events.
+ * `completed` fulfils when already paid (cards); a method that settles later completes unpaid and
+ * is fulfilled by `async_payment_succeeded` or failed by `async_payment_failed`. Fulfilment is
+ * idempotent by session, so any repeat or overlap adds credits once.
+ */
 export class HandleStripeWebhook {
-  constructor(private readonly deps: { gateway: PaymentGateway; fulfilPurchase: FulfilPurchase }) {}
+  constructor(
+    private readonly deps: {
+      gateway: PaymentGateway;
+      fulfilPurchase: FulfilPurchase;
+      failPurchase: FailPurchase;
+    },
+  ) {}
 
   async execute(cmd: { rawBody: Buffer; signature: string | undefined }): Promise<void> {
     const event = await this.deps.gateway.verifyWebhook(cmd.rawBody, cmd.signature);
-    if (event.type !== 'checkout.session.completed' || !event.paid) return;
+    if (event.type === 'other') return;
+    if (event.type === 'checkout.session.async_payment_failed') {
+      await this.deps.failPurchase.execute({ sessionId: event.sessionId });
+      return;
+    }
+    if (!event.paid) return;
     await this.deps.fulfilPurchase.execute({
       sessionId: event.sessionId,
       eventId: event.id,

@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest';
 import { TOOL_KEYS } from '../domain/local-buyers.js';
-import { owner, PLAN, researchFixture, type ResearchFixture } from '../test/research-fixture.js';
+import {
+  bakeriesPlan,
+  OTHER_BUSINESS,
+  owner,
+  PLAN,
+  researchFixture,
+  STAFF_ID,
+  type ResearchFixture,
+} from '../test/research-fixture.js';
 import { WorkerStopSignal } from './run-errors.js';
 
 const MAPS_TOOLS = [TOOL_KEYS.googlePlaces, TOOL_KEYS.mapsScraper, TOOL_KEYS.overpass];
@@ -22,7 +30,7 @@ async function cleanRunSpend(): Promise<number> {
 }
 
 async function expireLease(f: ResearchFixture) {
-  f.advance(3 * 60_000);
+  f.advance(6 * 60_000);
   return f.sweeper.sweep();
 }
 
@@ -36,7 +44,7 @@ describe('FR-36 / AJ-9: the worker stops in Step 5 after 12 websites', () => {
     const websitesRead = f.tools.callsOf(TOOL_KEYS.firecrawl);
     expect(websitesRead).toBe(12);
     const notes = f.store.handoff(started.id)?.notes ?? '';
-    expect(notes).toContain('websites: 11 of 25');
+    expect(notes).toContain('websites: 12 of 25');
 
     // The lease is still live: nothing happens yet.
     expect((await f.sweeper.sweep()).stalled).toBe(0);
@@ -260,9 +268,9 @@ describe('FR-36: lease', () => {
     f.tools.beforeCall = (req) => {
       if (req.stepKey !== 'websites' || swept) return;
       swept = true;
-      // The worker freezes for 3 minutes after this call; meanwhile the sweeper ends the attempt.
+      // The worker freezes for 6 minutes after this call; meanwhile the sweeper ends the attempt.
       f.store.runAfterCommit(async () => {
-        f.advance(3 * 60_000);
+        f.advance(6 * 60_000);
         await f.sweeper.sweep();
       });
     };
@@ -286,5 +294,164 @@ describe('FR-36: lease', () => {
     expect((await f.sweeper.sweep()).requeued).toBe(1);
     expect(f.queue.jobs).toEqual([{ runId: started.id, attemptN: 1, delayMs: 0 }]);
     expect(f.monitor.lastSweep?.at).toEqual(f.clock.now());
+  });
+});
+
+describe('FR-19 / FR-36: provider calls run outside any transaction', () => {
+  test('every provider and Claude call runs with no transaction open; its record commits with the handoff', async () => {
+    const f = await researchFixture();
+    const run = await f.runs.start(owner(), PLAN);
+    const openDuringCall: boolean[] = [];
+    f.tools.duringCall = () => {
+      openDuringCall.push(f.store.inTransaction);
+    };
+    expect(await f.executor.runAttempt(run.id)).toBe('completed');
+    expect(openDuringCall.length).toBeGreaterThan(20);
+    expect(openDuringCall.every((open) => !open)).toBe(true);
+    // Each record was stored in research's save transaction, with the progress and the handoff.
+    expect(f.tools.commitsWithin.length).toBe(f.tools.calls.length);
+    expect(f.tools.commitsWithin.every((w) => JSON.stringify(w) === '{"inMemory":true}')).toBe(
+      true,
+    );
+  });
+
+  test('the heartbeat renews the lease during a long call; the sweeper leaves the attempt alone', async () => {
+    const f = await researchFixture();
+    let beat: (() => Promise<void>) | null = null;
+    const executor = f.makeExecutor('worker-1', {
+      heartbeat: {
+        start: (b) => {
+          beat = b;
+          return () => {
+            beat = null;
+          };
+        },
+      },
+    });
+    const run = await f.runs.start(owner(), PLAN);
+    let stalled = -1;
+    f.tools.duringCall = async (req) => {
+      if (req.toolKey !== TOOL_KEYS.firecrawl || stalled !== -1) return;
+      // An 8-minute call, past the 5-minute lease: the heartbeat renews it every 30 s.
+      for (let i = 0; i < 16; i += 1) {
+        f.advance(30_000);
+        await beat?.();
+      }
+      stalled = (await f.sweeper.sweep()).stalled;
+    };
+    expect(await executor.runAttempt(run.id)).toBe('completed');
+    expect(stalled).toBe(0);
+    expect(f.store.attempts(run.id).map((a) => a.status)).toEqual(['completed']);
+  });
+
+  test('a heartbeat that finds the lease gone stops the attempt before its next provider call', async () => {
+    const f = await researchFixture();
+    let beat: (() => Promise<void>) | null = null;
+    const executor = f.makeExecutor('worker-1', {
+      heartbeat: {
+        start: (b) => {
+          beat = b;
+          return () => undefined;
+        },
+      },
+    });
+    const run = await f.runs.start(owner(), PLAN);
+    let taken = false;
+    f.tools.duringCall = async (req) => {
+      if (req.toolKey !== TOOL_KEYS.firecrawl || taken) return;
+      taken = true;
+      // The worker froze: the sweeper ended the attempt; then the heartbeat runs again.
+      f.advance(6 * 60_000);
+      await f.sweeper.sweep();
+      await beat?.();
+    };
+    expect(await executor.runAttempt(run.id)).toBe('lease_lost');
+    const firecrawlCalls = f.tools.callsOf(TOOL_KEYS.firecrawl);
+    expect(firecrawlCalls).toBe(1);
+    expect(f.store.attempts(run.id)[0]?.status).toBe('worker_stopped');
+  });
+});
+
+describe('FR-36: worker shutdown', () => {
+  test('on shutdown an in-flight attempt stops at once, releases its lease and ends as worker_stopped', async () => {
+    const f = await researchFixture();
+    const run = await f.runs.start(owner(), PLAN);
+    const shutdown = new AbortController();
+    f.tools.duringCall = (req) => {
+      if (req.toolKey !== TOOL_KEYS.firecrawl || shutdown.signal.aborted) return;
+      shutdown.abort();
+      // The provider never answers: the attempt must not wait for it.
+      return new Promise<void>(() => undefined);
+    };
+    expect(await f.executor.runAttempt(run.id, { signal: shutdown.signal })).toBe('worker_stopped');
+    const [attempt] = f.store.attempts(run.id);
+    expect(attempt).toMatchObject({ status: 'worker_stopped', leaseExpiresAt: null });
+    expect(attempt?.error).toContain('shut down');
+    expect(f.store.run(run.id)?.status).toBe('retrying');
+    expect(f.queue.jobs).toEqual([{ runId: run.id, attemptN: 2, delayMs: 60_000 }]);
+
+    f.tools.duringCall = null;
+    expect(await f.runToEnd(run.id)).toEqual(['completed']);
+  });
+
+  test('an attempt asked to stop between calls stops at its next save', async () => {
+    const f = await researchFixture();
+    const run = await f.runs.start(owner(), PLAN);
+    const shutdown = new AbortController();
+    f.tools.duringCall = (req) => {
+      if (req.stepKey === 'maps-places') shutdown.abort();
+    };
+    expect(await f.executor.runAttempt(run.id, { signal: shutdown.signal })).toBe('worker_stopped');
+    // The call that was answered is stored, not lost.
+    expect(f.tools.calls.some((c) => c.stepKey === 'maps-places')).toBe(true);
+    expect(f.store.run(run.id)?.status).toBe('retrying');
+  });
+});
+
+describe('FR-36: sweeper', () => {
+  test('one run failing in the sweeper does not stop the others; the error is logged', async () => {
+    const f = await researchFixture();
+    const otherPlan = '00000000-0000-7000-8000-00000000e009';
+    f.plans.plans.set(otherPlan, bakeriesPlan({ id: otherPlan, businessId: OTHER_BUSINESS }));
+    await f.billing.application.adjustCredits.apply({
+      businessId: OTHER_BUSINESS,
+      credits: 1_000,
+      reason: 'Test credits',
+      memberId: STAFF_ID,
+      idempotencyKey: `test:${OTHER_BUSINESS}`,
+    });
+    const a = await f.runs.start(owner(), PLAN);
+    const b = await f.runs.start(owner({ businessId: OTHER_BUSINESS }), otherPlan);
+    for (const run of [a, b]) {
+      await f.stopHook.set({ stepKey: 'search-terms', items: 1 });
+      expect(await f.executor.runAttempt(run.id)).toBe('stopped');
+    }
+    f.advance(6 * 60_000);
+    const enqueue = f.queue.enqueue.bind(f.queue);
+    f.queue.enqueue = (runId, options) =>
+      runId === a.id ? Promise.reject(new Error('queue down')) : enqueue(runId, options);
+
+    const result = await f.sweeper.sweep();
+    expect(result.stalled).toBe(1);
+    expect(f.store.attempts(b.id)[0]?.status).toBe('worker_stopped');
+    expect(f.queue.jobs).toEqual([{ runId: b.id, attemptN: 2, delayMs: 60_000 }]);
+    expect(f.logger.warnings).toEqual([
+      expect.objectContaining({ obj: expect.objectContaining({ runId: a.id }) }),
+    ]);
+    expect(f.monitor.lastSweep?.at).toEqual(f.clock.now());
+  });
+
+  test('an attempt whose lease was renewed after the sweeper listed it is left alone', async () => {
+    const f = await researchFixture();
+    const run = await f.runs.start(owner(), PLAN);
+    await f.stopHook.set({ stepKey: 'search-terms', items: 1 });
+    expect(await f.executor.runAttempt(run.id)).toBe('stopped');
+    f.advance(6 * 60_000);
+    // Between the sweeper's listing and its check under lock, the worker's heartbeat renews.
+    f.store.runAfterCommit(async () => {
+      expect(await f.executor.renewLease(run.id, 1, 5)).toBe(true);
+    });
+    expect((await f.sweeper.sweep()).stalled).toBe(0);
+    expect(f.store.attempts(run.id)[0]?.status).toBe('running');
   });
 });

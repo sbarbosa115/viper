@@ -130,6 +130,26 @@ describe('FR-14: welcome chat', () => {
     expect(await screen.findByText(`Plan page ${ids.plan}`)).toBeInTheDocument();
   });
 
+  test('an unverified Owner sending the goal gets the verify-email reply and stays in the chat', async () => {
+    const goal = 'Bakeries within 3 miles that could buy our sugar';
+    const verify =
+      "Before I draft your plan, please verify your email. Open the link we sent you (you can resend it from the banner above). Your 50 free credits arrive once you've verified. Then send your goal again and I'll draft the plan.";
+    assistantState.next = {
+      status: 200,
+      reply: { text: verify, quickReplies: [goal] },
+      planId: null,
+      complete: true,
+    };
+    renderAssistant();
+    await userEvent.type(await screen.findByLabelText('Your answer'), goal);
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    const log = screen.getByRole('log', { name: 'Conversation' });
+    expect(await within(log).findByText(verify)).toBeInTheDocument();
+    expect(within(log).getByRole('button', { name: goal })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Plan page/)).not.toBeInTheDocument();
+  });
+
   test('the chat shows an error state with Try again when it cannot load', async () => {
     server.use(
       http.get('*/api/conversations/welcome', () => new HttpResponse(null, { status: 500 })),

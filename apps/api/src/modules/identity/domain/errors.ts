@@ -15,6 +15,12 @@ export const identityErrors = {
       retryAfterSeconds,
     }),
   invalidCode: () => new CodedError('INVALID_CODE', 'That code is not correct.'),
+  twoFactorLocked: (retryAfterSeconds: number) =>
+    new CodedError(
+      'TWO_FACTOR_LOCKED',
+      'Too many wrong codes. Two-factor sign-in is locked for an hour.',
+      { retryAfterSeconds },
+    ),
   twoFactorRequired: () =>
     new CodedError('TWO_FACTOR_REQUIRED', 'Enter your two-factor code to continue.'),
   actingAsForbidden: () =>

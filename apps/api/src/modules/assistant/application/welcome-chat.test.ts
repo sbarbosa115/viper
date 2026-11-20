@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { LlmUnavailableError } from '../../../shared/application/llm-client.js';
+import { CodedError } from '../../../shared/domain/errors.js';
 import { ScriptedLlmClient } from '../../../shared/infrastructure/llm/scripted-llm-client.js';
 import {
   assistantFixture,
@@ -307,6 +308,60 @@ describe('FR-14: Claude unavailable or slow', () => {
     f.planDrafter.failWith = null;
     const res = await f.chat.send(owner(), id, { text: goal, retryOfMessageId: messageId });
     expect(res.planId).toBe(PLAN_ID);
+  });
+});
+
+describe('FR-14: the Goal before the email is verified', () => {
+  test('planning refusing with EMAIL_NOT_VERIFIED: the assistant asks to verify first, keeping the goal', async () => {
+    const f = assistantFixture({ llm: ScriptedLlmClient.fakeMode() });
+    await f.profile.profileCommands.applyUpdates(BUSINESS, {
+      addProducts: [{ name: 'Sugar' }],
+      location: { lat: 30.2672, lng: -97.7431, label: 'Austin, TX' },
+      deliveryRadiusMiles: 3,
+      currentCustomers: 'Restaurants',
+    });
+    const { id } = await f.chat.getWelcome(owner({ emailVerified: false }));
+    f.planDrafter.failWith = new CodedError(
+      'EMAIL_NOT_VERIFIED',
+      'Verify your email to create a Plan',
+    );
+    const goal = 'Bakeries within 3 miles that could buy our sugar';
+
+    const res = await f.chat.send(owner({ emailVerified: false }), id, { text: goal });
+    expect(res.planId).toBeNull();
+    expect(res.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(res.messages[1]?.text).toMatch(/verify your email/i);
+    expect(res.messages[1]?.text).toContain('50 free credits');
+    expect(res.messages[1]?.quickReplies).toEqual([goal]);
+    const stored = await f.chat.getWelcome(owner({ emailVerified: false }));
+    expect(stored.messages.at(-1)).toEqual(res.messages[1]);
+
+    // Once verified, sending the goal again (still the Goal turn) drafts the Plan.
+    f.planDrafter.failWith = null;
+    const again = await f.chat.send(owner(), id, { text: goal });
+    expect(again.planId).toBe(PLAN_ID);
+  });
+
+  test('other planning errors still fail the turn', async () => {
+    const f = assistantFixture({ llm: ScriptedLlmClient.fakeMode() });
+    await f.profile.profileCommands.applyUpdates(BUSINESS, {
+      addProducts: [{ name: 'Sugar' }],
+      location: { lat: 30.2672, lng: -97.7431, label: 'Austin, TX' },
+      deliveryRadiusMiles: 3,
+      currentCustomers: 'Restaurants',
+    });
+    const { id } = await f.chat.getWelcome(owner());
+    f.planDrafter.failWith = new CodedError(
+      'GEOCODER_UNAVAILABLE',
+      'Places are down',
+      undefined,
+      503,
+    );
+    expect(
+      await codeOf(
+        f.chat.send(owner(), id, { text: 'Bakeries within 3 miles that could buy our sugar' }),
+      ),
+    ).toBe('GEOCODER_UNAVAILABLE');
   });
 });
 

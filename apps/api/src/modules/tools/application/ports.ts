@@ -9,7 +9,11 @@ export interface ToolRepository {
   save(tool: ToolSnapshot): Promise<void>;
 }
 
-export type ToolCallStatus = 'ok' | 'error' | 'skipped';
+/**
+ * `started`: a provider call in flight (stored before the provider is called, FR-19); it becomes
+ * `ok` or `error` when the caller commits the outcome, or stays `started` if the worker stopped.
+ */
+export type ToolCallStatus = 'ok' | 'error' | 'skipped' | 'started';
 
 /** One row of `tool_calls` (FR-23, FR-36). */
 export interface ToolCallRecord {
@@ -34,6 +38,8 @@ export interface ToolCallRecord {
 
 export interface ToolCallRepository {
   add(records: readonly ToolCallRecord[]): Promise<void>;
+  /** Stores the outcome of a `started` call (same id). */
+  complete(record: ToolCallRecord): Promise<void>;
   /** The first stored `ok`, not reused call of this run, Step, Tool and input (FR-36). */
   findReusable(q: {
     runId: string;

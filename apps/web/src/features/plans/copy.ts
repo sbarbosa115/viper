@@ -39,6 +39,14 @@ export const copy = {
     "We couldn't draft your plan just now. Your goal is still here, so try again in a moment.",
   profileIncomplete: 'Finish your business profile first so the plan can use it.',
   finishProfile: 'Open the chat',
+  emailNotVerified:
+    'Verify your email to draft a plan. Your 50 free credits arrive once you do. Check your inbox for the link.',
+  resendEmail: 'Resend email',
+  resendSent: 'Link sent. Check your inbox.',
+  resendTooMany: 'Please wait a minute before asking again.',
+  resendFailed: 'We could not send the email. Try again.',
+  dailyPlanLimit: "You've reached today's limit of {limit} new plans. Try again tomorrow.",
+  dailyPlanLimitNoCount: "You've reached today's limit of new plans. Try again tomorrow.",
   // Plan editor
   goal: 'Goal: "{goal}"',
   planName: 'Plan name',

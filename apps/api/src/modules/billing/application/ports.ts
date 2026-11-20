@@ -66,6 +66,16 @@ export interface BillingEvents {
   };
 }
 
+/** An Audit log entry (FR-7). */
+export interface AuditEntry {
+  staffMemberId: string;
+  businessId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  details: Record<string, unknown>;
+}
+
 export interface BillingRepos {
   wallets: WalletRepository;
   ledger: LedgerRepository;
@@ -73,6 +83,8 @@ export interface BillingRepos {
   packs: CreditPackRepository;
   purchases: PurchaseRepository;
   events: EventPublisher<BillingEvents>;
+  /** The Audit log, bound to the transaction: a Staff change and its entry commit together. */
+  audit: { record(entry: AuditEntry): Promise<void> };
 }
 
 /** Opaque handle to a caller's open transaction (research reserves inside its own, FR-18). */
@@ -129,8 +141,12 @@ export interface CheckoutSession {
 export type PaymentEvent =
   | {
       id: string;
-      type: 'checkout.session.completed';
+      type:
+        | 'checkout.session.completed'
+        | 'checkout.session.async_payment_succeeded'
+        | 'checkout.session.async_payment_failed';
       sessionId: string;
+      /** `payment_status` is paid (or no payment was required). */
       paid: boolean;
       taxCents: number;
     }
@@ -159,16 +175,12 @@ export interface TrialCreditsSetting {
   trialCredits(): Promise<number>;
 }
 
-/** The Audit log (FR-7), same shape as identity's. */
+/**
+ * The Audit log (FR-7), same shape as identity's. With `within` (billing's open transaction) the
+ * entry is written in that transaction.
+ */
 export interface AuditRecorder {
-  record(entry: {
-    staffMemberId: string;
-    businessId: string | null;
-    action: string;
-    targetType: string;
-    targetId: string | null;
-    details: Record<string, unknown>;
-  }): Promise<void>;
+  record(entry: AuditEntry, within?: ExternalTransaction): Promise<void>;
 }
 
 /** Whether a Business exists (identity answers; 404 on Staff grants). */

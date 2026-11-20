@@ -22,6 +22,7 @@ const REQUEUE_AFTER_MS = 60_000;
  * The run sweeper (FR-36, NFR-11), every 30 s: ends attempts whose lease expired as
  * `worker_stopped` and queues the next attempt after the flow's wait (or fails the run when
  * attempts or total time ran out), and re-queues due retries and queued runs whose job was lost.
+ * Each run is handled on its own; a failure is logged and retried by the next sweep.
  */
 export class RunSweeper {
   constructor(private readonly deps: SweeperDeps) {}
@@ -32,8 +33,13 @@ export class RunSweeper {
       tx.attempts.expiredLeases(now, BATCH),
     );
     let stalled = 0;
+    // Each run on its own: one failure (a deadlock, the queue down) doesn't stop the others.
     for (const attempt of expired) {
-      if (await this.endStalled(attempt.runId, attempt.n, now)) stalled += 1;
+      try {
+        if (await this.endStalled(attempt.runId, attempt.n, now)) stalled += 1;
+      } catch (err) {
+        this.warn(err, attempt.runId, 'could not end a stalled attempt');
+      }
     }
 
     const before = new Date(now.getTime() - REQUEUE_AFTER_MS);
@@ -41,18 +47,30 @@ export class RunSweeper {
       due: await tx.runs.dueRetries(before, BATCH),
       queued: await tx.runs.staleQueued(before, BATCH),
     }));
+    let requeued = 0;
     for (const run of [...due, ...queued]) {
-      await this.deps.queue.enqueue(run.id, { attemptN: run.attempts + 1, delayMs: 0 });
+      try {
+        await this.deps.queue.enqueue(run.id, { attemptN: run.attempts + 1, delayMs: 0 });
+        requeued += 1;
+      } catch (err) {
+        this.warn(err, run.id, 'could not queue a run again');
+      }
     }
     await this.deps.monitor.recordSweep(now, stalled);
-    return { stalled, requeued: due.length + queued.length };
+    return { stalled, requeued };
+  }
+
+  private warn(err: unknown, runId: string, msg: string): void {
+    this.deps.logger?.warn({ err, runId }, msg);
   }
 
   private async endStalled(runId: string, n: number, now: Date): Promise<boolean> {
     let ended: { run: ResearchRun; conclusion: AttemptConclusion; activeSeconds: number } | null =
       null;
     await this.deps.store.transaction(async (tx) => {
-      const attempt = (await tx.attempts.list(runId)).find((a) => a.n === n);
+      // Re-checked under the attempt's lock (attempt first, then run, like the worker's saves):
+      // a heartbeat may have renewed the lease since the attempt was listed.
+      const attempt = await tx.attempts.findForUpdate(runId, n);
       if (
         attempt?.status !== 'running' ||
         !attempt.leaseExpiresAt ||
@@ -93,6 +111,7 @@ export class RunSweeper {
       conclusion: AttemptConclusion;
       activeSeconds: number;
     };
+    // A failed enqueue is not lost: the next sweeps queue due retries again.
     if (conclusion.retry) await this.deps.queue.enqueue(runId, conclusion.retry);
     const s = run.toSnapshot();
     await this.deps.analytics.track({

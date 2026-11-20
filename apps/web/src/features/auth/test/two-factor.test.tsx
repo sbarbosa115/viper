@@ -1,8 +1,28 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { server } from '../../../test/setup';
 import { authState, resetAuthState, staffMe } from './handlers';
 import { renderAuth } from './render';
+
+/** POST /api/auth/two-factor/verify answers 429 TWO_FACTOR_LOCKED, with `details` when given. */
+function lockedVerify(details?: Record<string, unknown>) {
+  server.use(
+    http.post('*/api/auth/two-factor/verify', () =>
+      HttpResponse.json(
+        {
+          error: {
+            code: 'TWO_FACTOR_LOCKED',
+            message: 'Too many wrong codes. Two-factor sign-in is locked for an hour.',
+            ...(details ? { details } : {}),
+          },
+        },
+        { status: 429 },
+      ),
+    ),
+  );
+}
 
 beforeEach(resetAuthState);
 
@@ -74,6 +94,29 @@ describe('FR-5: two-factor code', () => {
     renderAuth('/login/two-factor');
     await typeCode('999999');
     expect(await screen.findByText(/Log in again to start over/)).toBeInTheDocument();
+  });
+
+  test('TWO_FACTOR_LOCKED says sign-in is locked for an hour, with the time to retry', async () => {
+    authState.session = staffMe();
+    lockedVerify({ retryAfterSeconds: 3600 });
+    renderAuth('/login/two-factor');
+    await typeCode('123456');
+    const message = await screen.findByText(
+      /^Too many wrong codes\. Two-factor sign-in is locked for an hour\./,
+    );
+    expect(message).toHaveTextContent(/Try again after \d{1,2}[:.]\d{2}/);
+    expect(screen.queryByText(/Log in again to start over/)).not.toBeInTheDocument();
+  });
+
+  test('TWO_FACTOR_LOCKED without a retry time shows the lock message alone', async () => {
+    authState.session = staffMe();
+    lockedVerify();
+    renderAuth('/login/two-factor');
+    await typeCode('123456');
+    const message = await screen.findByText(
+      'Too many wrong codes. Two-factor sign-in is locked for an hour.',
+    );
+    expect(message).not.toHaveTextContent(/Try again after/);
   });
 
   test('"Use a different account" logs out and returns to log in', async () => {

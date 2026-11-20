@@ -28,6 +28,10 @@ export interface MembersTable {
   /** AES-256-GCM ciphertext (ADR 0012). */
   totp_secret_enc: Buffer | null;
   totp_enabled_at: Timestamp | null;
+  /** RFC 6238 time step of the last code that passed: older or equal codes are refused (FR-5). */
+  totp_last_step: ColumnType<number | null, number | null | undefined, number | null>;
+  /** Two-factor locked after 10 wrong codes in an hour (FR-5); null when never locked. */
+  two_factor_locked_until: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Timestamp;
 }
 
@@ -37,7 +41,7 @@ export interface SessionsTable {
   member_id: string;
   acting_as_business_id: string | null;
   two_factor_passed: DefaultedBool;
-  /** Wrong two-factor codes on this half-session; 5 delete it (FR-5). */
+  /** Two-factor codes tried on this half-session, counted before each check (FR-5). */
   two_factor_failures: Generated<number>;
   created_at: Timestamp;
   last_seen_at: Timestamp;

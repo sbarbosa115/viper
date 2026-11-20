@@ -49,12 +49,12 @@ export function actingAs(): Actor {
 
 /** The billing use cases on in-memory storage and fakes. */
 export function billingFixture(options: { trialCredits?: number } = {}) {
-  const store = new InMemoryBilling();
+  const audit = new RecordingAuditRecorder();
+  const store = new InMemoryBilling(audit);
   const clock = new FixedClock(new Date('2026-11-19T10:00:00.000Z'));
   const ids = new SequentialIdGenerator();
   const analytics = new RecordingAnalyticsTracker();
   const gateway = new FakePaymentGateway(ids, APP_URL);
-  const audit = new RecordingAuditRecorder();
   const app = createBillingApplication({
     uow: store,
     readModel: store,
@@ -62,7 +62,6 @@ export function billingFixture(options: { trialCredits?: number } = {}) {
     ids,
     analytics,
     gateway,
-    audit,
     businesses: new StaticBusinessDirectory([BUSINESS, OTHER_BUSINESS]),
     trialCredits: new FixedTrialCredits(options.trialCredits ?? 50),
     appUrl: APP_URL,

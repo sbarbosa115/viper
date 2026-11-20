@@ -4,6 +4,7 @@ import type { DB } from '../../../shared/infrastructure/db/schema.js';
 import type { Outbox } from '../../../shared/infrastructure/outbox/index.js';
 import type {
   BillingRepos,
+  AuditRecorder,
   BillingUnitOfWork,
   CreditPackRepository,
   ExternalTransaction,
@@ -349,6 +350,7 @@ export class KyselyBillingUnitOfWork implements BillingUnitOfWork {
     private readonly db: Kysely<DB>,
     private readonly clock: Clock,
     private readonly outbox: Outbox,
+    private readonly audit: AuditRecorder,
   ) {}
 
   async run<T>(fn: (repos: BillingRepos) => Promise<T>, within?: ExternalTransaction): Promise<T> {
@@ -370,6 +372,7 @@ export class KyselyBillingUnitOfWork implements BillingUnitOfWork {
       packs: new KyselyCreditPackRepository(trx, this.clock),
       purchases: new KyselyPurchaseRepository(trx),
       events: { publish: (type, payload) => this.outbox.add(trx, type, payload) },
+      audit: { record: (entry) => this.audit.record(entry, trx) },
     };
   }
 }

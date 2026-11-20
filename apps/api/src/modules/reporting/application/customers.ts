@@ -4,7 +4,7 @@ import { NotFoundError } from '../../../shared/domain/errors.js';
 import type { CustomerListQuery, CustomerListRow, ReportingDeps } from './ports.js';
 import { requireStaff } from './staff-policy.js';
 
-type Deps = Pick<ReportingDeps, 'identity' | 'billing' | 'research' | 'leads' | 'audit'>;
+type Deps = Pick<ReportingDeps, 'identity' | 'billing' | 'research' | 'leads'>;
 
 /** The customer list's columns that other contexts own, for a page of Businesses (batched). */
 async function withColumns(deps: Deps, rows: readonly CustomerListRow[]): Promise<Customer[]> {
@@ -46,7 +46,7 @@ export class ListCustomers {
 
 /**
  * FR-31 "mark internal": an internal Business leaves the customer and revenue tiles (FR-30).
- * A back-office write, so it goes to the Audit log (FR-7).
+ * A back-office write, so it goes to the Audit log (FR-7), in the same transaction.
  */
 export class MarkBusinessInternal {
   constructor(private readonly deps: Deps) {}
@@ -57,13 +57,10 @@ export class MarkBusinessInternal {
     internal: boolean;
   }): Promise<Customer> {
     const actor = requireStaff(cmd.actor);
-    await this.deps.identity.setBusinessInternal(cmd.businessId, cmd.internal);
-    await this.deps.audit.record({
+    // identity checks the Business exists, then writes the change and the Audit entry together.
+    await this.deps.identity.setBusinessInternal(cmd.businessId, cmd.internal, {
       staffMemberId: actor.memberId,
-      businessId: cmd.businessId,
       action: 'business.updated',
-      targetType: 'business',
-      targetId: cmd.businessId,
       details: { fields: ['internal'], internal: cmd.internal },
     });
     const [business, owner] = await Promise.all([

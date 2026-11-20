@@ -1,8 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, test } from 'vitest';
 import { buildTestApp } from '../test/build-test-app.js';
-import { createTotpCipher } from './composition.js';
+import { createAuditDirectory, createTotpCipher, unavailableAs503 } from './composition.js';
+import { identityQueriesFrom } from './modules/identity/application/queries.js';
+import { identityWorld } from './modules/identity/test/factories.js';
 import { createSecretBox } from './modules/platform/index.js';
+import { ValidationError } from './shared/domain/errors.js';
 
 describe('composition: TOTP cipher on the SecretBox', () => {
   const box = createSecretBox({ NODE_ENV: 'test' });
@@ -55,5 +58,40 @@ describe('app: Origin check on /api writes (ADR 0004)', () => {
     );
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200);
     await app.close();
+  });
+});
+
+describe('composition: Audit log directory from identity (no direct table reads)', () => {
+  test("names Staff by email and Businesses by name through identity's queries", async () => {
+    const w = identityWorld();
+    const a = await w.owner({ businessName: 'Sweet Supply Co' });
+    const found = await createAuditDirectory(identityQueriesFrom(w.s)).lookup({
+      memberIds: [a.me.member.id, 'unknown'],
+      businessIds: [a.me.business.id],
+    });
+    expect(found.members).toEqual(new Map([[a.me.member.id, { email: a.me.member.email }]]));
+    expect(found.businesses).toEqual(new Map([[a.me.business.id, { name: 'Sweet Supply Co' }]]));
+  });
+});
+
+describe('composition: geocoder failures', () => {
+  const failing = (error: Error) => unavailableAs503({ search: () => Promise.reject(error) });
+
+  test('no match stays an empty list', async () => {
+    expect(await unavailableAs503({ search: () => Promise.resolve([]) }).search('nowhere')).toEqual(
+      [],
+    );
+  });
+
+  test('a provider failure is 503 GEOCODER_UNAVAILABLE, not a 500', async () => {
+    await expect(failing(new Error('Google Geocoding: OVER_QUERY_LIMIT')).search('x')).rejects.toMatchObject({
+      code: 'GEOCODER_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  test('an app error passes through unchanged', async () => {
+    const error = new ValidationError('bad');
+    await expect(failing(error).search('x')).rejects.toBe(error);
   });
 });

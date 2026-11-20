@@ -81,6 +81,13 @@ export const FALLBACK_QUESTION: Record<Topic, string> = {
   planCreated: "Your plan is ready. I'm opening it now.",
 };
 
+/**
+ * The Goal turn when the Owner hasn't verified their email: creating a Plan needs a verified
+ * email (planning's 403 EMAIL_NOT_VERIFIED), so the chat asks for that first.
+ */
+export const VERIFY_EMAIL_FIRST =
+  "Before I draft your plan, please verify your email. Open the link we sent you (you can resend it from the banner above). Your 50 free credits arrive once you've verified. Then send your goal again and I'll draft the plan.";
+
 export function greeting(businessName: string, topic: Topic): string {
   const intro = `Hi! I'm your Llyner Leads assistant. A few quick questions about ${businessName || 'your business'} and I'll find the businesses most likely to buy from you.`;
   return `${intro} ${FALLBACK_QUESTION[topic]}`;

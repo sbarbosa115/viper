@@ -252,7 +252,7 @@ export function registerResearchWorkers(deps: ResearchWorkerDeps): Worker[] {
     queue,
     sleeper: r.sleeper ?? realSleeper,
     retryDelaysMs: r.retryDelaysMs ?? [],
-    heartbeat: r.heartbeat ?? intervalHeartbeat,
+    heartbeat: r.heartbeat ?? intervalHeartbeat(deps.logger),
     workerId: r.workerId ?? `worker-${process.pid}`,
     logger: deps.logger,
     ...(r.testHooks ? { stopHook: new RedisStopHook(q) } : {}),

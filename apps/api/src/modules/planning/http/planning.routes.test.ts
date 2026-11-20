@@ -99,7 +99,8 @@ describe('FR-16: POST /api/plans', () => {
   });
 
   test('AC: a trial Business with 50 available gets max credits 50', async () => {
-    const { app, llm, wallet } = await setup(owner({ emailVerified: false }));
+    // Trial credits arrive with the verified email, which creating a Plan needs too.
+    const { app, llm, wallet } = await setup(owner());
     wallet.balances.set(BUSINESS, 50);
     llm.reply(draftReply(bakeriesDraft()));
     const res = await app.inject({

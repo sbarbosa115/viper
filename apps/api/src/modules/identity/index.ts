@@ -20,7 +20,6 @@ import type { StaffCommand } from './application/staff-commands.js';
 import { createIdentityUseCases, type IdentityUseCases } from './application/use-cases.js';
 import { Business } from './domain/business.js';
 import { Member } from './domain/member.js';
-import { registerOriginCheck } from './http/origin-check.js';
 import { identityRoutes } from './http/identity.routes.js';
 import { readSessionToken, type CookieOptions } from './http/session-cookie.js';
 import { kyselyIdentityServices } from './infrastructure/kysely-identity.js';
@@ -33,7 +32,12 @@ export type {
   BusinessListQuery,
   BusinessWithOwner,
 } from './application/ports.js';
-export type { BusinessSummary, IdentityQueries, OwnerContact } from './application/queries.js';
+export type {
+  BusinessSummary,
+  IdentityQueries,
+  OwnerContact,
+  StaffChange,
+} from './application/queries.js';
 export type { SignedIn } from './application/session-context.js';
 export type { IdentityUseCases } from './application/use-cases.js';
 export { assertStaff } from './application/acting-as.js';
@@ -83,8 +87,8 @@ export function identityModuleFrom(
 ): IdentityAppModule {
   return {
     name: 'identity',
+    // The /api Origin check (CSRF) is app.ts's, for every module; identity adds none of its own.
     register(app) {
-      registerOriginCheck(app, { appUrl: services.appUrl });
       identityRoutes(app, createIdentityUseCases(services), cookies);
     },
   };
@@ -94,7 +98,7 @@ function servicesFor(deps: IdentityDeps, logger: IdentityLogger): IdentityServic
   return kyselyIdentityServices({ ...deps, logger: deps.logger ?? logger });
 }
 
-/** identity on MySQL: routes for FR-1 to FR-6 (Origin check included for its own routes). */
+/** identity on MySQL: routes for FR-1 to FR-6. */
 export function createIdentityModule(deps: IdentityDeps): IdentityAppModule {
   return {
     name: 'identity',
@@ -143,11 +147,15 @@ export function createActorResolver(deps: {
   });
 }
 
-/** identity's public queries for other modules (reporting, billing, profile…). */
+/**
+ * identity's public queries for other modules (reporting, billing, profile…). `audit` is
+ * platform's Audit log, for Staff changes made through them (FR-7); without it they audit nothing.
+ */
 export function createIdentityQueries(deps: {
   db: Database;
   clock: Clock;
   ids: IdGenerator;
+  audit?: AuditRecorder;
 }): IdentityQueries {
   const services = kyselyIdentityServices({
     ...deps,
@@ -161,7 +169,7 @@ export function createIdentityQueries(deps: {
         throw new Error('identity queries need no cipher');
       },
     },
-    audit: { record: () => Promise.resolve() },
+    audit: deps.audit ?? { record: () => Promise.resolve() },
     logger: { warn: () => undefined },
     appUrl: 'http://localhost',
   });

@@ -4,9 +4,9 @@ import type { Business } from '../domain/business.js';
 import type { Member } from '../domain/member.js';
 import { Session } from '../domain/session.js';
 import type { ActingAsTarget } from '../domain/session-access.js';
-import type { IdentityRepos, IdentityServices } from './ports.js';
+import type { IdentityReadRepos, IdentityServices } from './ports.js';
 
-type ReadRepos = Omit<IdentityRepos, 'events'>;
+type ReadRepos = IdentityReadRepos;
 
 export interface SignedIn {
   me: Me;

@@ -40,7 +40,8 @@ export const FAILURE_IN_PLAIN_WORDS: Readonly<Record<RunFailureCode, string>> = 
 type Recipient = 'owner' | 'support';
 
 /**
- * Run emails (FR-22), from the outbox: "Your leads are ready" on RunCompleted, "didn't finish" on
+ * Run emails (FR-22), from the outbox: "Your leads are ready" on RunCompleted ("No new leads this
+ * time" when it delivered none), "didn't finish" on
  * RunFailed (plus the support address). No customer email when Staff started the run while
  * Acting as. Each (event, recipient) is sent once, even when the event is delivered twice.
  */
@@ -61,6 +62,22 @@ export class RunEmails {
         message: async () => {
           const owner = await this.deps.identity.getOwnerContact(s.businessId);
           if (!owner) return null;
+          if (event.type === 'RunCompleted' && s.leadsDelivered === 0) {
+            return {
+              to: owner.email,
+              subject: `No new leads this time: ${s.plan.name}`,
+              text: [
+                `Hi ${owner.name},`,
+                '',
+                `Your research run finished, but we didn't find any new leads for "${s.plan.name}" this time.`,
+                `Credits spent: ${s.creditsSpent}.`,
+                '',
+                `Open your Plan to widen the search area or adjust it: ${app}/app/plans/${s.planId}`,
+                '',
+                'Llyner Leads',
+              ].join('\n'),
+            };
+          }
           return event.type === 'RunCompleted'
             ? {
                 to: owner.email,

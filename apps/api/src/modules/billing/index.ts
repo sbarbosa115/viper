@@ -142,12 +142,17 @@ function assemble(uow: BillingUnitOfWork, readModel: BillingReadModel, deps: Com
 
 /** billing: Credit wallet, ledger, Reservations, Credit packs and Stripe purchases (FR-10 to FR-13). */
 export function createBilling(deps: CommonDeps & { db: Database }): Billing {
-  const uow = kyselyUnitOfWork(deps.db, deps.clock, deps.ids);
+  const uow = kyselyUnitOfWork(deps.db, deps.clock, deps.ids, deps.audit);
   return assemble(uow, new KyselyBillingReadModel(deps.db), deps);
 }
 
-function kyselyUnitOfWork(db: Database, clock: Clock, ids: IdGenerator): BillingUnitOfWork {
-  return new KyselyBillingUnitOfWork(db, clock, new KyselyOutbox(ids, clock));
+function kyselyUnitOfWork(
+  db: Database,
+  clock: Clock,
+  ids: IdGenerator,
+  audit: AuditRecorder,
+): BillingUnitOfWork {
+  return new KyselyBillingUnitOfWork(db, clock, new KyselyOutbox(ids, clock), audit);
 }
 
 /**
@@ -161,9 +166,9 @@ export function createInMemoryBilling(
   gateway: FakePaymentGateway;
   audit: RecordingAuditRecorder;
 } {
-  const store = new InMemoryBilling();
-  const gateway = new FakePaymentGateway(deps.ids, deps.appUrl ?? 'http://localhost:5173');
   const audit = new RecordingAuditRecorder();
+  const store = new InMemoryBilling(deps.audit ?? audit);
+  const gateway = new FakePaymentGateway(deps.ids, deps.appUrl ?? 'http://localhost:5173');
   const billing = assemble(store, store, {
     analytics: { track: () => Promise.resolve() },
     appUrl: 'http://localhost:5173',
@@ -225,8 +230,8 @@ export async function seed(deps: {
 }): Promise<void> {
   const clock = deps.clock ?? new SystemClock();
   const ids = deps.ids ?? new Uuid7Generator();
-  const uow = kyselyUnitOfWork(deps.db, clock, ids);
-  const system = { uow, clock, ids, audit: new RecordingAuditRecorder() };
+  const uow = kyselyUnitOfWork(deps.db, clock, ids, new RecordingAuditRecorder());
+  const system = { uow, clock, ids };
   const { businesses, members, runs } = deps.demo;
 
   const packs = new ManageCreditPacks(system);
@@ -288,7 +293,7 @@ export function registerBillingWorkers(deps: {
   const clock = new SystemClock();
   const ids = new Uuid7Generator();
   const grantTrialCredits = new GrantTrialCredits({
-    uow: kyselyUnitOfWork(deps.db, clock, ids),
+    uow: kyselyUnitOfWork(deps.db, clock, ids, new RecordingAuditRecorder()),
     clock,
     ids,
     trialCredits: deps.trialCredits ?? new FixedTrialCredits(),

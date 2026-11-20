@@ -36,7 +36,7 @@ export interface ToolCallsTable {
   units: Generated<number>;
   millicredits: Generated<number>;
   provider_cost_micros: Generated<number>;
-  status: 'ok' | 'error' | 'skipped';
+  status: 'ok' | 'error' | 'skipped' | 'started';
   error: string | null;
   duration_ms: Generated<number>;
   created_at: Timestamp;

@@ -77,7 +77,8 @@ describe('FR-20: guardrails', () => {
     await f.runToEnd(started.id);
     const maps = f.store.steps(started.id).find((s) => s.key === 'maps-places');
     expect(maps?.progress?.stoppedBy).toBe('time_limit');
-    expect(f.tools.callsOf(TOOL_KEYS.googlePlaces)).toBe(4);
+    // 3 calls of 4 minutes use the Step's 12-minute limit.
+    expect(f.tools.callsOf(TOOL_KEYS.googlePlaces)).toBe(3);
     expect(f.store.run(started.id)?.status).toBe('completed');
   });
 

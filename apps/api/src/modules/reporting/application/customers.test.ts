@@ -128,6 +128,21 @@ describe('FR-31: mark internal', () => {
     expect(deps.audit.entries).toEqual([]);
   });
 
+  test('the change and its Audit entry are one transaction: a failed audit write changes nothing', async () => {
+    const deps = fakeDeps(dashboardWorld());
+    deps.audit.failNext = new Error('audit log down');
+    await expect(
+      new MarkBusinessInternal(deps).execute({
+        actor: staffActor,
+        businessId: IDS.corner,
+        internal: true,
+      }),
+    ).rejects.toThrow('audit log down');
+    expect((await deps.identity.allBusinesses()).find((b) => b.id === IDS.corner)?.internal).toBe(
+      false,
+    );
+  });
+
   test('only Staff', async () => {
     const deps = fakeDeps(dashboardWorld());
     await expect(

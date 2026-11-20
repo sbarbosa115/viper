@@ -54,15 +54,30 @@ export class FakePaymentGateway implements PaymentGateway {
     return `v1=${createHmac('sha256', FAKE_WEBHOOK_SECRET).update(rawBody).digest('hex')}`;
   }
 
-  /** A Stripe-shaped `checkout.session.completed` event body. */
-  static completedEvent(props: { eventId: string; sessionId: string; taxCents?: number }): string {
+  /**
+   * A Stripe-shaped Checkout Session event body: `checkout.session.completed` (paid) by default,
+   * or an async payment result for methods that settle later.
+   */
+  static completedEvent(props: {
+    eventId: string;
+    sessionId: string;
+    taxCents?: number;
+    type?:
+      | 'checkout.session.completed'
+      | 'checkout.session.async_payment_succeeded'
+      | 'checkout.session.async_payment_failed';
+    paymentStatus?: 'paid' | 'unpaid' | 'no_payment_required';
+  }): string {
+    const type = props.type ?? 'checkout.session.completed';
+    const paymentStatus =
+      props.paymentStatus ?? (type === 'checkout.session.async_payment_failed' ? 'unpaid' : 'paid');
     return JSON.stringify({
       id: props.eventId,
-      type: 'checkout.session.completed',
+      type,
       data: {
         object: {
           id: props.sessionId,
-          payment_status: 'paid',
+          payment_status: paymentStatus,
           total_details: { amount_tax: props.taxCents ?? 0 },
         },
       },

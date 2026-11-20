@@ -66,20 +66,27 @@ export function createMaintenanceWorker(deps: {
   return worker;
 }
 
+/** The worker process's workers, and a close for what they share (the SMTP pool). */
+export interface RegisteredWorkers {
+  workers: Worker[];
+  /** Closes the shared email sender's SMTP connections; call it after the workers close. */
+  close(): void;
+}
+
 /**
  * Every BullMQ worker the worker process runs: the outbox relay (every 2 s), each module's
  * workers (research-runs ×2, the run sweeper, run emails, event consumers) and daily maintenance.
  * Research uses the same collaborators as the api (composeModules), including the fake Tools'
  * error modes over the same Valkey.
  */
-export function registerWorkers(deps: WorkerDeps): Worker[] {
+export function registerWorkers(deps: WorkerDeps): RegisteredWorkers {
   const modules = composeModules(deps.config, {
     db: deps.db,
     logger: deps.logger,
     redis: deps.connection,
   });
   const { core } = modules;
-  return [
+  const workers = [
     createOutboxRelayWorker({
       db: deps.db,
       connection: deps.connection,
@@ -105,4 +112,34 @@ export function registerWorkers(deps: WorkerDeps): Worker[] {
       logger: deps.logger,
     }),
   ];
+  return { workers, close: () => modules.email.close() };
+}
+
+/**
+ * Graceful stop: waits up to `closeWaitMs` for the workers to finish their jobs, then force-closes
+ * the ones still busy (their leases expire and the sweeper resumes them), and only then closes the
+ * shared email sender, so a run email being sent is not cut off.
+ */
+export async function stopWorkers(
+  registered: { workers: readonly Pick<Worker, 'close'>[]; close(): void },
+  options: { closeWaitMs: number; logger: Pick<Logger, 'warn'> },
+): Promise<void> {
+  const { workers } = registered;
+  const closed = Promise.allSettled(workers.map((w) => w.close())).then(() => 'closed' as const);
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), options.closeWaitMs);
+    timer.unref();
+  });
+  const outcome = await Promise.race([closed, late]);
+  clearTimeout(timer);
+  if (outcome === 'late') {
+    options.logger.warn('workers still busy at the shutdown deadline; closing them now');
+    await Promise.allSettled(workers.map((w) => w.close(true)));
+  }
+  try {
+    registered.close();
+  } catch (err) {
+    options.logger.warn({ err }, 'could not close the email sender');
+  }
 }

@@ -2,9 +2,9 @@
 
 | Field   | Value |
 |---------|-------|
-| Status  | Approved |
-| Version | 0.2 |
-| Date    | 2026-11-19 |
+| Status  | Built |
+| Version | 0.3 |
+| Date    | 2026-11-20 |
 | Persona | Sam (small B2B supplier owner), Staff (the founder) |
 | Tests assumption | A-1 lead accuracy, A-2 cost per lead, A-3 chat → good plan, A-4 run reliability |
 
@@ -53,7 +53,7 @@ Server events go to `analytics_events` through the `AnalyticsTracker` port. Goog
 | Role | Can | Cannot |
 |------|-----|--------|
 | Visitor | Sign up, log in, reset password, read the Terms and Privacy pages | Anything else |
-| Owner (unverified email) | Log in, use the welcome chat, edit the Business Profile, create and edit Plans, see the Credit wallet | Start a run or buy credits until the email is verified (no trial credits yet) |
+| Owner (unverified email) | Log in, use the welcome chat, edit the Business Profile, edit existing Plans, see the Credit wallet | Create a Plan, start a run or buy credits until the email is verified (no trial credits yet) |
 | Owner | Everything for their own Business: chat, profile, Plans, runs, leads, feedback, CSV, buy Credit packs, change own password | See other Businesses; open the back office |
 | Staff | Everything an Owner can do for their own Business, plus the back office: dashboard, customer list, Acting as, runs (and resume), Tools and Rate card, Credit packs, credit grants, Platform settings, Audit log | Use the back office without two-factor sign-in; become Staff through the UI |
 | Staff Acting as a Business | See and do everything that Business's Owner can, as if signed in with their credentials. Runs started are charged to that Business and marked "started by Staff" | Change that Owner's email or password, buy credits, delete the Business; Act as two Businesses at once |
@@ -135,9 +135,9 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 - `staff:grant <email>` (server command; see §4) sets `is_staff` on an existing Member; `staff:revoke` clears it and deletes their sessions.
 - Two-factor uses TOTP (RFC 6238, 30 s, 6 digits, ±1 step), secret encrypted at rest (ADR 0012).
 - First Staff login after the password step: setup screen shows a QR code and the secret; Staff confirms with a code. Afterwards every login needs a code.
-- Codes are rate-limited: 5 wrong codes → the half-session is deleted and the Member starts over.
+- Codes are rate-limited: 5 wrong codes → the half-session is deleted and the Member starts over. Across sessions, 10 wrong codes per Member in an hour lock two-factor for an hour (429 `TWO_FACTOR_LOCKED`, one Audit log entry). A code that has passed can't be used again (the last accepted time step is stored).
 - A session marks `two_factor_passed`. Back-office endpoints require Staff + `two_factor_passed`.
-**Errors / edge cases:** wrong code → 401 `INVALID_CODE`. Lost authenticator: `staff:reset-2fa <email>` (server command).
+**Errors / edge cases:** wrong code → 401 `INVALID_CODE`; locked → 429 `TWO_FACTOR_LOCKED`. Lost authenticator: `staff:reset-2fa <email>` (server command).
 **Acceptance criteria:**
 - Given a Staff Member with two-factor set up, when the password is correct but no code is given, then no back-office endpoint is reachable (403 `TWO_FACTOR_REQUIRED`).
 - Given a valid code, when submitted, then the session gets `two_factor_passed` and `/app/staff` loads.
@@ -217,8 +217,8 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 ### FR-12: Buy Credit packs with Stripe
 **Story:** As Sam, I want to buy more credits when I run out.
 **Rules:**
-- Active packs are listed with credits and price. "Buy" creates a Stripe Checkout Session (mode `payment`, automatic tax if Stripe Tax is on, `client_reference_id` = business id, metadata pack id) and redirects to it. Success URL `/app/credits?purchase=success`, cancel URL `/app/credits`.
-- Credits are added only by the `checkout.session.completed` webhook (signature verified), idempotent by Stripe event id and by session id. Ledger type `purchase`, description "<pack name> pack".
+- Active packs are listed with credits and price. "Buy" creates a Stripe Checkout Session (mode `payment`, cards only, automatic tax if Stripe Tax is on, `client_reference_id` = business id, metadata pack id) and redirects to it. Success URL `/app/credits?purchase=success`, cancel URL `/app/credits`.
+- Credits are added only by the `checkout.session.completed` webhook when the session is paid, or by `checkout.session.async_payment_succeeded` for a payment that settles later (signature verified), idempotent by Stripe event id and by session id. `checkout.session.async_payment_failed` marks the purchase `failed`. Ledger type `purchase`, description "<pack name> pack".
 - Only verified Owners, not while Acting as.
 - Credits never expire and are not refundable: purchased credits can only be spent in the app (stated on the Credits page above the packs and in the Terms). Staff can still correct mistakes with an `adjustment` (FR-13).
 **Errors / edge cases:** Stripe not configured → 503 `PAYMENTS_UNAVAILABLE`, button disabled with "Payments aren't set up yet". Inactive pack → 404. Webhook with bad signature → 400, nothing written.
@@ -238,7 +238,7 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 **Story:** As Sam, I want to describe my business in a chat instead of filling in a form.
 **Rules:**
 - After sign-up, `/` shows the welcome Conversation until the profile is complete.
-- The assistant (chat model) asks one question at a time, in this order unless already answered: what you sell (Products), where you're located (address or city), how far you deliver, who buys today, typical price range, website (optional).
+- The assistant (chat model) asks one question at a time, in this order unless already answered: what you sell (Products), where you're located (address or city), how far you deliver, who buys today (asked once, may be skipped). Price range and website are not asked as separate turns (changed in the build): the owner can mention them at any time or fill them in on the profile page.
 - Each assistant turn returns: the reply text (≤ 600 chars), 0–4 quick replies, and structured profile updates (fast-model extraction against the profile schema) that are applied through profile's public API. The right-hand profile panel updates live.
 - Address and city are geocoded (Google Geocoding) to a point; ambiguous → the assistant asks to confirm.
 - The profile is complete when it has ≥ 1 Product, a geocoded location, and a delivery radius. Then the assistant asks for the Goal ("Who would you like to find?") and offers quick replies drafted from the Products, e.g. "Bakeries within 3 miles that could buy our cane sugar". Answering creates a Plan (FR-16) and opens it.
@@ -257,7 +257,7 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 ### FR-16: Create a Plan from a Goal
 **Story:** As Sam, I want to state what I want and get a concrete research plan.
 **Rules:**
-- Input: goal text (5–500 chars), from the chat or `/app/plans/new`. Requires a complete profile (else 422 `PROFILE_INCOMPLETE`).
+- Input: goal text (5–500 chars), from the chat or `/app/plans/new`. Requires a verified email (else 403 `EMAIL_NOT_VERIFIED`) and a complete profile (else 422 `PROFILE_INCOMPLETE`). At most 30 Plans per Business per UTC day (429 `TOO_MANY_REQUESTS`), since each one calls the planning model.
 - The planning model drafts: a name (≤ 60), 1–5 Target segments (name, 1–6 Fit signals, 0–5 exclusions, the Product to pitch from the profile), and a Search area (centre = profile location unless the goal names another place, radius parsed from the goal else the delivery radius, clamped 1–25 miles).
 - Guardrails default from the default Research flow's plan defaults (FR-37: max credits, max leads, min Fit score). If the Business's available credits are below the default max credits, max credits defaults to the available balance (minimum 10), so a trial Business can run on its 50 free credits.
 - Returns the Plan with an estimate (FR-17). Fires `plan_created`.
@@ -299,6 +299,9 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 | 9 | Score & pitch | Claude (planning) | 12% | Fit score with Evidence (each with Source and points) and a Pitch per Prospect |
 | 10 | Deliver | none (leads.deliver) | 0% | Leads created per FR-25 |
 
+- Claude is itself a Tool (`claude.fast`, `claude.planning`), called and metered through the `ToolRunner` like any provider. The agent loop of Steps 2, 6, 7 and 8 runs on the fast model (one planning-model turn per item would spend most of a 400-credit budget); Score & pitch uses the planning model.
+- Seeded Step time limits (minutes, Steps 1–10): 2 / 12 / 1 / 4 / 12 / 6 / 5 / 6 / 10 / 2 = 60, the flow's max active time. Server validation refuses step time limits that add up to more than the max active time (422 `STEP_TIME_OVER_ACTIVE_TIME`).
+
 - A Step whose Tool is disabled is skipped if the Step is optional (6, 7) and the run records it; steps 2, 8 and 9 are required.
 - Unused budget share carries to the next Step.
 
@@ -317,9 +320,9 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 ### FR-20: Guardrails and Settlement
 **Rules:**
 - All thresholds below come from the run's flow settings snapshot (seeded values shown). The runner stops a Step when its budget share or its time limit is used, and stops collection (Steps 2–7) when total spend reaches 80% of max credits or 45 minutes of active time have passed, moving to Verify, Score and Deliver with what it has (`budget_reached` / `time_reached` set).
-- Hard stops: max credits (no Tool call may start if its max cost would exceed the reservation; the call is skipped), the flow's max active time (60 min) and max total time including retries (3 h): the run is failed with `TIME_LIMIT`, keeping delivered Leads if Step 10 finished.
+- Hard stops: max credits (no Tool call may start if its max cost would exceed the reservation; the call is skipped, the current Step ends, the remaining Steps are skipped and Deliver runs with what was found, so a run that runs out of budget delivers partial results), the flow's max active time (60 min) and max total time including retries (3 h): the run is failed with `TIME_LIMIT`, keeping delivered Leads if Step 10 finished.
 - Each Tool call's cost is metered in millicredits (Rate card × units). At the end: credits spent = ceil(sum / 1000), settlement entry for that amount, release of the rest of the Reservation.
-- Failure policy: if a run fails and delivered 0 Leads, credits spent = 0 (Viper absorbs the provider cost; tool calls still record provider cost). If it delivered ≥ 1 Lead, the real cost is charged.
+- Failure policy: if a run fails and delivered 0 Leads, credits spent = 0 (Viper absorbs the provider cost; tool calls still record provider cost). If it delivered ≥ 1 Lead, the real cost is charged. Waived cost stays waived: if a failed 0-Lead run is resumed ("Try again" or Staff "Resume"), only the spend after the resume can be charged.
 - Cancel (FR-21): settles the real cost so far; no Leads unless Step 10 had run.
 - A provider error is retried up to 3 times with backoff (1 s, 4 s, 16 s); a Tool that fails 5 calls in a row is disabled for that run. A required Step with zero successful calls fails the run with `PROVIDER_ERROR`.
 **Acceptance criteria:**
@@ -336,7 +339,7 @@ Staff status is granted only with a server command (`staff:grant <email>`: local
 - Given a running run, when Sam opens its page, then the current Step is highlighted and no Tool names or logs are shown.
 
 ### FR-22: Run emails
-**Rules:** On `RunCompleted` email the Owner: subject "Your leads are ready: <plan name>", count, credits spent, button to the Lead list. On `RunFailed`: subject "Your research run didn't finish", credits charged, link to the Plan. Also email the support address on every `RunFailed`. Sent through the `EmailSender` (SMTP adapter) from the outbox; retried 5 times. Not sent if the run was started by Staff while Acting as (Staff see it in the back office instead).
+**Rules:** On `RunCompleted` email the Owner: subject "Your leads are ready: <plan name>", count, credits spent, button to the Lead list. A completed run with 0 new Leads sends "No new leads this time: <plan name>" instead. On `RunFailed`: subject "Your research run didn't finish", credits charged, link to the Plan. Also email the support address on every `RunFailed`. Sent through the `EmailSender` (SMTP adapter) from the outbox; retried 5 times. Not sent if the run was started by Staff while Acting as (Staff see it in the back office instead).
 **Acceptance criteria:**
 - Given a run completes, then exactly one email reaches Mailpit for the Owner even if the event is delivered twice.
 
@@ -454,13 +457,13 @@ Staff's own Business and Businesses marked internal are excluded from customer a
 - The runner saves a **handoff** after every Tool call (in the same transaction as the Tool call record): current step, items done and left, the agent's working notes (≤ 2,000 chars, written by the agent each turn: what it learned, what worked, what to try next), the last error, credits left and active time left.
 - A new attempt starts a **new agent session** whose first prompt is built from the plan snapshot, the step's goal and the handoff (never the old transcript). Tool calls already stored are answered from storage (same Tool + input hash) and not charged again. Full transcripts are kept 90 days for Staff and never fed back to the agent.
 - **Retryable** errors (crash, deploy, timeout, provider error, rate limit) end the attempt; if attempts and total time remain, the next attempt is queued after the flow's wait (1, 5, 15 min). **Final** errors (credits exhausted, provider not configured, invalid plan) fail the run at once.
-- **Lease and heartbeat:** the worker holding an attempt renews a lease every 30 s. A sweeper (every 30 s) ends any attempt whose lease expired (flow setting, default 2 min) as `worker_stopped` and queues the next attempt.
+- **Lease and heartbeat:** the worker holding an attempt renews a lease every 30 s. A sweeper (every 30 s) ends any attempt whose lease expired (flow setting "worker stopped after", default 5 min, minimum 5, because one provider call with its retries can take about 5 min) as `worker_stopped` and queues the next attempt.
 - One Reservation covers all attempts. Active time counts only while an attempt runs; total time counts from the first start.
 - When attempts or total time run out, the run is `failed` and settled per FR-20. Owner "Try again" and Staff "Resume" start a new attempt beyond the automatic ones (and need credits for the remaining budget).
 **Acceptance criteria:**
 - Given the worker is killed in Step 5 after 12 of 30 websites, when the sweeper runs after the lease expires, then attempt 2 starts at website 13, its first prompt contains the handoff notes, and none of the 12 stored calls is repeated or charged.
 - Given a provider error on every call, when 3 attempts have failed, then the run is `failed` with the failure policy applied.
-- Given credits run out mid-step, then the run fails with `INSUFFICIENT_CREDITS` and no further attempt is queued.
+- Given credits run out mid-step, then no further attempt is queued: the run delivers what it has, and fails with `INSUFFICIENT_CREDITS` only when there is nothing to deliver.
 
 ### FR-37: Research flow settings (Staff)
 **Rules:**
@@ -514,7 +517,7 @@ Staff's own Business and Businesses marked internal are excluded from customer a
 
 ### AJ-5: A run that fails is free (failure path)
 **Persona:** Sam · **Covers:** FR-20, FR-21, FR-22, FR-32
-1. Fake Places and Apify Maps Tools are set to error.
+1. Fake Places, Apify Maps and Overpass Tools are set to error (Step 2 falls back to Overpass, so it must fail too).
 2. Start a run.
 **Expected:** the working screen shows "This run didn't finish. You were charged 0 credits."; the full Reservation is released; "didn't finish" email in Mailpit; Staff see the run failed with `PROVIDER_ERROR` in `/app/staff/runs`.
 
@@ -533,7 +536,7 @@ Staff's own Business and Businesses marked internal are excluded from customer a
 1. `/app/staff/settings` → Email: set SMTP to Mailpit, "Send test email".
 2. AI: replace the Anthropic key; only the last 4 characters show after saving.
 3. Tools: disable "Apify Yelp scraper", change Places credits per unit.
-**Expected:** the test email arrives; the key is masked; the Tool shows disabled and the new margin; three Audit log entries exist.
+**Expected:** the test email arrives; the key is masked; the Tool shows disabled and the new margin; four Audit log entries exist (`settings.email.updated`, `settings.ai.updated`, and one `tool.updated` per Tool).
 
 ### AJ-8: From the landing page to the welcome chat
 **Persona:** Sam · **Covers:** FR-34, FR-35, FR-1, FR-14
@@ -549,7 +552,7 @@ Staff's own Business and Businesses marked internal are excluded from customer a
 2. The customer's Working screen shows "Taking a little longer than usual".
 3. After the lease expires, attempt 2 resumes and the run completes.
 4. Staff open the run detail.
-**Expected:** run completed with 2 attempts; the timeline shows attempt 1 `worker_stopped` at website 12 and attempt 2 from website 13; 12 calls reused at 0 credits; settlement equals one pass of work.
+**Expected:** run completed with 2 attempts; the timeline shows attempt 1 `worker_stopped` at website 12 and attempt 2 from website 13; attempt 2 resumes from item 13, so the 12 stored calls are never repeated or charged (none shows as reused); settlement equals one pass of work.
 
 ## 6b. Screens
 Mocks (Design artifacts, approved 2026-11-19): all screens, clickable: https://claude.ai/artifact/1DYM1YFA2fMHHQLrXHgWXY · landing page, /app routes and first view after login (before/after): https://claude.ai/artifact/SzcSuuq9Nz1ALirN1nTiPb · run retries and Research flows (before/after, mobile and desktop): https://claude.ai/artifact/DpVT9k1m85Lxqor35ZPLDg. Mobile versions of the remaining screens follow the same layout rules (DESIGN.md) and are reviewed in the wave demos.
@@ -606,7 +609,7 @@ Shared shapes:
 - `POST /api/auth/verify-email/resend`: session. 202. Errors 429.
 - `POST /api/auth/login`: public. Req `{ email, password }`. 200 `Me` (Staff: `twoFactor.required=true, passed=false`). Errors 401 `INVALID_CREDENTIALS`, 429.
 - `POST /api/auth/two-factor/setup`: half-session Staff without setup. 200 `{ otpauthUrl, secret, qrSvg }`.
-- `POST /api/auth/two-factor/verify`: half-session Staff. Req `{ code: /^\d{6}$/ }`. 200 `Me`. Errors 401 `INVALID_CODE`, 429.
+- `POST /api/auth/two-factor/verify`: half-session Staff. Req `{ code: /^\d{6}$/ }`. 200 `Me`. Errors 401 `INVALID_CODE`, 429 (`TWO_FACTOR_LOCKED` when locked).
 - `POST /api/auth/logout`: session. 204.
 - `GET /api/auth/me`: session. 200 `Me`.
 - `POST /api/auth/password-reset`: public. Req `{ email }`. 202.
@@ -639,7 +642,7 @@ Shared shapes:
 
 ### Planning
 - `Plan = { id, name, goal, segments: [{ id, name, fitSignals: string[], exclusions: string[], productId }], searchArea: { label, lat, lng, radiusMiles }, guardrails: { maxCredits, maxLeads, minFitScore }, icpEdited: bool, estimate: { maxCredits, typicalCredits }, available: int, lastRun: RunSummary | null, leadsCount, createdAt, updatedAt, warnings?: string[] }`
-- `POST /api/plans`: session. Req `{ goal }`. 201 `Plan`. Errors 422 `PROFILE_INCOMPLETE`, 503 `ASSISTANT_UNAVAILABLE`.
+- `POST /api/plans`: session. Req `{ goal }`. 201 `Plan`. Errors 403 `EMAIL_NOT_VERIFIED`, 422 `PROFILE_INCOMPLETE`, 429 `TOO_MANY_REQUESTS`, 503 `ASSISTANT_UNAVAILABLE`.
 - `GET /api/plans`: session. 200 list of `Plan` without segments.
 - `GET /api/plans/:id`, `PATCH /api/plans/:id` (any of `name`, `segments`, `searchArea: { query } | { label, lat, lng, radiusMiles }`, `guardrails`): session. 200 `Plan`. Errors 400, 404, 422 `ADDRESS_NOT_FOUND`.
 - `GET /api/places/search?q`: session. 200 `{ items: [{ label, lat, lng }] }` (geocoding, ≤ 5).
@@ -658,7 +661,7 @@ Shared shapes:
 - Staff run detail (`GET /api/staff/runs/:id`) adds `attempts: [{ n, startedAt, endedAt, outcome, from: { stepKey, item }, reached: { stepKey, item }, error, handoff: { stepKey, itemsDone, itemsLeft, notes, lastError, creditsLeft, activeSecondsLeft } }]` and, per Tool call, `attempt` and `reused: bool`.
 - `GET /api/staff/flows`: staff. 200 list of `{ key, name, version, isDefault, plansUsing, updatedAt }`.
 - `GET /api/staff/flows/:key`: staff. 200 `Flow = { key, name, version, runSettings: { maxActiveMinutes, maxTotalHours, maxAttempts, retryWaitsMinutes: int[], workerStoppedAfterMinutes, scoreAtBudgetPct, scoreAtMinutes }, planDefaults: { maxCredits, maxLeads, minFitScore }, steps: [{ key, name, tools: string[], budgetPct, timeLimitMinutes, required }], ceilings }`.
-- `PUT /api/staff/flows/:key`: staff. Req `Flow` without `version`/`ceilings`. 201 `Flow` (new version). Errors 400 (fields name the ceiling or the 100% rule).
+- `PUT /api/staff/flows/:key`: staff. Req `Flow` without `version`/`ceilings`. 201 `Flow` (new version). Errors 400 (fields name the ceiling or the 100% rule), 422 `STEP_TIME_OVER_ACTIVE_TIME`.
 - Site routes (HTML, server-rendered, not JSON): `GET /`, `/terms`, `/privacy`, `/acceptable-use`, `/cookies`, `/sitemap.xml`, `/robots.txt`; form posts `POST /site/signup` and `POST /site/login` (form-encoded; 303 redirect on success, re-render with errors on failure).
 
 ### Tools
@@ -762,7 +765,7 @@ Stack: docs/architecture/stack.md. This version adds or changes:
 - NFR-6 Accessibility: WCAG 2.1 AA on all new screens; every shortcut also reachable by mouse; focus visible.
 - NFR-7 i18n readiness: all UI strings in `apps/web/src/shared/i18n/en.ts`; emails in `modules/platform/infrastructure/email/templates/en/`.
 - NFR-10 SEO and speed: landing page Lighthouse (mobile) SEO ≥ 95, Performance ≥ 90, LCP < 2.5 s, CLS < 0.1; server render p95 < 150 ms (cached).
-- NFR-11 Recovery: a stalled attempt is detected within lease + 30 s (default 2.5 min) and the next attempt starts after the flow's wait.
+- NFR-11 Recovery: a stalled attempt is detected within lease + 30 s (default 5.5 min) and the next attempt starts after the flow's wait.
 - NFR-8 Reliability: progress saved after every Tool call and a Checkpoint after every Step; automatic retry ×3 resumes without repeating or re-charging stored work; outbox delivery at-least-once with idempotent consumers; worker restarts don't lose runs.
 - NFR-9 Cost: tests and CI never call paid APIs (ADR 0005).
 
@@ -776,9 +779,9 @@ Stack: docs/architecture/stack.md. This version adds or changes:
 
 ## 12. Release notes
 - Migrations: all tables in §8 (fresh database). Seed production with: the Flow template, Tools and Rate card, Credit packs, Platform settings defaults (no secrets).
-- Before launch: set env vars; run `staff:grant <founder email>` from the App Platform console; set up two-factor; enter Anthropic, provider, SMTP, Stripe keys in Settings and run every Test; create the Stripe webhook endpoint `https://app.<domain>/api/webhooks/stripe` for `checkout.session.completed`; review the legal page drafts and fill in `[founder's state]` and the company name.
+- Before launch: set env vars; run `staff:grant <founder email>` from the App Platform console; set up two-factor; enter Anthropic, provider, SMTP, Stripe keys in Settings and run every Test; create the Stripe webhook endpoint `https://<domain>/api/webhooks/stripe` for `checkout.session.completed`, `checkout.session.async_payment_succeeded` and `checkout.session.async_payment_failed`; review the legal page drafts and fill in `[founder's state]` and the company name.
 - `/ship-requirement` must be updated for App Platform first (known gap in stack.md).
-- Rollout: staging first (Stripe test mode), founder runs 2 real runs, then production with sign-up open to everyone.
+- Rollout: one environment (ADR 0018), deployed by hand after the founder approves. Founder runs 2 real runs with Stripe in test mode, then switches Stripe to live keys and opens sign-up to everyone.
 
 ## 13. Assumptions & decisions
 - Staff = the "super admin" the founder asked for; one level, granted only by a server command (glossary keeps "Staff").
@@ -804,8 +807,25 @@ Stack: docs/architecture/stack.md. This version adds or changes:
 - Public name "Llyner Leads" in all customer-facing text; code name Viper.
 - One domain: public site at `/` (server-rendered), app at `/app`, API at `/api` (founder approved the recommendation).
 - Landing page copy lives in the repo; the YouTube video ID is a Platform setting.
-- Limits live on the Research flow, within platform ceilings (1,000 credits, 500 leads, 120 active min, 4 h total, 5 attempts); Local buyers defaults: 60 min active, 3 h total, 3 attempts, waits 1/5/15 min, worker stopped after 2 min.
+- Limits live on the Research flow, within platform ceilings (1,000 credits, 500 leads, 120 active min, 4 h total, 5 attempts); Local buyers defaults: 60 min active, 3 h total, 3 attempts, waits 1/5/15 min, worker stopped after 5 min (minimum 5; changed from 2 in the build), Step time limits 2/12/1/4/12/6/5/6/10/2 = 60 min.
 - A new attempt never replays the old transcript; it starts from the handoff.
+
+Decisions made during the build (2026-11-19 to 2026-11-20):
+- Claude calls are metered as Tools through the `ToolRunner` (`claude.<role>` for 1k tokens in, `claude.<role>.out` for 1k tokens out), in runs and outside them (chat, plan drafting) (ADR 0019).
+- The fast model runs the agent loop of Steps 2, 6, 7 and 8; Score & pitch keeps the planning model.
+- A run that runs out of budget delivers partial results: the current Step ends, the rest is skipped and Deliver runs; it fails with `INSUFFICIENT_CREDITS` only when there is nothing to deliver.
+- The welcome chat's question order drops the price range and website turns; both stay editable on the profile page.
+- No Acting-as banner: the one built was removed (founder's decision); the account menu holds "Stop acting as".
+- The run lease ("worker stopped after") defaults to 5 min (minimum 5), up from 2, because one provider call with retries can take about 5 min. Provider calls run outside database transactions: the call is stored as `started` first, and its outcome is stored with the handoff (ADR 0017).
+- Creating a Plan needs a verified email and is capped at 30 per Business per UTC day, to protect against unverified planning-model spend.
+- Waived cost stays waived: after a failed 0-Lead attempt and "Try again", only the work after the resume is charged.
+- A completed run with 0 new Leads sends a "No new leads this time" email instead of "Your leads are ready".
+- Staff two-factor: 10 wrong codes per Member per hour lock it for an hour (`TWO_FACTOR_LOCKED`), and a code that passed can't be reused.
+- Stripe Checkout is cards only; the async payment events are handled anyway (`async_payment_succeeded` fulfils, `async_payment_failed` marks the purchase failed).
+- The client IP (rate limits) comes from `do-connecting-ip`, set by the App Platform edge; a spoofed `X-Forwarded-For` is ignored.
+- The SPA carries a Content-Security-Policy `<meta>`; `frame-ancestors` can't be set that way, and the App Platform static site can't send headers, so `/app` has no frame-ancestors protection. The server-rendered site sends full security headers.
+- Deploy: a single environment with manual, approved deploys (ADR 0018); no staging.
+- Legal pages are drafted and show a "Draft for founder review" badge until the founder approves them.
 
 ## 14. Risks & open questions
 - [ ] **Launch on Monday 2026-11-23 vs this scope (now 38 FRs, 9 journeys):** the full version is 33 FRs over 6 waves. Proposed: Monday = founder-only launch (customer #1 on staging/production with Stripe in test mode) once W3 is done; open sign-up after W5. Owner: founder. Blocking: no (affects release, not the build).
@@ -823,6 +843,7 @@ Stack: docs/architecture/stack.md. This version adds or changes:
 |---------|------|--------|
 | 0.1 | 2026-11-19 | Initial draft (includes founder answers: 50 trial credits, no refunds, open sign-up, no Removal list, resumable runs, Stripe Tax, legal pages) |
 | 0.2 | 2026-11-19 | Approved. Public landing page with sign-up/log-in card and SEO (FR-34, FR-35); app moved to `/app`; run attempts with handoff, lease and sweeper (FR-36); Research flow settings for Staff with platform ceilings (FR-37); "taking longer" message (FR-38); AJ-8, AJ-9; Docker-only local runtime; mocks linked in §6b |
+| 0.3 | 2026-11-20 | Built (W0–W5). Build decisions recorded in §13 and §17: Plan creation needs a verified email and is capped at 30/day; two-factor lock and code replay guard; cards-only Checkout with async payment events; "No new leads" email; waived cost stays waived; partial delivery on budget exhaustion; lease default 5 min and seeded Step time limits; fast model on Steps 2, 6–8; chat drops the price and website turns. AJ-5, AJ-7 and AJ-9 wording fixed to match the tested behaviour |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |
@@ -1044,4 +1065,90 @@ execution:
 ```
 
 ## 17. Implementation notes
-_Filled in by /build-requirement: FR → test files, AJ → Playwright specs, sign-off per wave, decisions on gaps._
+Built 2026-11-19 to 2026-11-20 by /build-requirement on branch `feat/first-version`. Paths: `api/` = `apps/api/src/modules/`, `web/` = `apps/web/src/features/`, `contracts/` = `packages/contracts/src/`. "e2e" names the journey spec that also covers the FR; "unit only" means no e2e journey exercises it.
+
+### FR → test files
+| FR | Test files |
+|----|-----------|
+| FR-1 Sign up | api/identity/domain/domain.test.ts, application/sign-up-and-verify.test.ts, http/identity.http.test.ts, infrastructure/kysely-repositories.int.test.ts; `apps/api/src/shared/http/client-ip.test.ts` (rate-limit IP); web/auth/test/signup.test.tsx; contracts/identity.test.ts · e2e AJ-1, AJ-8 |
+| FR-2 Verify email | api/identity/application/sign-up-and-verify.test.ts, http/identity.http.test.ts, kysely-repositories.int.test.ts; web/auth/test/email-and-password.test.tsx · e2e AJ-1 |
+| FR-3 Log in / out | api/identity/application/log-in-and-password.test.ts, http/identity.http.test.ts, http/identity.http.int.test.ts; web/auth/test/login.test.tsx · e2e AJ-6, AJ-8 |
+| FR-4 Password reset | api/identity/application/log-in-and-password.test.ts, http/identity.http.test.ts, infrastructure/security-adapters.test.ts; web/auth/test/email-and-password.test.tsx · unit only |
+| FR-5 Staff two-factor | api/identity/application/staff.test.ts (incl. `TWO_FACTOR_LOCKED`, code reuse), infrastructure/security-adapters.test.ts, http/identity.http.int.test.ts (TOTP cookie flow); web/auth/test/two-factor.test.tsx · e2e AJ-6 |
+| FR-6 Acting as | api/identity/application/staff.test.ts, domain/domain.test.ts, http/identity.http.test.ts; web/backoffice/customers/test/customers.test.tsx; `apps/web/src/app/shell.test.tsx` (no banner, menu item) · e2e AJ-6 |
+| FR-7 Audit log | api/platform/application/audit-log.test.ts, domain/audit-action.test.ts, http/audit-trail.test.ts, infrastructure/platform-repositories.int.test.ts; `apps/api/src/composition.int.test.ts`; web/backoffice/audit/test/audit.test.tsx · e2e AJ-6, AJ-7 |
+| FR-8 Platform settings | api/platform/domain/settings.test.ts, application/settings-use-cases.test.ts, settings-reader.test.ts, infrastructure/secret-box.test.ts, connectivity/provider-checks.test.ts, connectivity/service-checks.test.ts, smtp-email-sender.test.ts, smtp-mailpit.int.test.ts; web/backoffice/settings/test/settings.test.tsx · e2e AJ-7 |
+| FR-9 Analytics | Server events: api/platform/domain/event-properties.test.ts, platform-repositories.int.test.ts (DbAnalyticsTracker). GA page views on the public site: `apps/api/src/site/site.http.test.ts`, `apps/web/src/site/client.test.ts`. GA page views inside the SPA (`/app`) are **not built** (see Deferred) · unit only |
+| FR-10 Credit wallet | api/billing/domain/domain.test.ts, application/billing.test.ts, http/billing.routes.test.ts, infrastructure/kysely-billing.int.test.ts (concurrency); web/credits/test/credits.test.tsx · e2e AJ-3, AJ-4 |
+| FR-11 Trial credits | api/billing/application/billing.test.ts, infrastructure/kysely-billing.int.test.ts, billing-worker.int.test.ts (event delivered twice) · e2e AJ-1 |
+| FR-12 Stripe packs | api/billing/application/billing.test.ts (webhook ×3, async events), infrastructure/stripe-payment-gateway.test.ts (signed payloads, cards only), http/billing.routes.test.ts; web/credits/test/credits.test.tsx · e2e AJ-3 |
+| FR-13 Grants and packs | api/billing/application/billing.test.ts, domain/domain.test.ts, http/billing.routes.test.ts; web/backoffice/packs/test/packs.test.tsx, customers/test/customers.test.tsx · unit only |
+| FR-14 Welcome chat | api/assistant/domain/welcome-flow.test.ts, application/welcome-chat.test.ts, http/assistant.routes.test.ts, infrastructure/conversation-repositories.int.test.ts; api/profile/application/profile-use-cases.test.ts; api/tools/application/tool-catalog.test.ts (LlmUsageMeter); `apps/api/src/shared/infrastructure/llm/*.test.ts`; web/assistant/test/assistant.test.tsx · e2e AJ-1, AJ-8 |
+| FR-15 Edit profile | api/profile/domain/domain.test.ts, application/profile-use-cases.test.ts, http/profile.routes.test.ts, infrastructure/kysely-profile.int.test.ts; web/profile/test/profile.test.tsx · unit only |
+| FR-16 Create a Plan | api/planning/domain/domain.test.ts, application/planning.test.ts (verified email, 30/day), http/planning.routes.test.ts, infrastructure/kysely-plans.int.test.ts; `apps/api/src/shared/infrastructure/llm/fake-plan-draft.test.ts`; web/plans/test/plans.test.tsx · e2e AJ-2 |
+| FR-17 Edit Plan, estimate | api/planning/domain/domain.test.ts, application/planning.test.ts, http/planning.routes.test.ts, kysely-plans.int.test.ts; web/plans/test/plans.test.tsx, circle.test.ts · e2e AJ-2, AJ-4 |
+| FR-18 Start a run | api/research/application/runs.test.ts, http/research.routes.test.ts, infrastructure/research-workers.int.test.ts; api/billing/application/billing.test.ts (reservation); web/plans/test/plans.test.tsx (402 dialog) · e2e AJ-2, AJ-4 |
+| FR-19 Local buyers flow | api/research/application/full-run.test.ts, attempts.test.ts (crash after Step 5, mid-Step 12 of 30), infrastructure/kysely-research-store.int.test.ts, research-workers.int.test.ts, tools-compat.int.test.ts; api/leads/domain/domain.test.ts (merge); api/tools/application/tool-runner.test.ts (stored-call reuse); `apps/api/src/research-prospects.test.ts` · e2e AJ-2, AJ-9 |
+| FR-20 Guardrails, settlement | api/research/application/guardrails.test.ts (80%, partial delivery, TIME_LIMIT, 136,200 → 137), runs.test.ts (waived cost), domain/domain.test.ts; api/billing/domain/domain.test.ts, application/billing.test.ts; api/tools/application/tool-runner.test.ts · e2e AJ-2, AJ-5 |
+| FR-21 Working screen, cancel | api/research/application/runs.test.ts, http/research.routes.test.ts; web/research/test/run-page.test.tsx · e2e AJ-2, AJ-5 |
+| FR-22 Run emails | api/research/application/run-emails.test.ts (incl. "No new leads", Staff-started), infrastructure/kysely-research-store.int.test.ts · e2e AJ-2, AJ-5 (Mailpit) |
+| FR-23 Tools, Rate card, metering | api/tools/domain/domain.test.ts, application/tool-runner.test.ts, tool-catalog.test.ts, http/tools.routes.test.ts, infrastructure/kysely-tool-repositories.int.test.ts; web/backoffice/tools/test/tools.test.tsx · e2e AJ-7 |
+| FR-24 Provider adapters | api/tools/infrastructure/adapters/adapters.test.ts (recorded fixtures), fake/fake-adapters.test.ts, fake/redis-fault-store.int.test.ts · unit only (e2e uses fake mode) |
+| FR-25 Qualification, delivery | api/leads/domain/domain.test.ts, application/leads.test.ts, infrastructure/kysely-leads.int.test.ts; api/research/application/full-run.test.ts · e2e AJ-2 |
+| FR-26 Lead list, detail | api/leads/application/leads.test.ts, views.test.ts, http/leads.routes.test.ts; web/leads/test/leads.test.tsx (J/K/Esc, empty states) · e2e AJ-2 |
+| FR-27 Feedback | api/leads/domain/domain.test.ts, http/leads.routes.test.ts; web/leads/test/leads.test.tsx (G/N, reasons) · e2e AJ-2 |
+| FR-28 CSV export | api/leads/domain/domain.test.ts (CSV injection), http/leads.routes.test.ts; web/leads/test/leads.test.tsx · e2e AJ-2 |
+| FR-29 Removal list | deferred, not built |
+| FR-30 Staff dashboard | api/reporting/domain/domain.test.ts, application/dashboard.test.ts, http/reporting.routes.test.ts, infrastructure/reporting-mysql.int.test.ts, dashboard-performance.int.test.ts (51,040 Leads, p95 156/183 ms); web/backoffice/dashboard/test/dashboard.test.tsx · e2e AJ-6 |
+| FR-31 Customer list | api/reporting/application/customers.test.ts, http/reporting.routes.test.ts, reporting-mysql.int.test.ts; web/backoffice/customers/test/customers.test.tsx · e2e AJ-6 |
+| FR-32 Runs monitor | api/research/application/runs.test.ts (Staff resume), http/research.routes.test.ts; web/backoffice/runs/test/runs.test.tsx · e2e AJ-5, AJ-9 |
+| FR-33 Legal pages | web/legal/legal-content.test.ts (no refunds, never expire, draft badge); `apps/web/src/site/markdown.test.ts`, `pages.test.ts`; `apps/api/src/site/site.http.test.ts` · unit only |
+| FR-34 Landing page | `apps/api/src/site/site.http.test.ts` (no-JS HTML, prices, JSON-LD, cache, sitemap/robots, CSP); `apps/web/src/site/pages.test.ts`, `client.test.ts`, `tokens.test.ts` · e2e AJ-8 (incl. NFR-10 vitals) |
+| FR-35 Landing card | `apps/api/src/site/site.http.test.ts`; `apps/web/src/site/pages.test.ts`, `client.test.ts` · e2e AJ-8 (JS on and JS off) |
+| FR-36 Attempts, handoff | api/research/application/attempts.test.ts, domain/domain.test.ts, infrastructure/bullmq.test.ts, research-workers.int.test.ts, kysely-research-store.int.test.ts; api/tools/application/tool-runner.test.ts (started row); web/backoffice/runs/test/runs.test.tsx · e2e AJ-9 |
+| FR-37 Flow settings | api/research/domain/domain.test.ts, application/flows.test.ts (ceilings, 100%, step time ≤ active time), http/research.routes.test.ts; web/backoffice/flows/test/flows.test.tsx · unit only |
+| FR-38 Taking longer | api/research/application/attempts.test.ts, domain/domain.test.ts; web/research/test/run-page.test.tsx · e2e AJ-9 |
+
+Every module also has contract tests in `packages/contracts/src/*.test.ts`. Rough size (counted from the source, not a run): about 890 api, 360 web and 50 contract test cases in 131 files, plus 12 Playwright tests (9 journeys, AJ-8 ×3 incl. NFR-10, smoke ×3).
+
+### AJ → Playwright specs
+| Journey | Spec |
+|---------|------|
+| AJ-1 | `e2e/aj-1-sign-up-and-describe.spec.ts` |
+| AJ-2 | `e2e/aj-2-goal-to-leads.spec.ts` |
+| AJ-3 | `e2e/aj-3-buy-credit-pack.spec.ts` |
+| AJ-4 | `e2e/aj-4-not-enough-credits.spec.ts` |
+| AJ-5 | `e2e/aj-5-failed-run-is-free.spec.ts` (Places, Apify Maps and Overpass fail) |
+| AJ-6 | `e2e/aj-6-staff-act-as.spec.ts` |
+| AJ-7 | `e2e/aj-7-configure-platform.spec.ts` (four Audit log entries) |
+| AJ-8 | `e2e/aj-8-landing-to-chat.spec.ts`: a JavaScript-on test, a JavaScript-off test (no-JS card, used email opens Log in), and an NFR-10 vitals check |
+| AJ-9 | `e2e/aj-9-run-survives-worker-crash.spec.ts` |
+
+Shared helpers: `e2e/fixtures.ts`, `e2e/journeys.ts`, `e2e/global-setup.ts`. The full suite takes about 15 minutes.
+
+### Waves and commits
+| Wave | Packages | Commit |
+|------|----------|--------|
+| W0 Foundation | WP-0a, WP-0b, WP-0c | `5dc2944` |
+| W1 Accounts, platform and credits | WP-1, WP-2, WP-3, WP-4 | `f1f8203` (prep: `25bb59e`) |
+| W2 Profile, chat and plans | WP-5, WP-6, WP-7, WP-8 | `f08de1b` (prep: `c3ea805`) |
+| W3 Research engine | WP-9, WP-10, WP-11, WP-12 | `801d752` |
+| W4 Results, back office, public site | WP-13, WP-14, WP-15, WP-17 | `d85b089` |
+| Deploy setup (App Platform, single environment) | — | `ba53817` |
+| W5 Journeys and hardening | WP-16, WP-R | not committed yet |
+
+Sign-off: the founder chose autopilot, so there were no per-wave demos or sign-offs. The founder reviews the whole build before `/ship-requirement`.
+
+### Decisions made during the build
+Recorded in §13 ("Decisions made during the build"), with the matching FR text updated: Claude metered as Tools (ADR 0019); fast model on Steps 2, 6, 7, 8; partial delivery when the budget runs out; chat drops the price and website turns; no Acting-as banner; lease default 5 min (minimum 5) and seeded Step time limits 2/12/1/4/12/6/5/6/10/2 = 60 min, with provider calls outside transactions (ADR 0017 amended); Plan creation needs a verified email, 30 per Business per day; waived cost stays waived; "No new leads this time" email; two-factor lock and code replay guard; cards-only Checkout with async payment events; client IP from `do-connecting-ip`; SPA CSP meta without frame-ancestors; single environment with manual approved deploys (ADR 0018); legal drafts with a "Draft for founder review" badge.
+
+### Deferred and known items
+- **GA page views inside the SPA (FR-9) are not built.** Only the server-rendered public site loads gtag; `/app` sends no page views, and its CSP meta (`script-src 'self'`) would block gtag anyway. Server-side product events work.
+- Lighthouse (NFR-10, FR-34) isn't run; AJ-8 checks LCP and CLS in Playwright only.
+- The Audit log's Target column cuts long targets short (Tool keys show truncated; full value on hover).
+- Apify actors (`compass/crawler-google-places`, `apify/instagram-profile-scraper`, `tri_angle/yelp-scraper`) need the founder's approval (§14).
+- MySQL TLS doesn't verify the server certificate.
+- No staging environment (ADR 0018).
+- No `frame-ancestors` on `/app` (static site can't send headers).
+- The e2e suite takes about 15 minutes.
+- Smaller follow-ups still open from the build log: the fake agent's Score & pitch Evidence always cites the Google Maps Source; leads `ProspectStore` writes commit outside the handoff transaction (safe through idempotent merge); the Working screen invalidates the plans feature's `['plans']` query key directly; `RunCosts.creditsSpentForPlan` is built in composition rather than owned by research; the Staff run detail shows its limits line only while the run's flow version is still the current one (the run's settings snapshot isn't in the contract); `shared/api/me.test.ts` timeout test flaked once under load.

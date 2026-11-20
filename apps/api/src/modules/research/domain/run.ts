@@ -45,6 +45,11 @@ export interface PlanSnapshot {
 export interface RunnerState {
   readonly disabledTools: readonly string[];
   readonly failuresInARow: Readonly<Record<string, number>>;
+  /**
+   * Spend the failure policy waived (FR-20): a failed run with 0 Leads costs nothing, and that
+   * stays so after "Try again" (founder's decision): only the spend after it can be charged.
+   */
+  readonly waivedMillicredits?: number;
 }
 
 export interface RunSnapshot {
@@ -170,6 +175,19 @@ export class ResearchRun {
     return Math.max(0, this.budgetMillicredits - this.s.millicreditsSpent);
   }
 
+  /** Spend that can still be charged: all of it, less what a 0-Lead failure waived (FR-20). */
+  get chargeableMillicredits(): number {
+    return Math.max(0, this.s.millicreditsSpent - (this.s.state.waivedMillicredits ?? 0));
+  }
+
+  /** The failure policy waived everything spent so far (a failed run with 0 Leads, FR-20). */
+  waiveSpend(): void {
+    this.s = {
+      ...this.s,
+      state: { ...this.s.state, waivedMillicredits: this.s.millicreditsSpent },
+    };
+  }
+
   /** Active seconds that count against the current limits window (a resume starts a new one). */
   windowActiveSeconds(extra = 0): number {
     return this.s.activeSeconds - this.s.activeOffsetSeconds + extra;
@@ -188,7 +206,7 @@ export class ResearchRun {
       startedAt: this.s.startedAt ?? now,
       windowStartedAt: this.s.windowStartedAt ?? now,
       // A new attempt gives every Tool a fresh chance (a provider may be back, FR-19).
-      state: { disabledTools: [], failuresInARow: {} },
+      state: { ...this.s.state, disabledTools: [], failuresInARow: {} },
     };
     return this.s.attempts;
   }
