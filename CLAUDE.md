@@ -30,4 +30,4 @@ Everything runs in Docker through `./dev`. The host has no Node: never run `node
 
 ## Workflow
 New feature: /new-requirement → /build-requirement → /ship-requirement. Small change or bug fix: /small-change.
-Note: /ship-requirement still targets cPanel; update it for DigitalOcean App Platform before the first deploy.
+Deploys: /ship-requirement targets DigitalOcean App Platform (`.do/app.yaml`, `docs/ops/digitalocean-setup.md`). Never deploy without the founder's explicit OK.

@@ -1,11 +1,14 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**']
   pull_request:
+  # deploy.yml runs these same checks before it deploys.
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Called from deploy.yml, the group gets its own name so a push can't cancel a release's checks.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

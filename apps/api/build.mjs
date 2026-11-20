@@ -28,7 +28,7 @@ await build({
   target: 'node24',
   sourcemap: true,
   banner: {
-    js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
+    js: "import { createRequire as __bannerCreateRequire } from 'module'; const require = __bannerCreateRequire(import.meta.url);",
   },
   logLevel: 'info',
 });

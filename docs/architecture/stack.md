@@ -13,8 +13,8 @@ _Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stac
 | File storage | DigitalOcean Spaces (S3-compatible), not used in the first version (CSV is streamed) |
 | Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `[TBD]` |
 | Region | NYC (`nyc`): customers are US-only. App, database and Valkey all in the same region |
-| Deploy gates | Staging deploys automatically when `feat/*` or `main` checks pass; production deploys only after the founder approves each release (GitHub environment `production` with a required reviewer) |
-| Staging | a second App Platform app with its own database (a separate database on the same cluster to save cost) and Valkey |
+| Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
+| Staging | none for now (ADR 0018); add a second app from `.do/app.yaml` when needed. Setup and costs: `docs/ops/digitalocean-setup.md` |
 | Secrets | Infrastructure secrets (`DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, `SENTRY_DSN`) in App Platform encrypted env vars. Provider, model, SMTP and Stripe keys in Platform settings, encrypted with AES-256-GCM (ADR 0012). Never in the repo |
 
 ## Stack
@@ -44,11 +44,9 @@ _Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stac
 | Acceptance tests | Playwright in Docker (`mcr.microsoft.com/playwright:v<x>-noble`, matching `@playwright/test`); the agent runs against fake Tools | |
 | Docker images | `node:24-slim`, `mysql:8.x` matching the cluster, `valkey/valkey:8`, `axllent/mailpit` (dev/e2e) | tests match production |
 | Lint/format/types | ESLint flat config (typescript-eslint, eslint-plugin-boundaries), Prettier, `tsc -b` with project references | |
-| Build/deploy | Docker image per component built by App Platform from the repo (`apps/api/Dockerfile` for api and worker, static build for web); migrations run as a pre-deploy job | ADR 0006 |
+| Build/deploy | Docker image per component built by App Platform from the repo (root `Dockerfile`: default/`TARGET=api` for api and worker, `TARGET=web` for the static site; spec in `.do/app.yaml`); migrations run as a pre-deploy job | ADR 0006 |
 | CI | GitHub Actions running the same `./dev` commands (no `setup-node`): lint, typecheck, test, e2e, build, `npm audit --omit=dev` | local = CI |
 
 ## Commands (repo root)
 All through Docker (no Node on the host): `./dev install` · `./dev up` · `./dev seed` · `./dev test [paths]` · `./dev e2e [specs]` · `./dev lint` · `./dev typecheck` · `./dev build` · `./dev check` (all of them) · `./dev add <pkg> -w <workspace>`
 
-## Known gaps in the skills
-`/ship-requirement` and parts of `build-requirement/references` (`docker.md`, `architecture.md` §6, `scaffold.md`) were written for cPanel. Update them for App Platform before the first deploy; until then this file wins wherever they disagree.

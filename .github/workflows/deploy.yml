@@ -1,0 +1,102 @@
+# Deploys Llyner Leads to DigitalOcean App Platform (.do/app.yaml). Manual only: start it from
+# Actions > Deploy > Run workflow on the branch named in .do/app.yaml. It runs the full checks,
+# then waits for the founder's approval (GitHub environment `production`, required reviewer),
+# deploys, and smoke-tests the live app. Setup: docs/ops/digitalocean-setup.md.
+#
+# Needs: repo secret DIGITALOCEAN_ACCESS_TOKEN, environment variable DO_APP_ID (the app's id).
+name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: What this release ships (shown in the run title)
+        required: false
+
+run-name: Deploy ${{ github.ref_name }}@${{ github.sha }} ${{ inputs.reason }}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: production
+      url: ${{ steps.app.outputs.url }}
+    env:
+      APP_ID: ${{ vars.DO_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Branch matches the app spec
+        # App Platform builds the head of the branch in .do/app.yaml, not this run's ref.
+        run: |
+          branch=$(grep -m1 -E '^\s+branch:' .do/app.yaml | awk '{print $2}')
+          if [ "$branch" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::.do/app.yaml deploys '$branch' but this run is on '$GITHUB_REF_NAME'. Run the workflow on '$branch'."
+            exit 1
+          fi
+          test -n "$APP_ID" || { echo "::error::Set the DO_APP_ID variable on the production environment."; exit 1; }
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Remember the live deployment (for rollback)
+        id: before
+        run: |
+          prev=$(doctl apps get "$APP_ID" -o json | jq -r '.[0].active_deployment.id // empty')
+          echo "id=$prev" >> "$GITHUB_OUTPUT"
+          echo "Live before this release: ${prev:-none}"
+
+      - name: Deploy (builds the branch head, runs the migrate job first)
+        id: deploy
+        run: |
+          doctl apps create-deployment "$APP_ID" --wait -o json > deployment.json
+          id=$(jq -r '.[0].id' deployment.json)
+          phase=$(jq -r '.[0].phase' deployment.json)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "Deployment $id finished in phase $phase"
+          [ "$phase" = "ACTIVE" ] || { doctl apps logs "$APP_ID" --deployment "$id" --type deploy --tail 200 || true; exit 1; }
+          built=$(jq -r '[.[0].services[]?.source_commit_hash] | first // empty' deployment.json)
+          if [ -n "$built" ] && [ "$built" != "$GITHUB_SHA" ]; then
+            echo "::warning::App Platform built $built, not the checked commit $GITHUB_SHA (the branch moved). Check that commit's CI."
+          fi
+
+      - name: Live URL
+        id: app
+        run: echo "url=$(doctl apps get "$APP_ID" -o json | jq -r '.[0].live_url')" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        env:
+          URL: ${{ steps.app.outputs.url }}
+        run: |
+          set -euo pipefail
+          health=$(curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$URL/api/health")
+          echo "/api/health: $health"
+          echo "$health" | jq -e '.status == "ok"' > /dev/null
+          for path in / /terms /robots.txt /app/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --retry 3 --retry-all-errors "$URL$path")
+            echo "$path: $code"
+            [ "$code" = "200" ]
+          done
+
+      - name: How to roll back
+        if: failure() && steps.before.outputs.id != ''
+        run: |
+          cat <<EOF
+          ::error::The release failed. To go back to the previous deployment (${{ steps.before.outputs.id }}):
+            curl -X POST -H "Authorization: Bearer \$DIGITALOCEAN_ACCESS_TOKEN" -H "Content-Type: application/json" \\
+              -d '{"deployment_id":"${{ steps.before.outputs.id }}","skip_pin":false}' \\
+              https://api.digitalocean.com/v2/apps/$APP_ID/rollback
+          or App Platform > Activity > Rollback. See .claude/skills/ship-requirement (Rollback).
+          EOF

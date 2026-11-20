@@ -6,7 +6,7 @@
 3. How much DDD to apply
 4. Code patterns (value object, entity, port, use case, repository, route, errors, composition)
 5. Cross-module communication
-6. Hosting constraints (cPanel / Passenger)
+6. Hosting constraints (DigitalOcean App Platform)
 
 ## 1. Layout
 
@@ -201,12 +201,15 @@ Maps `AppError` subclasses to status codes (ValidationError and Zod errors 400 w
 ## 5. Cross-module communication
 
 - **Synchronous**: call the other module's exported use case / query from its `index.ts`.
-- **Reacting to changes**: in-process domain events (simple typed event bus) dispatched after the transaction commits. If reliability matters (e.g. sending emails, payments), use a transactional **outbox** table processed by a cPanel cron job — shared hosting has no reliable long-running worker.
+- **Reacting to changes**: in-process domain events (simple typed event bus) dispatched after the transaction commits. If reliability matters (e.g. sending emails, payments), use a transactional **outbox** table drained by the worker into BullMQ queues (ADR 0008).
 - Never join across another module's tables in SQL; ask the module.
 
-## 6. Hosting constraints that shape the code (cPanel / Passenger)
-- **Stateless processes.** Passenger starts, stops and multiplies processes freely: no in-memory sessions, caches you depend on, or in-process schedulers.
-- **No long-running workers.** Background work runs from cPanel cron jobs calling a bundled script (`node dist/scripts/<job>.js`), usually draining an outbox table.
-- **Pure-JS dependencies by preference.** Native modules (argon2, sharp, bcrypt) often fail on CloudLinux. Check before adding one.
-- **One origin.** The SPA is at `/` and the API under `/api`, so all API routes are registered with the `/api` prefix.
+## 6. Hosting constraints that shape the code (DigitalOcean App Platform)
+- **Stateless containers.** App Platform replaces api and worker containers on every deploy, restart or crash, and may run more than one: no in-memory sessions, caches you depend on (Valkey or MySQL instead; small TTL caches like Platform settings are fine), or in-process schedulers.
+- **Background work runs in the worker** (`apps/api/src/worker.ts`, BullMQ on Valkey, ADR 0008). Jobs must be idempotent and resumable (ADR 0017): a deploy sends `SIGTERM` and the job may run again on another container.
+- **Graceful shutdown.** Handle `SIGTERM`: stop taking work, close servers, queues and pools, exit.
+- **One bundle, no `node_modules` at runtime.** The image runs `dist/` only (`node:24-slim`). Pure-JS dependencies by preference; a native module must build on `node:24-slim` and be listed in the build's `external`. Files read at runtime are copied into `dist/` by `build.mjs`.
+- **Config from env, validated at boot** (`config/env.ts`): only infrastructure secrets (database, Valkey, session secret, encryption key, Sentry). Provider, Claude, SMTP and Stripe keys come from Platform settings (ADR 0012).
+- **Managed MySQL rules:** every table has a primary key (`sql_require_primary_key` is on), connections use TLS, and migrations run as a pre-deploy job before new code goes live, so they must be compatible with the code already running (expand and contract).
+- **One origin** (ADR 0016): the public site at `/` and the API under `/api` (all API routes use the `/api` prefix) come from the api service; the SPA is a static site at `/app`. The health check is `GET /api/health`.
 - Deployment itself: `/ship-requirement`.
