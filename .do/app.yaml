@@ -103,18 +103,13 @@ jobs:
 
 static_sites:
   - name: web
-    dockerfile_path: Dockerfile
+    dockerfile_path: Dockerfile.web # its last stage runs the build, so output_dir exists
     source_dir: /
     github:
       repo: sbarbosa115/viper
       branch: main
       deploy_on_push: false
-    envs:
-      # Makes the Dockerfile's final stage the `web` stage (App Platform has no --target).
-      - key: TARGET
-        scope: BUILD_TIME
-        value: web
-    output_dir: /usr/share/nginx/html/app # the built SPA inside the web image
+    output_dir: /app/apps/web/dist # the built SPA
     catchall_document: index.html # client-side routes like /app/leads load the SPA
 
 ingress:
