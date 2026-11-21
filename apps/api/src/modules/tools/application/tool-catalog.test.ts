@@ -343,3 +343,66 @@ describe('FR-14: LlmUsageMeter', () => {
     expect(f.errors).toHaveLength(1);
   });
 });
+
+describe('finance P&L: closed months of metered cost are cached', () => {
+  function counting() {
+    const f = fixture();
+    const windows: { from: string; to: string }[] = [];
+    const read = f.calls.costByToolMonthBetween.bind(f.calls);
+    f.calls.costByToolMonthBetween = (w) => {
+      windows.push({ from: w.from.toISOString(), to: w.to.toISOString() });
+      return read(w);
+    };
+    return { ...f, windows };
+  }
+
+  test('a closed month is read once; the open month is read on every call', async () => {
+    const f = counting();
+    f.clock.set(new Date('2026-12-10T12:00:00.000Z'));
+    await f.calls.add([
+      call({ providerCostMicros: 1_000, createdAt: new Date('2026-11-05T00:00:00.000Z') }),
+      call({ providerCostMicros: 2_000, createdAt: new Date('2026-12-05T00:00:00.000Z') }),
+    ]);
+    const first = await f.queries.meteredCostByProviderMonths('2026-10', '2026-12');
+    await f.calls.add([
+      call({ providerCostMicros: 4_000, createdAt: new Date('2026-12-09T00:00:00.000Z') }),
+    ]);
+    const second = await f.queries.meteredCostByProviderMonths('2026-10', '2026-12');
+
+    expect(first.map((r) => [r.month, r.micros])).toEqual([
+      ['2026-11', 1_000],
+      ['2026-12', 2_000],
+    ]);
+    expect(second.map((r) => [r.month, r.micros])).toEqual([
+      ['2026-11', 1_000],
+      ['2026-12', 6_000],
+    ]);
+    expect(f.windows).toEqual([
+      { from: '2026-10-01T00:00:00.000Z', to: '2027-01-01T00:00:00.000Z' },
+      { from: '2026-12-01T00:00:00.000Z', to: '2027-01-01T00:00:00.000Z' },
+    ]);
+  });
+
+  test('a month is not cached until an hour after it ends', async () => {
+    const f = counting();
+    f.clock.set(new Date('2026-12-01T00:30:00.000Z'));
+    await f.queries.meteredCostByProviderMonths('2026-11', '2026-11');
+    await f.calls.add([
+      call({ providerCostMicros: 3_000, createdAt: new Date('2026-11-30T23:59:59.000Z') }),
+    ]);
+    f.clock.set(new Date('2026-12-01T01:00:00.000Z'));
+    const late = await f.queries.meteredCostByProviderMonths('2026-11', '2026-11');
+    await f.queries.meteredCostByProviderMonths('2026-11', '2026-11');
+
+    expect(late.map((r) => r.micros)).toEqual([3_000]);
+    expect(f.windows).toHaveLength(2);
+  });
+
+  test('without a clock nothing is cached', async () => {
+    const f = counting();
+    const queries = new ToolQueries({ tools: f.tools, calls: f.calls, settings: f.settings });
+    await queries.meteredCostByProviderMonths('2026-01', '2026-02');
+    await queries.meteredCostByProviderMonths('2026-01', '2026-02');
+    expect(f.windows).toHaveLength(2);
+  });
+});

@@ -152,11 +152,17 @@ export interface Tools {
 }
 
 /** tools' public read side on MySQL alone (reporting's tests, scripts). */
-export function createToolQueries(deps: { db: Database; settings: ProviderSettings }): ToolQueries {
+export function createToolQueries(deps: {
+  db: Database;
+  settings: ProviderSettings;
+  /** Given, closed months' metered cost is cached (meteredCostByProviderMonths). */
+  clock?: Clock;
+}): ToolQueries {
   return new ToolQueries({
     tools: new KyselyToolRepository(deps.db),
     calls: new KyselyToolCallRepository(deps.db),
     settings: deps.settings,
+    ...(deps.clock ? { clock: deps.clock } : {}),
   });
 }
 

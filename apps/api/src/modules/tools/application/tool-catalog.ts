@@ -190,7 +190,18 @@ export interface ToolAvailability {
 
 /** tools' public read side for other modules. */
 export class ToolQueries {
-  constructor(private readonly deps: Pick<CatalogDeps, 'tools' | 'calls' | 'settings'>) {}
+  /**
+   * Per-Tool cost of closed UTC months, by 'YYYY-MM'. Tool calls are only ever added, at the
+   * time they are made, so a month's sums stop changing once it has ended (plus a grace period
+   * for calls still being written at the boundary). Without a clock nothing is cached.
+   */
+  private readonly closedMonthCosts = new Map<string, { toolKey: string; micros: number }[]>();
+
+  constructor(
+    private readonly deps: Pick<CatalogDeps, 'tools' | 'calls' | 'settings'> & {
+      clock?: Clock;
+    },
+  ) {}
 
   async availability(keys: readonly string[]): Promise<ToolAvailability[]> {
     const tools = new Map((await this.deps.tools.list()).map((t) => [t.key, t]));
@@ -246,10 +257,7 @@ export class ToolQueries {
       throw new ValidationError('Invalid month range', { month: 'From must not be after to' });
     }
     const [costs, tools] = await Promise.all([
-      this.deps.calls.costByToolMonthBetween({
-        from: new Date(Date.UTC(first.year, first.index, 1)),
-        to: new Date(Date.UTC(last.year, last.index + 1, 1)),
-      }),
+      this.costByToolMonth(first, last),
       this.deps.tools.list(),
     ]);
     const providerOf = new Map(tools.map((t) => [t.key, t.provider]));
@@ -264,6 +272,42 @@ export class ToolQueries {
     return [...sums.values()]
       .filter((s) => s.micros > 0)
       .sort((a, b) => a.month.localeCompare(b.month) || a.provider.localeCompare(b.provider));
+  }
+
+  /**
+   * Per-Tool cost for each month in [first, last]: closed months from the cache, the rest in one
+   * grouped query from the first month not cached. Closed months read here are cached.
+   */
+  private async costByToolMonth(
+    first: { year: number; index: number },
+    last: { year: number; index: number },
+  ): Promise<{ toolKey: string; month: string; micros: number }[]> {
+    const months: { month: string; start: Date; end: Date }[] = [];
+    for (let i = first.year * 12 + first.index; i <= last.year * 12 + last.index; i++) {
+      const start = new Date(Date.UTC(Math.floor(i / 12), i % 12, 1));
+      const end = new Date(Date.UTC(Math.floor(i / 12), (i % 12) + 1, 1));
+      months.push({ month: start.toISOString().slice(0, 7), start, end });
+    }
+    const now = this.deps.clock?.now().getTime();
+    const isClosed = (end: Date) => now !== undefined && end.getTime() + CLOSED_MONTH_GRACE_MS <= now;
+    const firstUncached = months.findIndex((m) => !this.closedMonthCosts.has(m.month));
+    const cached = (firstUncached === -1 ? months : months.slice(0, firstUncached)).flatMap((m) =>
+      (this.closedMonthCosts.get(m.month) ?? []).map((c) => ({ ...c, month: m.month })),
+    );
+    if (firstUncached === -1) return cached;
+    const rest = months.slice(firstUncached);
+    const fresh = await this.deps.calls.costByToolMonthBetween({
+      from: rest[0]!.start,
+      to: rest[rest.length - 1]!.end,
+    });
+    for (const m of rest) {
+      if (!isClosed(m.end)) continue;
+      this.closedMonthCosts.set(
+        m.month,
+        fresh.filter((c) => c.month === m.month).map(({ toolKey, micros }) => ({ toolKey, micros })),
+      );
+    }
+    return [...cached, ...fresh];
   }
 
   /** Every provider with its Tool keys, sorted by provider name (finance's provider list). */
@@ -314,6 +358,9 @@ export class ToolQueries {
 }
 
 /** 'YYYY-MM' to a year and zero-based month index. */
+/** A UTC month counts as closed this long after it ends (calls in flight at the boundary). */
+const CLOSED_MONTH_GRACE_MS = 60 * 60 * 1000;
+
 function parseMonth(month: string): { year: number; index: number } {
   const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
   if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });

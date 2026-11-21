@@ -8,6 +8,7 @@ import { InMemoryEmailSender } from '../../../shared/infrastructure/email/in-mem
 import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
 import { Uuid7Generator } from '../../../shared/infrastructure/time/uuid7.js';
 import { createAuditLog } from '../../platform/index.js';
+import { createToolQueries, type ProviderSettings } from '../../tools/index.js';
 import { addMonths } from '../domain/calendar.js';
 import { createFinance } from '../index.js';
 import { bill, oneOff } from '../test/factories.js';
@@ -42,6 +43,13 @@ async function truncate(): Promise<void> {
   await sql`SET FOREIGN_KEY_CHECKS = 1`.execute(db);
 }
 
+const noProviderSettings: ProviderSettings = {
+  ai: () => Promise.resolve({ anthropicApiKey: null }),
+  provider: () => Promise.reject(new Error('finance tests read no provider settings')),
+};
+/** The real tools read side, as composition.ts wires it (with its closed-month cache). */
+const toolQueries = createToolQueries({ db, settings: noProviderSettings, clock });
+
 const finance = createFinance({
   db,
   clock,
@@ -52,6 +60,10 @@ const finance = createFinance({
   appUrl: 'http://localhost:5173',
   logger: { info: () => undefined, warn: () => undefined },
   ...mysqlSources(db),
+  tools: {
+    meteredCostByProviderMonths: (from, to) => toolQueries.meteredCostByProviderMonths(from, to),
+    providers: () => toolQueries.providers(),
+  },
 });
 
 const TOOL_KEYS = CATALOG.flatMap((p) => p.toolKeys.map((key) => ({ key, provider: p.name })));
@@ -176,7 +188,7 @@ describe('NFR-1: GET /api/staff/finance/pnl p95 < 300 ms with 500,000 Tool calls
   test('20 calls for the 12-month P&L: p95 under 300 ms', async () => {
     const app = await buildTestApp({ modules: [finance.module], actor: staffActor });
     const get = () => app.inject({ method: 'GET', url: `/api/staff/finance/pnl?month=${MONTH}` });
-    for (let i = 0; i < 3; i++) await get(); // warm-up: connections, plans, buffer pool
+    for (let i = 0; i < 3; i++) await get(); // warm-up: connections, plans, buffer pool, closed months
     const samples: number[] = [];
     for (let i = 0; i < 20; i++) {
       const start = performance.now();
