@@ -41,7 +41,6 @@ p{margin:0}
 .site-header{height:72px;padding:0 80px;display:flex;align-items:center;gap:40px;border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:600;font-size:18px}
 .brand:hover{color:var(--text)}
-.brand{align-items:flex-end}.brand span{padding-bottom:1px}
 .nav{display:flex;gap:28px;font-size:15px;flex-grow:1}
 .nav a{color:var(--text-muted);text-decoration:none}.nav a:hover{color:var(--text)}
 .header-login{color:var(--text);text-decoration:none;font-size:15px;padding:10px 4px}

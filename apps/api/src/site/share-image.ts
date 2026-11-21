@@ -6,7 +6,7 @@ export { shareImagePath };
 /*
  * The Open Graph / Twitter share image (FR-34): 1200×630 PNG drawn in code, so it needs no
  * image tooling or binary asset. Midnight background, the Llyner wordmark and icon (drawn from
- * the same coordinates as docs/brand/llyner-logo-dark.svg and llyner-icon-dark.svg), "LEADS"
+ * the same coordinates as docs/brand/llyner-leads-dark.svg and llyner-icon-dark.svg)
  * and a tagline in a 5×7 pixel font.
  */
 
@@ -241,7 +241,7 @@ function drawWordmark(canvas: Canvas, left: number, top: number, scale: number, 
   canvas.polyline(upperArc(421.5, 152, 17.5).map(P), 12 * scale, FACE_BLUE);
 
   // L L Y N E R
-  const w = 13;
+  const w = 16;
   for (const x of [62, 183]) {
     line([x, 194], [x, 327], w, ink);
     line([x, 327], [x + 69.5, 327], w, ink);
@@ -270,6 +270,43 @@ function drawWordmark(canvas: Canvas, left: number, top: number, scale: number, 
   line([701, 262], [732.5, 331.5], w, ink);
 }
 
+/** LEADS in the wordmark's strokes, as in docs/brand/llyner-leads-dark.svg. */
+function drawLeads(canvas: Canvas, left: number, top: number, scale: number, ink: Rgb) {
+  const P = ([x, y]: Pt): Pt => [left + (x - 50) * scale, top + (y - 40) * scale];
+  const w = 16 * scale;
+  const path = (pts: Pt[]) => canvas.polyline(pts.map(P), w, ink);
+  const line = (a: Pt, b: Pt) => {
+    const [ax, ay] = P(a);
+    const [bx, by] = P(b);
+    canvas.line(ax, ay, bx, by, w, ink);
+  };
+  line([840, 194], [840, 327]);
+  line([840, 327], [909.5, 327]);
+  line([1029, 198], [959, 198]);
+  line([959, 198], [959, 327]);
+  line([959, 327], [1028.5, 327]);
+  line([959, 258.5], [1017.5, 258.5]);
+  line([1078, 331.5], [1104, 198]);
+  line([1104, 198], [1124, 198]);
+  line([1124, 198], [1150, 331.5]);
+  line([1088, 280], [1140, 280]);
+  line([1200, 198], [1200, 327]);
+  path([
+    [1200, 198],
+    ...cubic([1235, 198], [1262, 198], [1272, 225], [1272, 262.5]),
+    ...cubic([1272, 262.5], [1272, 300], [1262, 327], [1235, 327]),
+    [1200, 327],
+  ]);
+  path([
+    ...cubic([1390, 212], [1382, 201], [1370, 198], [1356, 198]),
+    ...cubic([1356, 198], [1336, 198], [1324, 209], [1324, 227]),
+    ...cubic([1324, 227], [1324, 246], [1340, 252], [1357, 258]),
+    ...cubic([1357, 258], [1376, 265], [1390, 272], [1390, 293]),
+    ...cubic([1390, 293], [1390, 315], [1374, 327], [1354, 327]),
+    ...cubic([1354, 327], [1338, 327], [1326, 321], [1320, 310]),
+  ]);
+}
+
 /** docs/brand/llyner-icon-dark.svg (150×150) with its top-left corner at (left, top). */
 function drawIcon(canvas: Canvas, left: number, top: number, size: number) {
   const s = size / 150;
@@ -292,10 +329,10 @@ export function shareImagePng(): Buffer {
   canvas.fill(0, 0, WIDTH, HEIGHT, hex('--bg'));
   canvas.fill(0, 0, WIDTH, 2, hex('--line'));
   const left = 96;
-  // LLYNER wordmark (its letters sit on y = 343), then LEADS in the pixel font on the same line.
-  const scale = 0.8;
+  // The LLYNER LEADS lockup (docs/brand/llyner-leads-dark.svg).
+  const scale = 0.72;
   drawWordmark(canvas, left, 110, scale, hex('--text'));
-  canvas.text('LEADS', Math.round(left + 694 * scale + 36), 343 - 70, 10, hex('--text'));
+  drawLeads(canvas, left, 110, scale, hex('--text-muted'));
   canvas.text('VERIFIED LOCAL B2B LEADS', left, 430, 5, hex('--text-muted'));
   canvas.fill(left, 520, 160, 6, hex('--accent'));
   drawIcon(canvas, 1000, 420, 104);

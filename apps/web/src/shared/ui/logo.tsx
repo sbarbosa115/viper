@@ -31,14 +31,14 @@ export function LlynerIcon({ className }: { className?: string }) {
   );
 }
 
-/** The LLYNER wordmark, dark-background version (docs/brand/llyner-logo-dark.svg). */
+/** The LLYNER LEADS lockup, dark-background version (docs/brand/llyner-leads-dark.svg). */
 export function LlynerWordmark({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="50 40 694 300"
+      viewBox="50 40 1360 300"
       aria-hidden="true"
       focusable="false"
-      className={cx('h-[26px] w-auto shrink-0', className)}
+      className={cx('h-[30px] w-auto shrink-0', className)}
     >
       <g fill="none" strokeLinecap="butt" strokeLinejoin="miter">
         <path
@@ -51,7 +51,7 @@ export function LlynerWordmark({ className }: { className?: string }) {
           stroke="#4C9AFF"
           strokeWidth="12"
         />
-        <g stroke="#EDEDF2" strokeWidth="13">
+        <g stroke="#EDEDF2" strokeWidth="16">
           <path d="M62 194V327H131.5" />
           <path d="M183 194V327H252.5" />
           <path d="M285.5 194L328 276L371 194M328 276V331.5" />
@@ -59,12 +59,19 @@ export function LlynerWordmark({ className }: { className?: string }) {
           <path d="M613 198H543V327H612.5M543 258.5H601.5" />
           <path d="M662 331.5V198H704C722 198 730.5 211 730.5 230S722 262 704 262H662M701 262L732.5 331.5" />
         </g>
+        <g stroke="#9A9AA8" strokeWidth="16">
+          <path d="M840 194V327H909.5" />
+          <path d="M1029 198H959V327H1028.5M959 258.5H1017.5" />
+          <path d="M1078 331.5L1104 198H1124L1150 331.5M1088 280H1140" />
+          <path d="M1200 198H1235C1262 198 1272 225 1272 262.5S1262 327 1235 327H1200Z" />
+          <path d="M1390 212C1382 201 1370 198 1356 198C1336 198 1324 209 1324 227C1324 246 1340 252 1357 258C1376 265 1390 272 1390 293C1390 315 1374 327 1354 327C1338 327 1326 321 1320 310" />
+        </g>
       </g>
     </svg>
   );
 }
 
-/** The Llyner wordmark followed by "Leads"; its accessible name is "Llyner Leads". */
+/** The LLYNER LEADS lockup; its accessible name is "Llyner Leads". */
 export function Logo({ markOnly = false, headingLevel, className }: LogoProps) {
   if (markOnly) {
     return (
@@ -77,12 +84,9 @@ export function Logo({ markOnly = false, headingLevel, className }: LogoProps) {
   const Word = headingLevel === 1 ? 'h1' : headingLevel === 2 ? 'h2' : 'span';
   return (
     <span className={cx('inline-flex items-center', className)}>
-      <Word className="m-0 inline-flex items-end gap-2 text-[17px] font-semibold leading-none tracking-tight text-fg">
+      <Word className="m-0 inline-flex items-center leading-none">
         <LlynerWordmark />
         <span className="sr-only">{t('product.name')}</span>
-        <span aria-hidden="true" className="pb-[1px]">
-          Leads
-        </span>
       </Word>
     </span>
   );
