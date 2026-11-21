@@ -11,9 +11,10 @@
 | tools | Tool catalog, Rate card, provider adapters (Apify, Google Places, Overpass, Firecrawl, Apollo, ZeroBounce, Twilio Lookup, Claude), Tool calls (metering), provider health | modules/tools | features/backoffice (tools) | none |
 | leads | Prospects, Leads, Contacts, Sources, verification results, Fit score, Evidence, Pitch, Lead lists, Feedback, CSV export (Removal list later) | modules/leads | features/leads | identity |
 | platform | Platform settings (encrypted secrets), Audit log, analytics events, email sending | modules/platform | features/backoffice (settings, audit) | none |
+| finance | Expenses (Recurring bills, price versions, One-off expenses), Provider invoices, Budget and budget alerts, the P&L (computed from billing revenue, tools metering and expenses) | modules/finance | features/finance (in the back office) | billing, tools, identity, platform |
 | reporting | Read-only Staff dashboard and customer list, built from other contexts' public queries | modules/reporting | features/backoffice (dashboard, customers) | identity, billing, planning, research, tools, leads |
 
-The staff back office is not a context: it is a web feature (`features/backoffice`) that uses the staff-only endpoints of identity, billing, tools, research, platform and reporting.
+The staff back office is not a context: it is a web feature (`features/backoffice`) that uses the staff-only endpoints of identity, billing, tools, research, platform, reporting and finance.
 
 ```mermaid
 flowchart LR
@@ -29,6 +30,10 @@ flowchart LR
   research -- RunCompleted event --> notify[(email: leads ready)]
   identity & billing & tools & research --> platform
   reporting --> identity & billing & planning & research & tools & leads
+  finance -- revenue, refunds --> billing
+  finance -- metered cost --> tools
+  finance -- staff recipients --> identity
+  finance --> platform
 ```
 
 ## Relationships
@@ -39,5 +44,6 @@ flowchart LR
 - **research → leads:** writes Prospects and qualified Leads through leads' public API (merge, verify, score). Leads owns the records, their Sources and the Removal list check.
 - **Events:** `RunCompleted` and `RunFailed` (research) trigger the "leads ready" email and analytics. They go through the outbox and the worker queue.
 - **platform:** every context may read Platform settings (`SettingsReader`, keys decrypted on use) and write the Audit log and analytics events; platform depends on nothing.
+- **finance:** reads billing (`revenueForMonth`), tools (`meteredCostByProvider`, `providers`) and identity (`staffRecipients`) through public query functions, and writes only its own tables plus the Audit log, analytics and email through platform. Nothing depends on finance.
 - **reporting:** reads other contexts through their public query functions only; nothing depends on reporting.
 - **No cycles:** platform, tools and identity depend on nothing except platform; leads depends only on identity.
