@@ -18,6 +18,7 @@ Read first: `docs/architecture/stack.md` (hosting facts), `docs/ops/digitalocean
 One App Platform app, `llyner-leads` (production), built from the branch in `.do/app.yaml`. There is no staging app yet (the founder chose to start small). Until there is, the local stack (`./dev up`, `./dev e2e`) is the rehearsal, and the post-deploy smoke test is the gate. When a staging app is added, deploy and smoke-test it first, every time, and update this skill and `stack.md`.
 
 ## 1. Preflight
+- **E2E before merging:** CI doesn't run Playwright. Run `./dev e2e` locally on the branch and merge into the deploy branch only when it's green.
 - **Clean tree:** `git status --porcelain` is empty, the work is merged into the deploy branch (the `branch:` in `.do/app.yaml`), and it's pushed. Note the commit SHA.
 - **Green checks:** the CI run for that SHA passed (`gh run list --branch <branch> --limit 5`). Run `./dev check` locally if anything changed since. Stop if anything is red.
 - **Production image boots:** `docker build --target api .` and the boot check in `references/app-platform.md` (migrate, then `/api/health` and `/` against MySQL 8.4 and Valkey in Docker). This catches bundle errors that tests miss.
