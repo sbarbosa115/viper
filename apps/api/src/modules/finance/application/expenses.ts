@@ -1,12 +1,11 @@
-import {
-  oneOffExpensePatch,
-  recurringExpensePatch,
-  type AddPriceBody,
-  type Category as CategoryDto,
-  type CreateExpenseBody,
-  type Expense as ExpenseDto,
-  type ExpenseKind,
-  type UpdateExpenseBody,
+import type {
+  AddPriceBody,
+  Category as CategoryDto,
+  CreateExpenseBody,
+  Expense as ExpenseDto,
+  ExpenseKind,
+  OneOffExpensePatch,
+  RecurringExpensePatch,
 } from '@app/contracts/finance';
 import type { Actor } from '../../../shared/domain/actor.js';
 import { CodedError, NotFoundError, ValidationError } from '../../../shared/domain/errors.js';
@@ -14,7 +13,13 @@ import { sum, type CalendarDay, type MonthKey } from '../domain/calendar.js';
 import { Expense, type Changes, type RecurringEdit } from '../domain/expense.js';
 import { fixedRunRateCents } from '../domain/pnl.js';
 import type { FinanceContext, FinanceRepos } from './ports.js';
-import { providerByKey, requireStaff, resolveMonth, todayOf } from './rules.js';
+import {
+  providerByKey,
+  requireStaff,
+  resolveMonth,
+  staffAnalyticsActor,
+  todayOf,
+} from './rules.js';
 import { expenseView, money } from './views.js';
 
 type Ctx = Pick<FinanceContext, 'store' | 'tools' | 'analytics' | 'clock' | 'ids'>;
@@ -35,18 +40,16 @@ const audit = (
     details,
   });
 
-const analyticsActor = (actor: Actor) => ({
-  memberId: actor.memberId,
-  businessId: actor.businessId,
-});
-
 async function findOr404(repos: Pick<FinanceRepos, 'expenses'>, id: string): Promise<Expense> {
   const expense = await repos.expenses.findById(id);
   if (!expense) throw new NotFoundError('Expense not found', { id });
   return expense;
 }
 
-/** FR-2: at most one bill covers a provider on any date (409 PROVIDER_ALREADY_COVERED). */
+/**
+ * FR-2: at most one bill covers a provider on any date (409 PROVIDER_ALREADY_COVERED). The caller
+ * holds `lockCoverage` from the start of its transaction, so two writes can't both pass the check.
+ */
 async function checkCoverage(repos: FinanceRepos, expense: Expense): Promise<void> {
   if (!expense.coversProvider) return;
   const others = await repos.expenses.listAll();
@@ -164,6 +167,7 @@ export class CreateExpense {
         : Expense.createOneOff({ ...common, spentOn: body.spentOn }, now, today);
 
     await this.ctx.store.run(async (repos) => {
+      if (expense.coversProvider) await repos.expenses.lockCoverage();
       await checkCoverage(repos, expense);
       await repos.expenses.save(expense);
       const s = expense.toSnapshot();
@@ -181,7 +185,7 @@ export class CreateExpense {
     });
     await this.ctx.analytics.track({
       name: 'expense_created',
-      actor: analyticsActor(actor),
+      actor: staffAnalyticsActor(actor),
       properties: {
         expense_id: expense.id,
         kind: expense.kind,
@@ -196,59 +200,48 @@ export class CreateExpense {
 
 // FR-3, FR-4 ---------------------------------------------------------------------------------------
 
-/** Parses the PATCH body again for the Expense's kind: a field of the other kind is a 400. */
-interface PatchIssue {
-  readonly code: string;
-  readonly path: readonly PropertyKey[];
-  readonly message: string;
-  readonly keys?: readonly string[];
+/** A PATCH body as one kind's edit, or that kind's field errors (a field of the other kind). */
+export type KindPatch<T> =
+  | { readonly ok: true; readonly patch: T }
+  | { readonly ok: false; readonly fields: Record<string, string> };
+
+/** The PATCH body parsed by the route for both kinds; the use case picks the Expense's kind. */
+export interface ExpensePatch {
+  readonly recurring: KindPatch<RecurringExpensePatch>;
+  readonly oneOff: KindPatch<OneOffExpensePatch>;
 }
 
-/** The part of a contract schema the use case needs (keeps zod out of the application layer). */
-interface PatchSchema<T> {
-  safeParse(
-    value: unknown,
-  ): { success: true; data: T } | { success: false; error: { issues: readonly PatchIssue[] } };
+function patchFor<T>(parsed: KindPatch<T>): T {
+  if (!parsed.ok) throw new ValidationError('The request is not valid', parsed.fields);
+  return parsed.patch;
 }
 
-function parsePatch<T>(schema: PatchSchema<T>, body: UpdateExpenseBody, kindLabel: string): T {
-  const parsed = schema.safeParse(body);
-  if (parsed.success) return parsed.data;
-  const fields: Record<string, string> = {};
-  for (const issue of parsed.error.issues) {
-    if (issue.code === 'unrecognized_keys') {
-      for (const key of issue.keys ?? []) fields[key] = `Can't be changed on a ${kindLabel}`;
-    } else {
-      fields[issue.path.map(String).join('.') || '_'] = issue.message;
-    }
-  }
-  throw new ValidationError('The request is not valid', fields);
-}
+/** The edit can change which provider the bill covers, or when it does (FR-2 coverage rule). */
+const touchesCoverage = (p: ExpensePatch) =>
+  p.recurring.ok &&
+  (p.recurring.patch.coversProvider !== undefined || p.recurring.patch.endsOn !== undefined);
 
 export class UpdateExpense {
   constructor(private readonly ctx: Ctx) {}
 
-  async execute(caller: Actor | null, id: string, body: UpdateExpenseBody): Promise<ExpenseDto> {
+  async execute(caller: Actor | null, id: string, body: ExpensePatch): Promise<ExpenseDto> {
     const actor = requireStaff(caller);
     const now = this.ctx.clock.now();
     const today = todayOf(this.ctx.clock);
     const expense = await this.ctx.store.run(async (repos) => {
+      // Lock before the first read, so the coverage check reads what committed before the lock.
+      if (touchesCoverage(body)) await repos.expenses.lockCoverage();
       const expense = await findOr404(repos, id);
       let changes: Changes;
       if (expense.kind === 'recurring') {
-        const patch = parsePatch(recurringExpensePatch, body, 'Recurring bill');
-        const { coversProvider, ...rest } = patch;
+        const { coversProvider, ...rest } = patchFor(body.recurring);
         const edit: RecurringEdit = { ...rest };
         const name = await providerName(this.ctx, coversProvider);
         if (name !== undefined) edit.coversProvider = name;
         changes = expense.editRecurring(edit, now);
         if (changes.coversProvider || changes.endsOn) await checkCoverage(repos, expense);
       } else {
-        changes = expense.editOneOff(
-          parsePatch(oneOffExpensePatch, body, 'One-off expense'),
-          now,
-          today,
-        );
+        changes = expense.editOneOff(patchFor(body.oneOff), now, today);
       }
       if (Object.keys(changes).length > 0) {
         await repos.expenses.save(expense);
@@ -287,7 +280,7 @@ export class AddExpensePrice {
     });
     await this.ctx.analytics.track({
       name: 'expense_price_changed',
-      actor: analyticsActor(actor),
+      actor: staffAnalyticsActor(actor),
       properties: {
         expense_id: expense.id,
         effective_from: body.effectiveFrom,

@@ -43,7 +43,7 @@ describe('FR-9: P&L tab', () => {
       await screen.findByRole('table', { name: 'Profit and loss statement' }),
     );
     expect(statement.getByRole('row', { name: /Credit pack sales/ })).toHaveTextContent('$197.00');
-    expect(statement.getByRole('row', { name: /Payments fees/ })).toHaveTextContent('$6.61');
+    expect(statement.getByRole('row', { name: /Stripe fees/ })).toHaveTextContent('$6.61');
     expect(statement.getByRole('row', { name: /^AI/ })).toHaveTextContent('$44.10');
     expect(statement.getByRole('row', { name: /^Data providers/ })).toHaveTextContent('$87.90');
     expect(statement.getByRole('row', { name: /Gross profit/ })).toHaveTextContent('$58.39');
@@ -155,6 +155,35 @@ describe('FR-9: P&L tab', () => {
     server.use(http.get('*/api/staff/finance/pnl', () => HttpResponse.json(emptyPnl('2026-11'))));
     renderFinance();
     expect(await screen.findByText('Nothing recorded for November 2026 yet.')).toBeInTheDocument();
+  });
+
+  test('the Stripe fees line says "estimated, 2.9% + 30¢ per sale" once', async () => {
+    renderFinance();
+    const statement = within(
+      await screen.findByRole('table', { name: 'Profit and loss statement' }),
+    );
+    const row = statement.getByRole('row', { name: /Stripe fees/ });
+    expect(row.textContent?.match(/2\.9%/g)).toHaveLength(1);
+    expect(row).toHaveTextContent('Stripe fees');
+    expect(row).toHaveTextContent('estimated, 2.9% + 30¢ per sale');
+    expect(row).not.toHaveTextContent('Stripe fees (estimated');
+  });
+
+  test('an empty month still shows the Budget panel with Edit budget, above the empty state', async () => {
+    server.use(http.get('*/api/staff/finance/pnl', () => HttpResponse.json(emptyPnl('2026-11'))));
+    renderFinance();
+    const empty = await screen.findByText('Nothing recorded for November 2026 yet.');
+    const bar = screen.getByRole('progressbar');
+    expect(screen.getByRole('button', { name: 'Edit budget' })).toBeInTheDocument();
+    expect(bar.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('mobile: an empty month still shows the Budget panel', async () => {
+    stubMobile();
+    server.use(http.get('*/api/staff/finance/pnl', () => HttpResponse.json(emptyPnl('2026-11'))));
+    renderFinance();
+    await screen.findByText('Nothing recorded for November 2026 yet.');
+    expect(screen.getByRole('button', { name: 'Edit budget' })).toBeInTheDocument();
   });
 
   test('shows a loading skeleton, then an error with Retry that recovers', async () => {
@@ -601,7 +630,7 @@ describe('FR-8: Provider invoices tab', () => {
     );
     expect(within(google).getByRole('link', { name: 'Review rate card' })).toHaveAttribute(
       'href',
-      '/app/staff/tools',
+      '/staff/tools',
     );
     expect(screen.getByRole('alert')).toHaveTextContent('1 gap over 15%');
     expect(
@@ -609,6 +638,46 @@ describe('FR-8: Provider invoices tab', () => {
         name: 'Review rate card',
       }),
     ).not.toBeInTheDocument();
+  });
+
+  test('a plan row shows the plan amount and Plan bill, with invoice entry behind "Enter invoice"', async () => {
+    const user = userEvent.setup();
+    renderFinance('?tab=invoices');
+    const table = within(await screen.findByRole('table', { name: /Provider invoices/ }));
+    const apify = table.getByRole('row', { name: /Apify/ });
+    expect(within(apify).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(apify).toHaveTextContent('$49.00');
+    expect(within(apify).getByRole('link', { name: 'Plan bill' })).toBeInTheDocument();
+    await user.click(within(apify).getByRole('button', { name: 'Enter Apify invoice' }));
+    expect(within(apify).getByLabelText('Apify invoice for November 2026')).toBeInTheDocument();
+    await user.click(within(apify).getByRole('button', { name: 'Cancel' }));
+    expect(within(apify).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(apify).toHaveTextContent('$49.00');
+    // the estimate row keeps its inline input
+    expect(screen.getByLabelText('Twilio invoice for November 2026')).toBeInTheDocument();
+  });
+
+  test('mobile: a plan card has Enter invoice instead of an open input', async () => {
+    stubMobile();
+    const user = userEvent.setup();
+    renderFinance('?tab=invoices');
+    const list = within(
+      await screen.findByRole('list', { name: 'Provider invoices, November 2026, as cards' }),
+    );
+    const apify = within(list.getByText('Apify', { selector: 'span' }).closest('li')!);
+    expect(apify.queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(apify.getByRole('button', { name: 'Enter Apify invoice' }));
+    expect(apify.getByLabelText('Apify invoice for November 2026')).toBeInTheDocument();
+    expect(list.getByLabelText('Twilio invoice for November 2026')).toBeInTheDocument();
+  });
+
+  test('the Gap note uses a warning icon, never the close icon', async () => {
+    renderFinance('?tab=invoices');
+    const table = within(await screen.findByRole('table', { name: /Provider invoices/ }));
+    const note = table.getByText('Gap:').closest('p')!;
+    const svg = note.querySelector('svg')!;
+    expect(svg).toHaveAttribute('aria-hidden', 'true');
+    expect(svg.innerHTML).not.toContain('M6 6l12 12');
   });
 
   test('AJ-3: entering Twilio $1.50 makes it an invoice, flagged +66.7%, and the banner counts 2', async () => {

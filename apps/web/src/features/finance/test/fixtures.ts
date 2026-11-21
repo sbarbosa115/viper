@@ -237,7 +237,7 @@ export function novemberPnl(): Pnl {
       lines: [
         {
           category: 'payments_fees',
-          label: 'Payments fees',
+          label: 'Stripe fees (estimated, 2.9% + 30¢ per sale)',
           amount: usd(661),
           source: 'stripe_fees',
         },

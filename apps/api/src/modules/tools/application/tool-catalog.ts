@@ -212,10 +212,7 @@ export class ToolQueries {
    * Tool call created in it, whatever its status; providers with no cost are left out.
    */
   async meteredCostByProvider(month: string): Promise<{ provider: string; micros: number }[]> {
-    const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
-    if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });
-    const year = Number(match[1]);
-    const index = Number(match[2]) - 1;
+    const { year, index } = parseMonth(month);
     const [costs, tools] = await Promise.all([
       this.deps.calls.costByToolBetween({
         from: new Date(Date.UTC(year, index, 1)),
@@ -233,6 +230,40 @@ export class ToolQueries {
       .filter(([, micros]) => micros > 0)
       .map(([provider, micros]) => ({ provider, micros }))
       .sort((a, b) => a.provider.localeCompare(b.provider));
+  }
+
+  /**
+   * `meteredCostByProvider` for every UTC month from `fromMonth` to `toMonth` (inclusive) in one
+   * grouped query and one Tools read; one item per provider and month with cost, omitting zeros.
+   */
+  async meteredCostByProviderMonths(
+    fromMonth: string,
+    toMonth: string,
+  ): Promise<{ month: string; provider: string; micros: number }[]> {
+    const first = parseMonth(fromMonth);
+    const last = parseMonth(toMonth);
+    if ((last.year - first.year) * 12 + (last.index - first.index) < 0) {
+      throw new ValidationError('Invalid month range', { month: 'From must not be after to' });
+    }
+    const [costs, tools] = await Promise.all([
+      this.deps.calls.costByToolMonthBetween({
+        from: new Date(Date.UTC(first.year, first.index, 1)),
+        to: new Date(Date.UTC(last.year, last.index + 1, 1)),
+      }),
+      this.deps.tools.list(),
+    ]);
+    const providerOf = new Map(tools.map((t) => [t.key, t.provider]));
+    const sums = new Map<string, { month: string; provider: string; micros: number }>();
+    for (const c of costs) {
+      const provider = providerOf.get(c.toolKey);
+      if (!provider) continue;
+      const key = `${c.month}|${provider}`;
+      const sum = sums.get(key) ?? { month: c.month, provider, micros: 0 };
+      sums.set(key, { ...sum, micros: sum.micros + c.micros });
+    }
+    return [...sums.values()]
+      .filter((s) => s.micros > 0)
+      .sort((a, b) => a.month.localeCompare(b.month) || a.provider.localeCompare(b.provider));
   }
 
   /** Every provider with its Tool keys, sorted by provider name (finance's provider list). */
@@ -280,4 +311,11 @@ export class ToolQueries {
       createdAt: c.createdAt,
     }));
   }
+}
+
+/** 'YYYY-MM' to a year and zero-based month index. */
+function parseMonth(month: string): { year: number; index: number } {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+  if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });
+  return { year: Number(match[1]), index: Number(match[2]) - 1 };
 }

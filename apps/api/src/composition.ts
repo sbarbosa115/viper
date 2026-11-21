@@ -408,9 +408,12 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     appUrl: config.APP_URL,
     logger,
     testHooks,
-    billing: { revenueForMonth: (month) => billing.billingQueries.revenueForMonth(month) },
+    billing: {
+      revenueForMonths: (from, to) => billing.billingQueries.revenueForMonths(from, to),
+    },
     tools: {
-      meteredCostByProvider: (month) => tools.toolQueries.meteredCostByProvider(month),
+      meteredCostByProviderMonths: (from, to) =>
+        tools.toolQueries.meteredCostByProviderMonths(from, to),
       providers: () => tools.toolQueries.providers(),
     },
     staff: { staffRecipients: () => identityQueries.staffRecipients() },

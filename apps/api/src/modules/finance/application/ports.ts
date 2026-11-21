@@ -1,10 +1,11 @@
 import type { AnalyticsTracker } from '../../../shared/application/analytics-tracker.js';
+import type { EventPublisher } from '../../../shared/application/event-publisher.js';
 import type { Clock } from '../../../shared/domain/clock.js';
 import type { IdGenerator } from '../../../shared/domain/id-generator.js';
 import type { BudgetThreshold } from '../domain/budget.js';
 import type { MonthKey } from '../domain/calendar.js';
 import type { Expense } from '../domain/expense.js';
-import type { InvoiceFact, MeteredCost, Refund, Sale } from '../domain/pnl.js';
+import type { InvoiceFact, Refund, Sale } from '../domain/pnl.js';
 
 /**
  * finance reads other contexts only through these ports (prd-expenses section 7, module ports);
@@ -14,19 +15,31 @@ import type { InvoiceFact, MeteredCost, Refund, Sale } from '../domain/pnl.js';
 
 // billing -----------------------------------------------------------------------------------------
 
+export interface MonthRevenue {
+  /** `YYYY-MM`. */
+  month: MonthKey;
+  /** Paid Purchases with `paid_at` in the month. */
+  sales: Sale[];
+  /** One item per refund event in the month: its delta, gross incl. tax (finance nets tax, FR-7). */
+  refunds: Refund[];
+}
+
 export interface BillingRevenue {
-  /**
-   * Paid Purchases with `paid_at` in the month, and Purchases with `refunded_at` in the month and
-   * `refunded_cents` > 0 (cumulative, gross incl. tax; finance nets the tax out, FR-7).
-   */
-  revenueForMonth(month: MonthKey): Promise<{ sales: Sale[]; refunds: Refund[] }>;
+  /** Every month from `fromMonth` to `toMonth` inclusive, oldest first, empty months included. */
+  revenueForMonths(fromMonth: MonthKey, toMonth: MonthKey): Promise<MonthRevenue[]>;
 }
 
 // tools -------------------------------------------------------------------------------------------
 
 export interface ToolsMetering {
-  /** Sum of `tool_calls.provider_cost_micros` per catalog provider name, calls created in the month. */
-  meteredCostByProvider(month: MonthKey): Promise<MeteredCost[]>;
+  /**
+   * Sum of `tool_calls.provider_cost_micros` per month and catalog provider, calls created from
+   * `fromMonth` to `toMonth` inclusive; months or providers with no cost are left out.
+   */
+  meteredCostByProviderMonths(
+    fromMonth: MonthKey,
+    toMonth: MonthKey,
+  ): Promise<{ month: MonthKey; provider: string; micros: number }[]>;
   /** The Tool catalog's distinct providers (display names) and their Tool keys. */
   providers(): Promise<{ name: string; toolKeys: string[] }[]>;
 }
@@ -73,6 +86,11 @@ export interface ExpenseRepository {
   /** Every Expense not deleted (fewer than 200). */
   listAll(): Promise<Expense[]>;
   save(expense: Expense): Promise<void>;
+  /**
+   * Inside `run` only: holds finance's coverage mutex until the transaction ends (FR-2), so
+   * coverage checks and the writes after them happen one at a time. Call it before any read.
+   */
+  lockCoverage(): Promise<void>;
 }
 
 export interface ProviderInvoiceRepository {
@@ -111,19 +129,26 @@ export interface BudgetRepository {
   clearAlerts(month: MonthKey): Promise<void>;
 }
 
+/** Outbox events finance publishes (a subset of the shared outbox event map). */
+export interface FinanceEvents {
+  BudgetAlertRecorded: { month: MonthKey; threshold: BudgetThreshold };
+}
+
 export interface FinanceRepos {
   expenses: ExpenseRepository;
   invoices: ProviderInvoiceRepository;
   budgets: BudgetRepository;
   /** The Audit log inside this unit of work's transaction. */
   audit: { record(entry: FinanceAuditRecord): Promise<void> };
+  /** The outbox inside this unit of work's transaction: published if and only if it commits. */
+  events: EventPublisher<FinanceEvents>;
 }
 
 export interface FinanceStore {
   /** One transaction: the writes and their Audit entries commit together. */
   run<T>(fn: (repos: FinanceRepos) => Promise<T>): Promise<T>;
   /** Reads outside a transaction. */
-  readonly read: Omit<FinanceRepos, 'audit'>;
+  readonly read: Omit<FinanceRepos, 'audit' | 'events'>;
 }
 
 // Everything the use cases need ---------------------------------------------------------------------

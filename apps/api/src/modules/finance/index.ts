@@ -5,6 +5,7 @@ import type { Clock } from '../../shared/domain/clock.js';
 import type { IdGenerator } from '../../shared/domain/id-generator.js';
 import type { Database } from '../../shared/infrastructure/db/database.js';
 import type { AlertLogger } from './application/budget-alerts.js';
+import { KyselyOutbox } from '../../shared/infrastructure/outbox/index.js';
 import {
   AddExpensePrice,
   CreateExpense,
@@ -13,7 +14,11 @@ import {
   ListExpenses,
   UpdateExpense,
 } from './application/expenses.js';
-import { RunBudgetCheck, type BudgetAlertDeps } from './application/budget-alerts.js';
+import {
+  RunBudgetCheck,
+  SendBudgetAlert,
+  type BudgetAlertDeps,
+} from './application/budget-alerts.js';
 import { BudgetService, ExportPnlCsv, GetBudget, GetPnl, SaveBudget } from './application/pnl.js';
 import type {
   FinanceAudit,
@@ -44,7 +49,14 @@ export type {
 export type { MonthSpend } from './application/pnl.js';
 export type { BudgetService } from './application/pnl.js';
 
-export { createFinanceWorker, FINANCE_QUEUE } from './infrastructure/budget-worker.js';
+export {
+  createBudgetAlertWorker,
+  createFinanceWorker,
+  FINANCE_EVENTS_QUEUE,
+  FINANCE_QUEUE,
+  financeSubscriptions,
+  registerFinanceWorkers,
+} from './infrastructure/budget-worker.js';
 export type { FinanceWorkerDeps } from './infrastructure/budget-worker.js';
 
 const NO_ALERTS: BudgetAlertDeps = {
@@ -86,6 +98,8 @@ export interface Finance {
   budget: BudgetService;
   /** The daily budget check (FR-12), run by the worker and the test hook. */
   budgetCheck: RunBudgetCheck;
+  /** The budget alert email, on `BudgetAlertRecorded` (FR-12), run by the events worker. */
+  sendBudgetAlert: SendBudgetAlert;
   /** finance's tables (the budget alert job records alerts and snapshots through it). */
   store: FinanceStore;
 }
@@ -112,11 +126,13 @@ export function assembleFinance(
     saveBudget: new SaveBudget(ctx),
   };
   const budget = new BudgetService(ctx);
-  const budgetCheck = new RunBudgetCheck(ctx, budget, alerts ?? NO_ALERTS);
+  const budgetCheck = new RunBudgetCheck(ctx, budget);
+  const sendBudgetAlert = new SendBudgetAlert(ctx, budget, alerts ?? NO_ALERTS);
   return {
     useCases,
     budget,
     budgetCheck,
+    sendBudgetAlert,
     store: ctx.store,
     module: {
       name: 'finance',
@@ -133,7 +149,10 @@ export function assembleFinance(
 export function createFinance(deps: FinanceDeps): Finance {
   const { db, audit, email, appUrl, logger, testHooks, ...rest } = deps;
   return assembleFinance(
-    { ...rest, store: new KyselyFinanceStore(db, audit) },
+    {
+      ...rest,
+      store: new KyselyFinanceStore(db, audit, new KyselyOutbox(rest.ids, rest.clock)),
+    },
     { email, appUrl, logger, testHooks: testHooks ?? false },
   );
 }

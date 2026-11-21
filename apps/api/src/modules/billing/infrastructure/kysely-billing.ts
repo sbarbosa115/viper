@@ -9,6 +9,7 @@ import type {
   CreditPackRepository,
   ExternalTransaction,
   LedgerRepository,
+  PurchaseRefund,
   PurchaseRepository,
   ReservationRepository,
   WalletRepository,
@@ -323,6 +324,21 @@ export class KyselyPurchaseRepository implements PurchaseRepository {
           refundedAt: row.refunded_at,
         })
       : null;
+  }
+
+  async addRefund(refund: PurchaseRefund): Promise<boolean> {
+    const result = await this.db
+      .insertInto('purchase_refunds')
+      .ignore()
+      .values({
+        id: refund.id,
+        purchase_id: refund.purchaseId,
+        stripe_event_id: refund.stripeEventId,
+        delta_cents: refund.deltaCents,
+        refunded_at: refund.refundedAt,
+      })
+      .executeTakeFirst();
+    return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
   }
 
   async save(purchase: Purchase): Promise<void> {

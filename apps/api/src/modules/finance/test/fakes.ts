@@ -10,6 +10,7 @@ import type {
   FinanceAudit,
   FinanceAuditRecord,
   FinanceContext,
+  FinanceEvents,
   FinanceRepos,
   FinanceStore,
   MemberDirectory,
@@ -19,7 +20,7 @@ import type {
   ToolsMetering,
 } from '../application/ports.js';
 import type { BudgetThreshold } from '../domain/budget.js';
-import { monthOfInstant, type MonthKey } from '../domain/calendar.js';
+import { monthOfInstant, monthRange, type MonthKey } from '../domain/calendar.js';
 import { Expense, type ExpenseSnapshot } from '../domain/expense.js';
 import type { InvoiceFact } from '../domain/pnl.js';
 import { NOW, STAFF_ID } from './factories.js';
@@ -63,9 +64,10 @@ export interface FakePurchase {
   refundedAt: Date | null;
 }
 
-/** billing's revenueForMonth over a list of Purchases, as billing answers it. */
+/** billing's revenueForMonths over a list of Purchases (one refund event each), as billing answers it. */
 export class FakeBillingRevenue implements BillingRevenue {
   readonly purchases: FakePurchase[] = [];
+  /** Range calls made (NFR-1: the P&L makes one). */
   calls = 0;
 
   add(p: Partial<FakePurchase> & { amountCents: number; paidAt: Date | null }): this {
@@ -80,34 +82,42 @@ export class FakeBillingRevenue implements BillingRevenue {
     return this;
   }
 
-  revenueForMonth(month: MonthKey) {
+  revenueForMonths(fromMonth: MonthKey, toMonth: MonthKey) {
     this.calls += 1;
-    const inMonth = (d: Date | null) => d !== null && monthOfInstant(d) === month;
-    return Promise.resolve({
-      sales: this.purchases
-        .filter((p) => p.status === 'paid' && inMonth(p.paidAt))
-        .map((p) => ({
-          purchaseId: p.purchaseId,
-          amountCents: p.amountCents,
-          taxCents: p.taxCents,
-          paidAt: p.paidAt!,
-        })),
-      refunds: this.purchases
-        .filter((p) => p.refundedCents > 0 && inMonth(p.refundedAt))
-        .map((p) => ({
-          purchaseId: p.purchaseId,
-          refundedCents: p.refundedCents,
-          amountCents: p.amountCents,
-          taxCents: p.taxCents,
-          refundedAt: p.refundedAt!,
-        })),
-    });
+    return Promise.resolve(
+      monthRange(fromMonth, toMonth).map((month) => {
+        const inMonth = (d: Date | null) => d !== null && monthOfInstant(d) === month;
+        return {
+          month,
+          sales: this.purchases
+            .filter((p) => p.status === 'paid' && inMonth(p.paidAt))
+            .map((p) => ({
+              purchaseId: p.purchaseId,
+              amountCents: p.amountCents,
+              taxCents: p.taxCents,
+              paidAt: p.paidAt!,
+            })),
+          refunds: this.purchases
+            .filter((p) => p.refundedCents > 0 && inMonth(p.refundedAt))
+            .map((p) => ({
+              purchaseId: p.purchaseId,
+              refundedCents: p.refundedCents,
+              amountCents: p.amountCents,
+              taxCents: p.taxCents,
+              refundedAt: p.refundedAt!,
+            })),
+        };
+      }),
+    );
   }
 }
 
-/** tools' metered cost: Tool calls by key and time, summed per catalog provider. */
+/** tools' metered cost: Tool calls by key and time, summed per month and catalog provider. */
 export class FakeToolsMetering implements ToolsMetering {
   readonly calls: { toolKey: string; micros: number; at: Date }[] = [];
+  /** Range calls and providers() calls made. */
+  rangeCalls = 0;
+  providerCalls = 0;
 
   add(provider: string, micros: number, at = new Date('2026-11-10T10:00:00Z')): this {
     const key = CATALOG.find((p) => p.name === provider)?.toolKeys[0] ?? provider;
@@ -115,17 +125,21 @@ export class FakeToolsMetering implements ToolsMetering {
     return this;
   }
 
-  meteredCostByProvider(month: MonthKey) {
-    const totals = new Map<string, number>();
+  meteredCostByProviderMonths(fromMonth: MonthKey, toMonth: MonthKey) {
+    this.rangeCalls += 1;
+    const totals = new Map<string, { month: string; provider: string; micros: number }>();
     for (const c of this.calls) {
-      if (monthOfInstant(c.at) !== month) continue;
+      const month = monthOfInstant(c.at);
+      if (month < fromMonth || month > toMonth) continue;
       const provider = CATALOG.find((p) => p.toolKeys.includes(c.toolKey))?.name ?? c.toolKey;
-      totals.set(provider, (totals.get(provider) ?? 0) + c.micros);
+      const prev = totals.get(`${month}|${provider}`) ?? { month, provider, micros: 0 };
+      totals.set(`${month}|${provider}`, { ...prev, micros: prev.micros + c.micros });
     }
-    return Promise.resolve([...totals].map(([provider, micros]) => ({ provider, micros })));
+    return Promise.resolve([...totals.values()].filter((t) => t.micros > 0));
   }
 
   providers() {
+    this.providerCalls += 1;
     return Promise.resolve(CATALOG.map((p) => ({ ...p, toolKeys: [...p.toolKeys] })));
   }
 }
@@ -165,10 +179,13 @@ export class InMemoryFinanceStore implements FinanceStore {
   settings: BudgetSettings = { monthlyBudgetCents: 30000, updatedByMemberId: null, updatedAt: NOW };
   snapshots = new Map<MonthKey, number>();
   alerts = new Map<MonthKey, BudgetThreshold[]>();
+  /** Outbox events committed, in order. */
+  readonly events: { type: keyof FinanceEvents; payload: FinanceEvents[keyof FinanceEvents] }[] =
+    [];
 
   constructor(private readonly audit: FinanceAudit = new RecordingAudit()) {}
 
-  get read(): Omit<FinanceRepos, 'audit'> {
+  get read(): Omit<FinanceRepos, 'audit' | 'events'> {
     return this.repos(this);
   }
 
@@ -184,6 +201,7 @@ export class InMemoryFinanceStore implements FinanceStore {
       },
     );
     const pending: FinanceAuditRecord[] = [];
+    const published: InMemoryFinanceStore['events'] = [];
     const result = await fn({
       ...this.repos(draft),
       audit: {
@@ -192,7 +210,14 @@ export class InMemoryFinanceStore implements FinanceStore {
           return Promise.resolve();
         },
       },
+      events: {
+        publish: (type, payload) => {
+          published.push({ type, payload });
+          return Promise.resolve();
+        },
+      },
     });
+    this.events.push(...published);
     Object.assign(this, {
       expenses: draft.expenses,
       invoices: draft.invoices,
@@ -209,7 +234,7 @@ export class InMemoryFinanceStore implements FinanceStore {
     return this;
   }
 
-  private repos(state: InMemoryFinanceStore): Omit<FinanceRepos, 'audit'> {
+  private repos(state: InMemoryFinanceStore): Omit<FinanceRepos, 'audit' | 'events'> {
     const expenses: ExpenseRepository = {
       findById: (id) => {
         const s = state.expenses.get(id);
@@ -223,6 +248,7 @@ export class InMemoryFinanceStore implements FinanceStore {
         state.expenses.set(e.id, e.toSnapshot());
         return Promise.resolve();
       },
+      lockCoverage: () => Promise.resolve(),
     };
     const key = (provider: string, month: string) => `${provider}|${month}`;
     const invoices: ProviderInvoiceRepository = {

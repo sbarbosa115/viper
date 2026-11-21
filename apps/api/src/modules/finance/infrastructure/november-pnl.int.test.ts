@@ -24,6 +24,7 @@ const demo = {
 const TABLES = [
   'credit_ledger',
   'reservations',
+  'purchase_refunds',
   'purchases',
   'credit_wallets',
   'credit_packs',

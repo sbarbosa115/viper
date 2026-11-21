@@ -148,13 +148,15 @@ export class FailPurchase {
 }
 
 /**
- * FR-7: `charge.refunded` sets the Purchase's cumulative refunded amount and time. Found by the
+ * FR-7: `charge.refunded` adds a refund row for the increase of the Purchase's cumulative refunded
+ * amount (and updates that amount and time). Found by the
  * payment intent stored when it was paid; unknown intents change nothing. Credits stay.
  */
 export class RecordRefund {
-  constructor(private readonly deps: { uow: BillingUnitOfWork }) {}
+  constructor(private readonly deps: { uow: BillingUnitOfWork; ids: IdGenerator }) {}
 
   execute(cmd: {
+    eventId: string;
     paymentIntentId: string;
     refundedCents: number;
     occurredAt: Date;
@@ -162,11 +164,20 @@ export class RecordRefund {
     return this.deps.uow.run(async ({ purchases }) => {
       const purchase = await purchases.findByPaymentIntentIdForUpdate(cmd.paymentIntentId);
       if (!purchase) return { found: false };
-      const changed = purchase.recordRefund({
+      const deltaCents = purchase.recordRefund({
         refundedCents: cmd.refundedCents,
         now: cmd.occurredAt,
       });
-      if (changed) await purchases.save(purchase);
+      if (deltaCents > 0) {
+        const added = await purchases.addRefund({
+          id: this.deps.ids.next(),
+          purchaseId: purchase.id,
+          stripeEventId: cmd.eventId,
+          deltaCents,
+          refundedAt: cmd.occurredAt,
+        });
+        if (added) await purchases.save(purchase);
+      }
       return { found: true };
     });
   }
@@ -197,6 +208,7 @@ export class HandleStripeWebhook {
     if (event.type === 'other') return {};
     if (event.type === 'charge.refunded') {
       const { found } = await this.deps.recordRefund.execute({
+        eventId: event.id,
         paymentIntentId: event.paymentIntentId,
         refundedCents: event.amountRefundedCents,
         occurredAt: event.occurredAt,

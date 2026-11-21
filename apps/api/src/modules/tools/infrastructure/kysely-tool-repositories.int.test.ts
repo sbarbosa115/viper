@@ -265,6 +265,59 @@ describe('prd-expenses FR-6: ToolQueries metered cost and providers (MySQL)', ()
     await expect(q.meteredCostByProvider('2026-1')).rejects.toThrow('Invalid month');
   });
 
+  test('meteredCostByProviderMonths: one grouped read, UTC month edges, zero sums omitted', async () => {
+    await calls.add([
+      record({ providerCostMicros: 1_000, createdAt: new Date('2026-09-30T23:59:59.999Z') }),
+      record({ providerCostMicros: 1_000, createdAt: new Date('2026-10-31T23:59:59.999Z') }),
+      record({ providerCostMicros: 35_000, createdAt: new Date('2026-11-01T00:00:00.000Z') }),
+      record({ providerCostMicros: 5_000, createdAt: new Date('2026-11-30T23:59:59.999Z') }),
+      record({
+        toolKey: 'firecrawl.scrape',
+        providerCostMicros: 2_000,
+        reused: true,
+        createdAt: new Date('2026-11-15T00:00:00.000Z'),
+      }),
+      record({
+        toolKey: 'firecrawl.scrape',
+        providerCostMicros: 0,
+        createdAt: new Date('2026-12-16T00:00:00.000Z'),
+      }),
+      record({ providerCostMicros: 9_000, createdAt: new Date('2026-12-01T00:00:00.000Z') }),
+      record({ providerCostMicros: 7_000, createdAt: new Date('2027-01-01T00:00:00.000Z') }),
+    ]);
+    const q = queries();
+    const range = await q.meteredCostByProviderMonths('2026-10', '2026-12');
+    expect(range).toEqual([
+      { month: '2026-10', provider: 'Google Maps Platform', micros: 1_000 },
+      { month: '2026-11', provider: 'Firecrawl', micros: 2_000 },
+      { month: '2026-11', provider: 'Google Maps Platform', micros: 40_000 },
+      { month: '2026-12', provider: 'Google Maps Platform', micros: 9_000 },
+    ]);
+    for (const month of ['2026-10', '2026-11', '2026-12']) {
+      expect(
+        range
+          .filter((r) => r.month === month)
+          .map(({ provider, micros }) => ({ provider, micros })),
+      ).toEqual(await q.meteredCostByProvider(month));
+    }
+    expect(await q.meteredCostByProviderMonths('2026-02', '2026-03')).toEqual([]);
+    await expect(q.meteredCostByProviderMonths('2026-12', '2026-11')).rejects.toThrow(
+      'Invalid month range',
+    );
+    await expect(q.meteredCostByProviderMonths('2026-1', '2026-11')).rejects.toThrow(
+      'Invalid month',
+    );
+  });
+
+  test('the range query is served by the covering index (created_at, tool_key, provider_cost_micros)', async () => {
+    const { rows } = await sql<{ key: string | null; Extra: string | null }>`
+      EXPLAIN SELECT tool_key, DATE_FORMAT(created_at, '%Y-%m') AS month, SUM(provider_cost_micros)
+      FROM tool_calls WHERE created_at >= '2026-01-01' AND created_at < '2026-12-01'
+      GROUP BY tool_key, DATE_FORMAT(created_at, '%Y-%m')`.execute(db);
+    expect(rows[0]?.key).toBe('tool_calls_created_tool_cost');
+    expect(rows[0]?.Extra).toContain('Using index');
+  });
+
   test('providers: distinct providers with their Tool keys, sorted by name', async () => {
     const list = await queries().providers();
     expect(list.map((p) => p.name)).toEqual(

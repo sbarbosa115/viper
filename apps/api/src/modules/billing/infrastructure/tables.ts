@@ -60,6 +60,15 @@ export interface PurchasesTable {
   refunded_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
 }
 
+/** One row per refund event that raised a purchase's cumulative refunded amount. */
+export interface PurchaseRefundsTable {
+  id: string;
+  purchase_id: string;
+  stripe_event_id: string;
+  delta_cents: number;
+  refunded_at: Timestamp;
+}
+
 /** One lock row per Business's Credit wallet (no balance: that stays derived from the ledger). */
 export interface CreditWalletsTable {
   business_id: string;
@@ -72,4 +81,5 @@ export interface BillingTables {
   reservations: ReservationsTable;
   credit_packs: CreditPacksTable;
   purchases: PurchasesTable;
+  purchase_refunds: PurchaseRefundsTable;
 }

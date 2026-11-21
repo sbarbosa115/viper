@@ -1,10 +1,7 @@
 import { budgetProgress, type BudgetProgress, type BudgetThreshold } from './budget.js';
 import {
   addMonths,
-  firstDayOf,
   HISTORY_START_MONTH,
-  lastDayOf,
-  minDay,
   pctOneDecimal,
   roundHalfUp,
   sum,
@@ -38,10 +35,10 @@ export interface Sale {
   readonly paidAt: Date;
 }
 
-/** A Purchase with `refunded_at` in the month and a refund. */
+/** One refund event of a Purchase, in the month it happened. */
 export interface Refund {
   readonly purchaseId: string;
-  /** Cumulative, gross (tax included). */
+  /** This event's refunded amount, gross (tax included). */
   readonly refundedCents: number;
   readonly amountCents: number;
   readonly taxCents: number;
@@ -132,16 +129,9 @@ interface MonthScope {
   readonly expenses: readonly Expense[];
 }
 
-/** The last day that counts in the month: its last day, or today in the current month. */
-const cutoffOf = (month: MonthKey, today: CalendarDay) => minDay(lastDayOf(month), today);
-
 function planFor(provider: string, scope: MonthScope): ProviderLine['plan'] {
-  const from = firstDayOf(scope.month);
-  const to = cutoffOf(scope.month, scope.today);
   const bills = scope.expenses
-    .filter(
-      (e) => e.kind === 'recurring' && e.coversProvider === provider && e.activeBetween(from, to),
-    )
+    .filter((e) => e.coversProvider === provider && e.isPlanIn(scope.month, scope.today))
     .sort((a, b) => a.startsOn.localeCompare(b.startsOn));
   const latest = bills.at(-1);
   if (!latest) return null;

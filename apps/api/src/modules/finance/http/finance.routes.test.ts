@@ -21,6 +21,9 @@ const { runBudgetCheck } = financeTestContracts;
 import { InMemoryEmailSender } from '../../../shared/infrastructure/email/in-memory-email-sender.js';
 import { buildTestApp } from '../../../../test/build-test-app.js';
 import type { Actor } from '../../../shared/domain/actor.js';
+import { actorResolverFrom, identityModuleFrom } from '../../identity/index.js';
+import { PASSWORD } from '../../identity/test/factories.js';
+import { fakeIdentity } from '../../identity/test/fakes.js';
 import { assembleFinance } from '../index.js';
 import { bill, oneOff, seededExpenses } from '../test/factories.js';
 import { fakeWorld, ownerActor, seedNovemberSources, staffActor } from '../test/fakes.js';
@@ -550,16 +553,20 @@ describe('FR-12 / AJ-4 support: POST /api/test/jobs/budget-check', () => {
   });
 
   test('runs the check now and answers with the thresholds sent', async () => {
-    const { app, email } = await hookApp(true);
+    const { app, world, email } = await hookApp(true);
     const first = await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
     expect(runBudgetCheck.response.parse(first.json())).toEqual({ sent: [80] });
     const second = await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
     expect(second.json()).toEqual({ sent: [] });
-    expect(email.sent).toHaveLength(1);
+    // The email goes through the outbox (the events worker sends it).
+    expect(world.store.events).toEqual([
+      { type: 'BudgetAlertRecorded', payload: { month: '2026-11', threshold: 80 } },
+    ]);
+    expect(email.sent).toEqual([]);
   });
 
   test('{ reset: true } forgets the month alerts first', async () => {
-    const { app, email } = await hookApp(true);
+    const { app, world } = await hookApp(true);
     await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
     const res = await app.inject({
       method: 'POST',
@@ -567,6 +574,43 @@ describe('FR-12 / AJ-4 support: POST /api/test/jobs/budget-check', () => {
       payload: { reset: true },
     });
     expect(res.json()).toEqual({ sent: [80] });
-    expect(email.sent).toHaveLength(2);
+    expect(world.store.events).toHaveLength(2);
+  });
+});
+
+describe('FR-13, NFR-2: a half session (Staff, two-factor not passed) gets 403', () => {
+  test.each(ROUTES)('$method $url', async (route) => {
+    const identity = fakeIdentity();
+    const world = fakeWorld();
+    const app = await buildTestApp({
+      modules: [identityModuleFrom(identity, { secure: false }), assembleFinance(world.ctx).module],
+      deps: { resolveActor: actorResolverFrom(identity) },
+    });
+    const headers = { origin: 'http://localhost:5173' };
+    const email = 'half@example.com';
+    const signup = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      headers,
+      payload: { businessName: 'Half Co', name: 'Hal', email, password: PASSWORD },
+    });
+    expect(signup.statusCode).toBe(201);
+    await identity.uow.run(async (r) => {
+      const m = await r.members.findByEmail(email);
+      m?.grantStaff();
+      if (m) await r.members.save(m);
+    });
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers,
+      payload: { email, password: PASSWORD },
+    });
+    const sid = login.cookies.find((c) => c.name === 'sid')?.value ?? '';
+    expect(sid).not.toBe('');
+    const res = await app.inject({ ...route, headers: { ...headers, cookie: `sid=${sid}` } });
+    expect(res.statusCode).toBe(403);
+    expect(code(res)).toBe('TWO_FACTOR_REQUIRED');
+    expect(world.audit.entries).toEqual([]);
   });
 });

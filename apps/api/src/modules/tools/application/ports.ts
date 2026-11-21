@@ -58,6 +58,11 @@ export interface ToolCallRepository {
     from: Date;
     to: Date;
   }): Promise<{ toolKey: string; micros: number }[]>;
+  /** The same per Tool key and UTC month ('YYYY-MM') in one grouped query (the P&L's 12 months). */
+  costByToolMonthBetween(window: {
+    from: Date;
+    to: Date;
+  }): Promise<{ toolKey: string; month: string; micros: number }[]>;
 }
 
 /** What one Tool cost the platform in a window (Staff dashboard, FR-30). */

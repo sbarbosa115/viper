@@ -20,6 +20,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RunBudgetCheck } from '../application/budget-alerts.js';
+import { expensePatch } from './expense-patch.js';
 import type {
   AddExpensePrice,
   CreateExpense,
@@ -93,7 +94,7 @@ export function financeRoutes(
         response: { 200: updateExpense.response },
       },
     },
-    (req) => uc.updateExpense.execute(req.actor, req.params.id, req.body),
+    (req) => uc.updateExpense.execute(req.actor, req.params.id, expensePatch(req.body)),
   );
 
   api.post(

@@ -1,4 +1,5 @@
 import { providerKeyOf } from '@app/contracts/finance';
+import type { AnalyticsEvent } from '../../../shared/application/analytics-tracker.js';
 import type { Actor } from '../../../shared/domain/actor.js';
 import type { Clock } from '../../../shared/domain/clock.js';
 import { CodedError, ForbiddenError } from '../../../shared/domain/errors.js';
@@ -17,6 +18,15 @@ export function requireStaff(actor: Actor | null | undefined): Actor {
   if (!actor?.roles.includes('staff')) throw new ForbiddenError('Staff only');
   return actor;
 }
+
+/**
+ * The analytics actor of a finance event: the Staff Member and no Business, since finance is
+ * platform-wide and ignores Acting as (FR-13). The platform tracker stores `business_id` NULL.
+ */
+export const staffAnalyticsActor = (actor: Actor): AnalyticsEvent['actor'] => ({
+  memberId: actor.memberId,
+  businessId: null,
+});
 
 export const todayOf = (clock: Clock): CalendarDay => dayOfInstant(clock.now());
 export const currentMonthOf = (clock: Clock): MonthKey => monthOfInstant(clock.now());

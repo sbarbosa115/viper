@@ -11,7 +11,7 @@ import {
   registerResearchWorkers,
   researchSubscriptions,
 } from './modules/research/index.js';
-import { createFinanceWorker } from './modules/finance/index.js';
+import { financeSubscriptions, registerFinanceWorkers } from './modules/finance/index.js';
 import type { Clock } from './shared/domain/clock.js';
 import type { Database } from './shared/infrastructure/db/database.js';
 import {
@@ -31,6 +31,7 @@ export const outboxSubscriptions: readonly OutboxSubscription[] = [
   ...platformSubscriptions,
   ...billingSubscriptions,
   ...researchSubscriptions,
+  ...financeSubscriptions,
 ];
 
 export const MAINTENANCE_QUEUE = 'maintenance';
@@ -112,8 +113,8 @@ export function registerWorkers(deps: WorkerDeps): RegisteredWorkers {
       clock: core.clock,
       logger: deps.logger,
     }),
-    createFinanceWorker({
-      budgetCheck: modules.finance.budgetCheck,
+    ...registerFinanceWorkers({
+      finance: modules.finance,
       connection: deps.connection,
       logger: deps.logger,
     }),

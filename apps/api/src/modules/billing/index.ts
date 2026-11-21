@@ -81,6 +81,7 @@ export type BillingQueries = Pick<
   | 'availableByBusiness'
   | 'payingBusinessIds'
   | 'revenueForMonth'
+  | 'revenueForMonths'
 >;
 
 /** The HTTP module's shape (matches app.ts AppModule). */
@@ -138,6 +139,7 @@ function assemble(uow: BillingUnitOfWork, readModel: BillingReadModel, deps: Com
       availableByBusiness: q.availableByBusiness.bind(q),
       payingBusinessIds: q.payingBusinessIds.bind(q),
       revenueForMonth: q.revenueForMonth.bind(q),
+      revenueForMonths: q.revenueForMonths.bind(q),
     },
     module: {
       name: 'billing',

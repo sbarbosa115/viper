@@ -5,7 +5,14 @@ import type { MonthKey } from '../domain/calendar.js';
 import { providerCategoryOf } from '../domain/categories.js';
 import { providerLines, type ProviderLine } from '../domain/pnl.js';
 import type { FinanceContext } from './ports.js';
-import { catalogProviders, providerByKey, requireStaff, resolveMonth, todayOf } from './rules.js';
+import {
+  catalogProviders,
+  providerByKey,
+  requireStaff,
+  resolveMonth,
+  staffAnalyticsActor,
+  todayOf,
+} from './rules.js';
 import { Statements } from './statements.js';
 import { memberEmails, money, providerRowView } from './views.js';
 
@@ -127,7 +134,7 @@ export class SaveProviderInvoice {
     const row = await rowFor(this.ctx, provider.name, month);
     await this.ctx.analytics.track({
       name: 'provider_invoice_entered',
-      actor: { memberId: actor.memberId, businessId: actor.businessId },
+      actor: staffAnalyticsActor(actor),
       properties: {
         provider: key,
         month,

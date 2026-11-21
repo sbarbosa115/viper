@@ -20,6 +20,8 @@ export interface OutboxEvents {
     credits: number;
     amountCents: number;
   };
+  /** finance → budget alert email to every Staff Member (prd-expenses FR-12). */
+  BudgetAlertRecorded: { month: string; threshold: 80 | 100 };
 }
 
 interface RunEnded {

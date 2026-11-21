@@ -83,11 +83,14 @@ const isEmpty = (pnl: Pnl) =>
 function PnlBody({ pnl }: { pnl: Pnl }) {
   if (isEmpty(pnl)) {
     return (
-      <EmptyState
-        headingLevel={2}
-        title={t('finance.pnl.empty', { month: monthLabel(pnl.month) })}
-        description={t('finance.pnl.emptyHint')}
-      />
+      <div className="flex flex-col gap-5">
+        <BudgetPanel pnl={pnl} />
+        <EmptyState
+          headingLevel={2}
+          title={t('finance.pnl.empty', { month: monthLabel(pnl.month) })}
+          description={t('finance.pnl.emptyHint')}
+        />
+      </div>
     );
   }
   return (
@@ -353,7 +356,7 @@ function Statement({ pnl }: { pnl: Pnl }) {
           {pnl.costOfRevenue.lines.map((line) => (
             <Row
               key={`${line.category}-${line.source}`}
-              label={line.label}
+              label={line.source === 'stripe_fees' ? t('finance.pnl.stripeFees') : line.label}
               note={t(sourceNote[line.source])}
               amount={formatMoney(line.amount.cents)}
             />

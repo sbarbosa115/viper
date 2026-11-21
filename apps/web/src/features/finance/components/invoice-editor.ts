@@ -15,8 +15,11 @@ export function useInvoiceEditor(row: ProviderRow, month: Month) {
   const [error, setError] = useState<string | null>(null);
 
   const hasInvoice = row.invoice !== null;
-  /** Rows with no invoice always show the entry box; rows with one show it while editing. */
-  const open = editing || !hasInvoice;
+  /**
+   * Estimate rows (no invoice, no plan) always show the entry box. Plan rows show the plan
+   * amount until Staff chooses "Enter invoice"; rows with an invoice show it while editing.
+   */
+  const open = editing || (!hasInvoice && row.plan === null);
 
   const start = () => {
     setAmount(row.invoice ? centsToDollars(row.invoice.amount.cents) : '');

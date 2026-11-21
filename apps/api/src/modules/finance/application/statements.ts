@@ -15,31 +15,35 @@ import { todayOf } from './rules.js';
 type Ctx = Pick<FinanceContext, 'store' | 'billing' | 'tools' | 'clock'>;
 
 /**
- * Loads what the pure P&L functions need: bills, each month's sales, refunds and metered costs
- * (one aggregate call per month to billing and tools) and the months' invoices (one query).
+ * Loads what the pure P&L functions need: bills, and for a run of months their sales, refunds and
+ * metered costs (one range call each to billing and tools, NFR-1) and invoices (one query).
  */
 export class Statements {
   constructor(private readonly ctx: Ctx) {}
 
+  /** `months` is a contiguous ascending run (one month, the trend, or a CSV range). */
   async monthData(months: readonly MonthKey[]): Promise<Map<MonthKey, MonthData>> {
-    const [invoices, perMonth] = await Promise.all([
-      months.length > 0 ? this.ctx.store.read.invoices.forMonths(months) : Promise.resolve([]),
-      Promise.all(
-        months.map(async (m) => {
-          const [revenue, metered] = await Promise.all([
-            this.ctx.billing.revenueForMonth(m),
-            this.ctx.tools.meteredCostByProvider(m),
-          ]);
-          return [m, { ...revenue, metered }] as const;
-        }),
-      ),
+    const first = months[0];
+    const last = months.at(-1);
+    if (first === undefined || last === undefined) return new Map();
+    const [invoices, revenue, metered] = await Promise.all([
+      this.ctx.store.read.invoices.forMonths(months),
+      this.ctx.billing.revenueForMonths(first, last),
+      this.ctx.tools.meteredCostByProviderMonths(first, last),
     ]);
-    return new Map(
-      perMonth.map(([m, d]) => [
-        m,
-        { ...EMPTY_MONTH, ...d, invoices: invoices.filter((i) => i.month === m) },
-      ]),
-    );
+    const data = new Map<MonthKey, MonthData>(months.map((m) => [m, { ...EMPTY_MONTH }]));
+    const update = (m: MonthKey, patch: (d: MonthData) => Partial<MonthData>) => {
+      const d = data.get(m);
+      if (d) data.set(m, { ...d, ...patch(d) });
+    };
+    for (const r of revenue) update(r.month, () => ({ sales: r.sales, refunds: r.refunds }));
+    for (const c of metered) {
+      update(c.month, (d) => ({
+        metered: [...d.metered, { provider: c.provider, micros: c.micros }],
+      }));
+    }
+    for (const i of invoices) update(i.month, (d) => ({ invoices: [...d.invoices, i] }));
+    return data;
   }
 
   expenses(): Promise<Expense[]> {

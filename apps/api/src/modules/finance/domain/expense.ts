@@ -5,6 +5,8 @@ import {
   clampedDay,
   dayOfMonth,
   HISTORY_START_DAY,
+  lastDayOf,
+  minDay,
   monthNumber,
   monthOf,
   roundHalfUp,
@@ -295,9 +297,18 @@ export class Expense {
     return this.s.cadence === 'yearly' ? roundHalfUp(amountCents, 12) : amountCents;
   }
 
-  /** A covering bill applies to a month it is active in up to `cutoff` (FR-8, the linked plan). */
-  activeBetween(from: CalendarDay, to: CalendarDay): boolean {
-    return this.s.startsOn <= to && (this.s.endsOn === null || this.s.endsOn >= from);
+  /**
+   * FR-8: a Recurring bill is the linked plan for a month when it charged in it (up to the cutoff:
+   * the month's last day, or today). A yearly bill also covers the months it is active in at the
+   * cutoff, since it pays for the whole year; its amount still counts only in its charge month.
+   * Otherwise the provider falls back to its invoice or metered estimate.
+   */
+  isPlanIn(month: MonthKey, today: CalendarDay): boolean {
+    if (this.s.kind !== 'recurring') return false;
+    if (this.chargesIn(month, today).length > 0) return true;
+    if (this.s.cadence !== 'yearly') return false;
+    const cutoff = minDay(lastDayOf(month), today);
+    return this.s.startsOn <= cutoff && (this.s.endsOn === null || this.s.endsOn >= cutoff);
   }
 
   /** Coverage periods of two bills overlap (at most one bill covers a provider on any date). */

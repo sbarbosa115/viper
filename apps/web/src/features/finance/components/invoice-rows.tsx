@@ -1,7 +1,7 @@
 import type { Month, ProviderRow } from '@app/contracts/finance';
 import { Link } from 'react-router';
 import { t } from '../../../shared/i18n';
-import { Button, Icon, Input, cx } from '../../../shared/ui';
+import { Button, Input, cx } from '../../../shared/ui';
 import { formatGap, formatMoney, monthLabel } from '../lib/format';
 import { useInvoiceEditor, type InvoiceEditor } from './invoice-editor';
 
@@ -26,6 +26,26 @@ function gapText(row: ProviderRow): string {
   return '—';
 }
 
+/** Warning triangle; decorative, the visible "Gap:" word carries the meaning. */
+function WarningIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width={12}
+      height={12}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <path d="M12 3.5 2.5 20h19L12 3.5ZM12 10v4.5M12 17.5v.01" />
+    </svg>
+  );
+}
+
 export function FlagNote({ row }: { row: ProviderRow }) {
   if (!row.flagged) return null;
   const text =
@@ -37,7 +57,7 @@ export function FlagNote({ row }: { row: ProviderRow }) {
         });
   return (
     <p className="m-0 flex items-center gap-1.5 text-xs text-warn">
-      <Icon name="x" size={12} />
+      <WarningIcon />
       <span>
         <strong className="font-semibold">{t('finance.inv.flagWord')}:</strong> {text}
       </span>
@@ -143,17 +163,19 @@ function Actions({
       ) : (
         <Button
           size="sm"
-          aria-label={t('finance.inv.editFor', { provider: name })}
+          aria-label={t(row.invoice ? 'finance.inv.editFor' : 'finance.inv.enterFor', {
+            provider: name,
+          })}
           onClick={editor.start}
           className="min-h-11 md:min-h-8"
         >
-          {t('finance.inv.edit')}
+          {t(row.invoice ? 'finance.inv.edit' : 'finance.inv.enter')}
         </Button>
       )}
       {row.flagged && (
-        <a href="/app/staff/tools" className="text-sm text-accent underline underline-offset-2">
+        <Link to="/staff/tools" className="text-sm text-accent underline underline-offset-2">
           {t('finance.inv.review')}
-        </a>
+        </Link>
       )}
       {row.plan && !row.flagged && (
         <Link

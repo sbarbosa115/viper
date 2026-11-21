@@ -17,7 +17,21 @@ function setup(spendCents: number, budgetCents = 30000) {
   });
   const spend = (cents: number) =>
     world.store.add(oneOff(`Extra ${cents}`, 'hosting', cents, '2026-11-12'));
-  return { world, email, warnings, check: finance.budgetCheck, spend };
+  let consumed = 0;
+  /** The events worker: runs SendBudgetAlert for each outbox event not consumed yet. */
+  const deliver = async () => {
+    for (const e of world.store.events.slice(consumed)) {
+      consumed += 1;
+      if (e.type === 'BudgetAlertRecorded') await finance.sendBudgetAlert.execute(e.payload);
+    }
+  };
+  /** The check, then its events delivered. */
+  const run = async () => {
+    const sent = await finance.budgetCheck.execute();
+    await deliver();
+    return sent;
+  };
+  return { world, email, warnings, check: { execute: run }, spend, finance, deliver };
 }
 
 describe('FR-12: budget alerts', () => {
@@ -105,25 +119,65 @@ describe('FR-12: budget alerts', () => {
     ]);
   });
 
+  test('G-3: the check records the alert and enqueues one BudgetAlertRecorded in the same unit of work; it sends nothing itself', async () => {
+    const { world, email, finance, spend } = setup(20000);
+    spend(20137);
+    expect(await finance.budgetCheck.execute()).toEqual([100]);
+    expect(email.sent).toEqual([]);
+    expect(world.store.alerts.get('2026-11')).toEqual([80, 100]);
+    expect(world.store.events).toEqual([
+      { type: 'BudgetAlertRecorded', payload: { month: '2026-11', threshold: 100 } },
+    ]);
+    expect(await finance.budgetCheck.execute()).toEqual([]);
+    expect(world.store.events).toHaveLength(1);
+  });
+
   test('no Staff Members: nothing is sent, it is logged, and the alert stays recorded', async () => {
     const { world, email, warnings, check } = setup(25000);
     world.staff.staff.length = 0;
-    expect(await check.execute()).toEqual([]);
+    expect(await check.execute()).toEqual([80]);
     expect(email.sent).toEqual([]);
     expect(warnings).toHaveLength(1);
     expect(world.store.alerts.get('2026-11')).toEqual([80]);
   });
 
-  test('SMTP down: the alert stays recorded, the next check does not send it again', async () => {
-    const { world, check } = setup(25000);
-    const down = { send: () => Promise.reject(new Error('smtp down')) };
-    const failing = assembleFinance(world.ctx, {
-      email: down,
+  test('G-3, SMTP down: the email throws so the queue retries; the retry skips who got it', async () => {
+    const { world, finance, deliver } = setup(25000);
+    world.staff.staff.push({ memberId: 'm2', email: 'second@demo.test', name: 'Sue Staff' });
+    expect(await finance.budgetCheck.execute()).toEqual([80]);
+    const sent: string[] = [];
+    let down = true;
+    const flaky = {
+      send: (m: { to: string }) => {
+        if (down && m.to === 'second@demo.test') return Promise.reject(new Error('smtp down'));
+        sent.push(m.to);
+        return Promise.resolve();
+      },
+    };
+    const retrying = assembleFinance(world.ctx, {
+      email: flaky,
       appUrl: 'http://localhost:5173',
       logger: { info: () => undefined, warn: () => undefined },
     });
-    await failing.budgetCheck.execute();
-    expect(world.store.alerts.get('2026-11')).toEqual([80]);
-    expect(await check.execute()).toEqual([]);
+    const event = { month: '2026-11', threshold: 80 as const };
+    let delivered: readonly string[] = [];
+    const progress = () => ({
+      delivered,
+      save: (d: readonly string[]) => {
+        delivered = d;
+        return Promise.resolve();
+      },
+    });
+    await expect(retrying.sendBudgetAlert.execute(event, progress())).rejects.toThrow('smtp down');
+    expect(sent).toEqual([STAFF_EMAIL]);
+    expect(world.analytics.events).toEqual([]);
+    down = false;
+    await retrying.sendBudgetAlert.execute(event, progress());
+    expect(sent).toEqual([STAFF_EMAIL, 'second@demo.test']);
+    expect(world.analytics.events.map((e) => e.properties?.recipients_count)).toEqual([2]);
+    // The check itself never records or enqueues it again.
+    await deliver();
+    expect(await finance.budgetCheck.execute()).toEqual([]);
+    expect(world.store.events).toHaveLength(1);
   });
 });

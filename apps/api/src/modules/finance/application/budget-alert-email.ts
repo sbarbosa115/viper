@@ -3,6 +3,11 @@ import type { BudgetThreshold } from '../domain/budget.js';
 import type { CalendarDay } from '../domain/calendar.js';
 
 const PRODUCT = 'Llyner Leads';
+/**
+ * Midnight colours inlined for email clients, which ignore CSS variables (DESIGN.md: surface,
+ * text, text-faint).
+ */
+const EMAIL_COLOURS = { button: '#13131A', buttonText: '#EDEDF2', muted: '#80808E' } as const;
 const MONTH_NAMES = [
   'January',
   'February',
@@ -91,8 +96,8 @@ export function budgetAlertEmail(p: {
           `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`,
         ]
       : []),
-    `<p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#13131A;color:#EDEDF2;border-radius:8px;text-decoration:none">Open the P&amp;L</a></p>`,
-    `<p style="color:#80808E;font-size:13px">${FOOTER}</p>`,
+    `<p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:${EMAIL_COLOURS.button};color:${EMAIL_COLOURS.buttonText};border-radius:8px;text-decoration:none">Open the P&amp;L</a></p>`,
+    `<p style="color:${EMAIL_COLOURS.muted};font-size:13px">${FOOTER}</p>`,
     `<p>— ${PRODUCT}</p>`,
   ].join('\n');
   return {

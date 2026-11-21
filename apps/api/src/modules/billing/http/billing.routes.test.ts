@@ -305,6 +305,17 @@ describe('FR-7: charge.refunded on POST /api/webhooks/stripe', () => {
     expect(purchase()).toMatchObject({ refundedCents: 2_600, refundedAt: second });
   });
 
+  test('partial then full refund in different months are separate rows with their own deltas', async () => {
+    const { refund, billing } = await paidPurchase();
+    await refund('evt_r1', 4_000, new Date('2026-11-25T10:00:00.000Z'));
+    await refund('evt_r2', 9_900, new Date('2026-12-03T10:00:00.000Z'));
+    await refund('evt_r2', 9_900, new Date('2026-12-04T10:00:00.000Z'));
+    const nov = await billing.billingQueries.revenueForMonth('2026-11');
+    const dec = await billing.billingQueries.revenueForMonth('2026-12');
+    expect(nov.refunds.map((x) => x.refundedCents)).toEqual([4_000]);
+    expect(dec.refunds.map((x) => x.refundedCents)).toEqual([5_900]);
+  });
+
   test('AC: the same event delivered twice leaves refunded_cents and the time unchanged', async () => {
     const { refund, purchase } = await paidPurchase();
     await refund('evt_r1', 2_600);

@@ -20,13 +20,19 @@ export class KyselyBillingReadModel implements BillingReadModel {
         .orderBy('id')
         .execute(),
       this.db
-        .selectFrom('purchases')
-        .select(['id', 'amount_cents', 'tax_cents', 'refunded_cents', 'refunded_at'])
-        .where('refunded_cents', '>', 0)
-        .where('refunded_at', '>=', range.from)
-        .where('refunded_at', '<', range.to)
-        .orderBy('refunded_at')
-        .orderBy('id')
+        .selectFrom('purchase_refunds as r')
+        .innerJoin('purchases as p', 'p.id', 'r.purchase_id')
+        .select([
+          'p.id as purchase_id',
+          'p.amount_cents',
+          'p.tax_cents',
+          'r.delta_cents',
+          'r.refunded_at',
+        ])
+        .where('r.refunded_at', '>=', range.from)
+        .where('r.refunded_at', '<', range.to)
+        .orderBy('r.refunded_at')
+        .orderBy('r.id')
         .execute(),
     ]);
     return {
@@ -46,8 +52,8 @@ export class KyselyBillingReadModel implements BillingReadModel {
         r.refunded_at
           ? [
               {
-                purchaseId: r.id,
-                refundedCents: r.refunded_cents,
+                purchaseId: r.purchase_id,
+                refundedCents: r.delta_cents,
                 amountCents: r.amount_cents,
                 taxCents: r.tax_cents,
                 refundedAt: r.refunded_at,

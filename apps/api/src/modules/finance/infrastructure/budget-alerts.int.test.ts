@@ -12,16 +12,24 @@ import { createFinance } from '../index.js';
 import { NOW, oneOff } from '../test/factories.js';
 import { STAFF_ID } from '../test/factories.js';
 import { KyselyFinanceStore } from './kysely-finance.js';
+import { KyselyOutbox } from '../../../shared/infrastructure/outbox/index.js';
 
 const db = createDatabase(process.env.DATABASE_URL_TEST ?? '');
 const clock = new FixedClock(NOW);
 const ids = new Uuid7Generator();
 const audit = createAuditLog({ db, clock, ids });
-const store = new KyselyFinanceStore(db, audit);
+const store = new KyselyFinanceStore(db, audit, new KyselyOutbox(ids, clock));
 
 beforeEach(async () => {
   await sql`SET FOREIGN_KEY_CHECKS = 0`.execute(db);
-  for (const t of ['expense_prices', 'expenses', 'budget_alerts', 'finance_budgets', 'audit_log'])
+  for (const t of [
+    'expense_prices',
+    'expenses',
+    'budget_alerts',
+    'finance_budgets',
+    'audit_log',
+    'outbox',
+  ])
     await sql.raw(`TRUNCATE TABLE ${t}`).execute(db);
   await sql`SET FOREIGN_KEY_CHECKS = 1`.execute(db);
   await db
@@ -49,7 +57,7 @@ describe('FR-12: budget_alerts on MySQL', () => {
     expect(await store.read.budgets.alertsSent('2026-12')).toEqual([]);
   });
 
-  test('two budget checks at the same time send one email', async () => {
+  test('two budget checks at the same time enqueue one email', async () => {
     const email = new InMemoryEmailSender();
     const finance = createFinance({
       db,
@@ -60,9 +68,9 @@ describe('FR-12: budget_alerts on MySQL', () => {
       email,
       appUrl: 'http://localhost:5173',
       logger: { info: () => undefined, warn: () => undefined },
-      billing: { revenueForMonth: () => Promise.resolve({ sales: [], refunds: [] }) },
+      billing: { revenueForMonths: () => Promise.resolve([]) },
       tools: {
-        meteredCostByProvider: () => Promise.resolve([]),
+        meteredCostByProviderMonths: () => Promise.resolve([]),
         providers: () => Promise.resolve([]),
       },
       staff: {
@@ -76,7 +84,23 @@ describe('FR-12: budget_alerts on MySQL', () => {
     );
     const runs = await Promise.all([finance.budgetCheck.execute(), finance.budgetCheck.execute()]);
     expect(runs.flat()).toEqual([80]);
-    expect(email.sent).toHaveLength(1);
+    const events = await db.selectFrom('outbox').select(['type', 'payload']).execute();
+    expect(events).toEqual([
+      { type: 'BudgetAlertRecorded', payload: { month: '2026-11', threshold: 80 } },
+    ]);
+    expect(email.sent).toEqual([]);
+  });
+
+  test('G-3: the alert row and its outbox event commit together, or neither does', async () => {
+    await expect(
+      store.run(async (r) => {
+        await r.budgets.insertAlert('2026-11', 80, 25000, 30000, NOW);
+        await r.events.publish('BudgetAlertRecorded', { month: '2026-11', threshold: 80 });
+        throw new Error('rolled back');
+      }),
+    ).rejects.toThrow('rolled back');
+    expect(await store.read.budgets.alertsSent('2026-11')).toEqual([]);
+    expect(await db.selectFrom('outbox').select('id').execute()).toEqual([]);
   });
 
   test('clearAlerts forgets one month only', async () => {
@@ -111,9 +135,9 @@ describe.skipIf(!mailpitUrl)('FR-12: the budget alert email reaches Mailpit', ()
         email,
         appUrl: 'http://localhost:5173',
         logger: { info: () => undefined, warn: () => undefined },
-        billing: { revenueForMonth: () => Promise.resolve({ sales: [], refunds: [] }) },
+        billing: { revenueForMonths: () => Promise.resolve([]) },
         tools: {
-          meteredCostByProvider: () => Promise.resolve([]),
+          meteredCostByProviderMonths: () => Promise.resolve([]),
           providers: () => Promise.resolve([]),
         },
         staff: {
@@ -125,6 +149,7 @@ describe.skipIf(!mailpitUrl)('FR-12: the budget alert email reaches Mailpit', ()
         r.expenses.save(oneOff('Legal review', 'legal_admin', 25000, '2026-11-10')),
       );
       expect(await finance.budgetCheck.execute()).toEqual([80]);
+      await finance.sendBudgetAlert.execute({ month: '2026-11', threshold: 80 });
     } finally {
       email.close();
     }

@@ -271,7 +271,7 @@ describe('FR-7: Purchase refunds', () => {
 
   test('a refund sets the cumulative amount and time', () => {
     const purchase = paidPurchase();
-    expect(purchase.recordRefund({ refundedCents: 9_900, now: refundTime })).toBe(true);
+    expect(purchase.recordRefund({ refundedCents: 9_900, now: refundTime })).toBe(9_900);
     expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 9_900, refundedAt: refundTime });
   });
 
@@ -279,10 +279,10 @@ describe('FR-7: Purchase refunds', () => {
     const purchase = paidPurchase();
     purchase.recordRefund({ refundedCents: 4_000, now: refundTime });
     const later2 = new Date('2026-12-04T09:00:00.000Z');
-    expect(purchase.recordRefund({ refundedCents: 4_000, now: later2 })).toBe(false);
-    expect(purchase.recordRefund({ refundedCents: 1_000, now: later2 })).toBe(false);
+    expect(purchase.recordRefund({ refundedCents: 4_000, now: later2 })).toBe(0);
+    expect(purchase.recordRefund({ refundedCents: 1_000, now: later2 })).toBe(0);
     expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 4_000, refundedAt: refundTime });
-    expect(purchase.recordRefund({ refundedCents: 9_900, now: later2 })).toBe(true);
+    expect(purchase.recordRefund({ refundedCents: 9_900, now: later2 })).toBe(5_900);
     expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 9_900, refundedAt: later2 });
   });
 
@@ -296,7 +296,7 @@ describe('FR-7: Purchase refunds', () => {
       stripeSessionId: 'cs_3',
       now,
     });
-    expect(pending.recordRefund({ refundedCents: 1, now: refundTime })).toBe(false);
+    expect(pending.recordRefund({ refundedCents: 1, now: refundTime })).toBe(0);
     expect(pending.refundedCents).toBe(0);
   });
 });

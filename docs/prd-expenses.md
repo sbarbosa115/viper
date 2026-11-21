@@ -3,7 +3,7 @@
 | Field   | Value |
 |---------|-------|
 | Status  | Draft |
-| Version | 0.1 |
+| Version | 0.2 |
 | Date    | 2026-11-20 |
 | Persona | Staff (Viper operator, initially the founder) |
 | Tests assumption | A-2: provider cost per qualified lead allows ≥ 60% gross margin; also the founder's monthly budget constraint |
@@ -145,13 +145,14 @@ Conventions used below:
 ### FR-7: Refunds reverse revenue
 **Story:** As Staff, I want refunds deducted so that revenue is real.
 **Rules:**
-- Billing handles Stripe's `charge.refunded` webhook: it finds the Purchase by the Checkout Session's payment intent (stored when the purchase is paid), and sets `refunded_cents` to the charge's `amount_refunded` (cumulative, so partial and repeated refunds are idempotent) and `refunded_at` to the event time.
+- Billing handles Stripe's `charge.refunded` webhook: it finds the Purchase by the Checkout Session's payment intent (stored when the purchase is paid). The charge's `amount_refunded` is cumulative: when it exceeds the purchase's stored `refunded_cents`, billing records a **refund row** with the difference, dated at the event time, and updates the cumulative total. A repeated or older event changes nothing.
 - Credits are **not** taken back automatically; Staff use a credit adjustment if needed (existing FR-13 of the first version). The back office Customer page is unchanged.
-- The P&L counts a refund as negative revenue in the month of `refunded_at`, net of tax: `refunded_cents × amount_cents / (amount_cents + tax_cents)`, rounded half up.
+- The P&L counts each refund row as negative revenue in the month it happened (so a later partial refund never rewrites an earlier month), net of tax: `refunded_cents × amount_cents / (amount_cents + tax_cents)`, rounded half up.
 **Errors / edge cases:** unknown payment intent → logged and acknowledged (200), nothing changes; same event twice → no change.
 **Acceptance criteria:**
 - Given a $99.00 purchase paid in November and fully refunded on 2026-12-03, then November revenue includes $99.00 and December shows a refund of −$99.00.
 - Given the same `charge.refunded` event delivered twice, then `refunded_cents` is unchanged by the second.
+- Given a $99.00 purchase refunded $40.00 on 2026-11-25 and then $59.00 more on 2026-12-03, then November shows a −$40.00 refund and December a −$59.00 refund, and November's figures don't change when the second refund arrives.
 
 ### FR-8: Provider invoices and the single-source rule
 **Story:** As Staff, I want to enter what each provider actually billed so that the P&L uses real costs and I see when the Rate card is wrong.
@@ -159,7 +160,7 @@ Conventions used below:
 - The Provider invoices tab lists, for the selected month, each provider with metered cost, a linked plan, or an invoice: metered cost, invoice or plan amount, gap, the amount that **counts in the P&L** and its source.
 - **Single-source rule:** for each provider and month exactly one amount counts:
   1. the **Provider invoice** for that month, if entered; else
-  2. the **linked plan**: the sum of Charges in the month of the bill that covers the provider (FR-2); else
+  2. the **linked plan**: the sum of Charges in the month of the bill that covers the provider (FR-2). A monthly plan applies only in a month where it has a Charge; a yearly plan applies in every month it is active (its amount appears in the month it's charged); else
   3. the **metered estimate** (FR-6).
   The provider's metered cost never counts on top of an invoice or a plan, and a plan's Charges count only through this rule (they are not added again as a plain bill).
 - An invoice is `{ amountCents (0..10,000,000), note? ≤ 200 }` per provider and month; saving again replaces it; deleting it reverts to plan or estimate. Invoices can be entered for the current month and any month since 2026-11.
@@ -339,6 +340,7 @@ Shared shapes:
 | finance_budgets | month char(7) PK, budget_cents int, set_at (snapshot per month, written when the month is first read or alerted, and on change for the current month) | | finance |
 | finance_settings | id tinyint PK (=1), monthly_budget_cents int default 30000, updated_by_member_id null, updated_at | | finance |
 | budget_alerts | month char(7), threshold tinyint (80, 100), spent_cents int, budget_cents int, sent_at; PK (month, threshold) | | finance |
+| purchase_refunds | id uuid PK, purchase_id FK, stripe_event_id varchar(255) unique, delta_cents int, refunded_at DATETIME(3); index (refunded_at), (purchase_id) | n–1 purchases | billing |
 | purchases (changed) | + stripe_payment_intent_id varchar(255) null unique, + refunded_cents int default 0, + refunded_at datetime null | | billing |
 
 Volume: < 200 expenses, < 20 providers × months. Retention: kept forever. Migration: none of the existing data changes; `stripe_payment_intent_id` is null for purchases made before the release (their refunds can't be matched and are logged, which is acceptable at today's volume).
@@ -388,7 +390,8 @@ Expected November P&L: the figures in FR-9's first criterion.
 - Months are UTC calendar months; history starts 2026-11-01.
 - Charges are derived on read rather than stored; deleting is blocked once a bill has charged (end it instead).
 - Budget counts everything, including One-offs; both thresholds crossed at once → one 100% email.
-- Budget alerts at 14:00 UTC (morning in the US).
+- Budget alerts at 14:00 UTC (morning in the US). The check records the alert and queues a `BudgetAlertRecorded` outbox event in one transaction; a consumer sends the emails and retries if SMTP fails.
+- The test hook `POST /api/test/jobs/budget-check` accepts `{ reset?: boolean }` to clear the current month's alerts (test stacks only).
 - New `finance` context rather than extending `reporting` (which is read-only) or `billing` (customer credits).
 
 ## 14. Risks & open questions
@@ -400,6 +403,7 @@ Expected November P&L: the figures in FR-9's first criterion.
 | Version | Date | Change |
 |---------|------|--------|
 | 0.1 | 2026-11-20 | Initial draft from the approved Expenses canvas |
+| 0.2 | 2026-11-21 | Review fixes: refunds stored as rows per event (FR-7, §8); budget alerts sent through the outbox; a plan counts only in months it charges (monthly) or covers (yearly); P&L reads 12 months with one range query per source |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |

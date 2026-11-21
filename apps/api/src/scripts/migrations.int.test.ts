@@ -43,6 +43,7 @@ const prdTables = [
   'reservations',
   'credit_packs',
   'purchases',
+  'purchase_refunds',
   'business_profiles',
   'products',
   'conversations',
@@ -97,6 +98,7 @@ describe('migrations: PRD section 8 schema', () => {
     expect(await uniqueKeys('email_tokens')).toContain('token_hash');
     expect(await uniqueKeys('credit_ledger')).toContain('idempotency_key');
     expect(await uniqueKeys('purchases')).toContain('stripe_payment_intent_id');
+    expect(await uniqueKeys('purchase_refunds')).toContain('stripe_event_id');
     expect(await uniqueKeys('expense_prices')).toContain('expense_id,effective_from');
     expect(await uniqueKeys('purchases')).toEqual(
       expect.arrayContaining(['stripe_session_id', 'stripe_event_id']),

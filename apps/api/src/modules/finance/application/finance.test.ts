@@ -9,6 +9,7 @@ import {
   staffActor,
   type FakeWorld,
 } from '../test/fakes.js';
+import { expensePatch } from '../http/expense-patch.js';
 import { pnlCsv, usd } from './pnl.js';
 
 function setup(now?: Date) {
@@ -61,7 +62,7 @@ describe('FR-13: Staff only', () => {
           amountCents: 1,
           spentOn: '2026-11-01',
         }),
-      () => uc.updateExpense.execute(ownerActor, 'x', { name: 'y' }),
+      () => uc.updateExpense.execute(ownerActor, 'x', expensePatch({ name: 'y' })),
       () =>
         uc.addExpensePrice.execute(ownerActor, 'x', {
           effectiveFrom: '2026-12-01',
@@ -199,7 +200,7 @@ describe('FR-2: Add a Recurring bill', () => {
     ]);
     expect(world.analytics.events[0]).toEqual({
       name: 'expense_created',
-      actor: { memberId: staffActor.memberId, businessId: staffActor.businessId },
+      actor: { memberId: staffActor.memberId, businessId: null },
       properties: {
         expense_id: created.id,
         kind: 'recurring',
@@ -406,9 +407,13 @@ describe('FR-3: price changes, edits, end, delete', () => {
     const { world, uc } = setup();
     const b = bill('Figma', 'other', 1500, '2026-11-20');
     world.store.add(b);
-    const updated = await uc.updateExpense.execute(staffActor, b.id, {
-      category: 'software_tools',
-    });
+    const updated = await uc.updateExpense.execute(
+      staffActor,
+      b.id,
+      expensePatch({
+        category: 'software_tools',
+      }),
+    );
     expect(updated.category).toBe('software_tools');
     expect(world.audit.entries).toEqual([
       expect.objectContaining({
@@ -422,26 +427,27 @@ describe('FR-3: price changes, edits, end, delete', () => {
 
   test('ending a bill is expense.ended; clearing endsOn resumes (expense.updated)', async () => {
     const { world, uc, id } = await resend();
-    expect((await uc.updateExpense.execute(staffActor, id, { endsOn: '2026-12-31' })).status).toBe(
-      'ending',
-    );
-    expect((await uc.updateExpense.execute(staffActor, id, { endsOn: null })).status).toBe(
-      'active',
-    );
+    expect(
+      (await uc.updateExpense.execute(staffActor, id, expensePatch({ endsOn: '2026-12-31' })))
+        .status,
+    ).toBe('ending');
+    expect(
+      (await uc.updateExpense.execute(staffActor, id, expensePatch({ endsOn: null }))).status,
+    ).toBe('active');
     expect(world.audit.actions()).toEqual(['expense.ended', 'expense.updated']);
     expect(world.audit.entries[1]?.details).toEqual({ endsOn: { from: '2026-12-31', to: null } });
   });
 
   test('no change writes no audit entry', async () => {
     const { world, uc, id } = await resend();
-    await uc.updateExpense.execute(staffActor, id, { name: 'Resend' });
+    await uc.updateExpense.execute(staffActor, id, expensePatch({ name: 'Resend' }));
     expect(world.audit.entries).toEqual([]);
   });
 
   test('a One-off field on a Recurring bill is 400 on that field; covering clashes are 409', async () => {
     const { world, uc, id } = await resend();
     expect(
-      await errorOf(uc.updateExpense.execute(staffActor, id, { amountCents: 100 })),
+      await errorOf(uc.updateExpense.execute(staffActor, id, expensePatch({ amountCents: 100 }))),
     ).toMatchObject({
       code: 'VALIDATION_ERROR',
       details: { amountCents: "Can't be changed on a Recurring bill" },
@@ -450,15 +456,21 @@ describe('FR-3: price changes, edits, end, delete', () => {
     const b = bill('Apify B', 'data_providers', 100, '2026-11-01', { endsOn: '2026-11-02' });
     world.store.add(a, b);
     expect(
-      await errorOf(uc.updateExpense.execute(staffActor, b.id, { coversProvider: 'apify' })),
+      await errorOf(
+        uc.updateExpense.execute(staffActor, b.id, expensePatch({ coversProvider: 'apify' })),
+      ),
     ).toMatchObject({
       code: 'PROVIDER_ALREADY_COVERED',
     });
-    const off = await uc.updateExpense.execute(staffActor, a.id, { coversProvider: null });
+    const off = await uc.updateExpense.execute(
+      staffActor,
+      a.id,
+      expensePatch({ coversProvider: null }),
+    );
     expect(off.coversProvider).toBeNull();
     expect(
-      (await uc.updateExpense.execute(staffActor, b.id, { coversProvider: 'apify' })).coversProvider
-        ?.name,
+      (await uc.updateExpense.execute(staffActor, b.id, expensePatch({ coversProvider: 'apify' })))
+        .coversProvider?.name,
     ).toBe('Apify');
   });
 
@@ -532,10 +544,14 @@ describe('FR-4: One-off expenses', () => {
   test('edits may change amount and date', async () => {
     const { world, uc } = setup();
     const created = await uc.createExpense.execute(staffActor, legal);
-    const edited = await uc.updateExpense.execute(staffActor, created.id, {
-      amountCents: 25000,
-      spentOn: '2026-11-13',
-    });
+    const edited = await uc.updateExpense.execute(
+      staffActor,
+      created.id,
+      expensePatch({
+        amountCents: 25000,
+        spentOn: '2026-11-13',
+      }),
+    );
     expect(edited).toMatchObject({ amount: { cents: 25000 }, startsOn: '2026-11-13' });
     expect(world.audit.entries.at(-1)?.details).toEqual({
       amountCents: { from: 30000, to: 25000 },
@@ -543,13 +559,19 @@ describe('FR-4: One-off expenses', () => {
     });
     expect(
       await errorOf(
-        uc.updateExpense.execute(staffActor, created.id, { cadence: 'monthly' } as never),
+        uc.updateExpense.execute(
+          staffActor,
+          created.id,
+          expensePatch({ cadence: 'monthly' } as never),
+        ),
       ),
     ).toMatchObject({
       code: 'VALIDATION_ERROR',
     });
     expect(
-      await errorOf(uc.updateExpense.execute(staffActor, created.id, { endsOn: '2026-12-01' })),
+      await errorOf(
+        uc.updateExpense.execute(staffActor, created.id, expensePatch({ endsOn: '2026-12-01' })),
+      ),
     ).toMatchObject({
       code: 'VALIDATION_ERROR',
       details: { endsOn: "Can't be changed on a One-off expense" },
@@ -812,6 +834,53 @@ describe('FR-9: P&L', () => {
         properties: { month: '2026-11', is_current_month: true },
       }),
     ]);
+  });
+
+  test('NFR-1: 12 trend months read with one range call each to billing and tools', async () => {
+    const { world, uc } = setup(new Date('2027-10-20T12:00:00Z'));
+    world.billing.add({ amountCents: 4900, paidAt: new Date('2027-03-06T15:00:00Z') });
+    world.tools.add('Twilio', 900_000, new Date('2027-05-02T10:00:00Z'));
+    const pnl = await uc.getPnl.execute(staffActor, { month: '2027-10' });
+    expect(world.billing.calls).toBe(1);
+    expect(world.tools.rangeCalls).toBe(1);
+    expect(world.tools.providerCalls).toBeLessThanOrEqual(1);
+    const byMonth = new Map(pnl.trend.map((t) => [t.month, t]));
+    expect(byMonth.get('2027-03')?.revenue?.cents).toBe(4900);
+    expect(byMonth.get('2027-05')?.expenses?.cents).toBe(90);
+    expect(byMonth.get('2027-04')?.revenue?.cents).toBe(0);
+  });
+
+  test('finance analytics carry businessId null, even while Acting as', async () => {
+    const { world, uc } = setup();
+    const actingAs = {
+      ...staffActor,
+      businessId: '00000000-0000-4000-8000-0000000000cc',
+      actingAs: {
+        businessId: '00000000-0000-4000-8000-0000000000cc',
+        businessName: 'Corner Coffee',
+        staffMemberId: staffActor.memberId,
+      },
+    };
+    await uc.getPnl.execute(actingAs, {});
+    await uc.exportPnlCsv.execute(actingAs, { from: '2026-11', to: '2026-11' });
+    await uc.saveProviderInvoice.execute(actingAs, 'twilio', '2026-11', { amountCents: 100 });
+    const created = await uc.createExpense.execute(actingAs, {
+      kind: 'recurring',
+      name: 'Resend',
+      vendor: 'Resend',
+      category: 'email',
+      amountCents: 2000,
+      cadence: 'monthly',
+      startsOn: '2026-11-18',
+    });
+    await uc.addExpensePrice.execute(actingAs, created.id, {
+      effectiveFrom: '2026-12-18',
+      amountCents: 2500,
+    });
+    expect(world.analytics.events.length).toBe(5);
+    for (const e of world.analytics.events) {
+      expect(e.actor, e.name).toEqual({ memberId: staffActor.memberId, businessId: null });
+    }
   });
 
   test('a month with no data: every line $0.00, margin null', async () => {

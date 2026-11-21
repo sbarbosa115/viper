@@ -10,6 +10,7 @@ import {
   TODAY,
 } from '../test/factories.js';
 import { budgetProgress, thresholdsReached } from './budget.js';
+import type { CalendarDay } from './calendar.js';
 import type { Expense } from './expense.js';
 import {
   biggestItems,
@@ -482,6 +483,95 @@ describe('FR-8: provider invoices and the single-source rule', () => {
         invoices: [],
       })[0]?.counted,
     ).toEqual({ source: 'plan', amountCents: 0, category: 'data_providers' });
+  });
+
+  test('a monthly plan ending in the month before its charge date leaves the estimate', () => {
+    const plan = bill('Apify Starter', 'data_providers', 4900, '2026-11-03', {
+      coversProvider: 'Apify',
+      endsOn: '2026-12-02',
+    });
+    const december = (today: CalendarDay) =>
+      providerLines({
+        month: '2026-12',
+        today,
+        expenses: [plan],
+        metered: [{ provider: 'Apify', micros: centsToMicros(3000) }],
+        invoices: [],
+      })[0];
+    expect(december('2026-12-20')).toMatchObject({
+      plan: null,
+      counted: { source: 'estimate', amountCents: 3000, category: 'data_providers' },
+      planUsedPct: null,
+    });
+    expect(december('2026-12-01')?.counted.source).toBe('estimate');
+    const m = computeMonth({
+      month: '2026-12',
+      today: '2026-12-20',
+      expenses: [plan],
+      data: { ...EMPTY_MONTH, metered: [{ provider: 'Apify', micros: centsToMicros(3000) }] },
+    });
+    expect(m.costOfRevenueCents).toBe(3000);
+    expect(m.items.find((i) => i.category === 'data_providers')).toMatchObject({
+      item: 'Apify',
+      source: 'estimate',
+      amountCents: 3000,
+    });
+  });
+
+  test('a monthly plan before its charge date in the current month leaves the estimate', () => {
+    const plan = bill('Apify Starter', 'data_providers', 4900, '2026-11-03', {
+      coversProvider: 'Apify',
+    });
+    const row = (today: CalendarDay) =>
+      providerLines({
+        month: '2026-12',
+        today,
+        expenses: [plan],
+        metered: [{ provider: 'Apify', micros: centsToMicros(500) }],
+        invoices: [],
+      })[0]?.counted;
+    expect(row('2026-12-02')).toMatchObject({ source: 'estimate', amountCents: 500 });
+    expect(row('2026-12-03')).toMatchObject({ source: 'plan', amountCents: 4900 });
+  });
+
+  test('a mid-month switch: both plans charged count, the later one names the row', () => {
+    const old = bill('Apify Starter', 'data_providers', 4900, '2026-11-03', {
+      coversProvider: 'Apify',
+      endsOn: '2026-12-10',
+    });
+    const next = bill('Apify Scale', 'data_providers', 9900, '2026-12-11', {
+      coversProvider: 'Apify',
+    });
+    const [row] = providerLines({
+      month: '2026-12',
+      today: '2026-12-20',
+      expenses: [old, next],
+      metered: [],
+      invoices: [],
+    });
+    expect(row?.plan).toMatchObject({ name: 'Apify Scale', amountCents: 14800 });
+  });
+
+  test('a yearly plan covers a month only while active at its cutoff; ended mid-month → estimate', () => {
+    const yearly = bill('Apify yearly', 'data_providers', 40000, '2026-11-01', {
+      coversProvider: 'Apify',
+      cadence: 'yearly',
+      endsOn: '2027-03-15',
+    });
+    const counted = (m: string, today: CalendarDay) =>
+      providerLines({
+        month: m,
+        today,
+        expenses: [yearly],
+        metered: [{ provider: 'Apify', micros: centsToMicros(300) }],
+        invoices: [],
+      })[0]?.counted;
+    expect(counted('2027-02', '2027-04-01')).toMatchObject({ source: 'plan', amountCents: 0 });
+    expect(counted('2027-03', '2027-04-01')).toMatchObject({
+      source: 'estimate',
+      amountCents: 300,
+    });
+    expect(counted('2027-03', '2027-03-10')).toMatchObject({ source: 'plan', amountCents: 0 });
   });
 
   test('a plan alone shows a row even without usage; an ended plan stops covering', () => {

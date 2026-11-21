@@ -12,7 +12,13 @@ import {
   type SpendItem,
 } from '../domain/pnl.js';
 import type { FinanceContext } from './ports.js';
-import { currentMonthOf, requireStaff, resolveMonth, todayOf } from './rules.js';
+import {
+  currentMonthOf,
+  requireStaff,
+  resolveMonth,
+  staffAnalyticsActor,
+  todayOf,
+} from './rules.js';
 import { Statements } from './statements.js';
 import { budgetView, pnlView } from './views.js';
 
@@ -28,7 +34,7 @@ export class GetPnl {
     const statement = await new Statements(this.ctx).pnl(month);
     await this.ctx.analytics.track({
       name: 'pnl_viewed',
-      actor: { memberId: actor.memberId, businessId: actor.businessId },
+      actor: staffAnalyticsActor(actor),
       properties: { month, is_current_month: statement.monthToDate },
     });
     return pnlView(statement);
@@ -113,7 +119,7 @@ export class ExportPnlCsv {
     );
     await this.ctx.analytics.track({
       name: 'pnl_exported',
-      actor: { memberId: actor.memberId, businessId: actor.businessId },
+      actor: staffAnalyticsActor(actor),
       properties: { from_month: query.from, to_month: query.to },
     });
     return {
@@ -184,8 +190,12 @@ export class BudgetService {
   constructor(private readonly ctx: Ctx) {}
 
   /** Month to date, the same numbers the P&L shows; writes the month's Budget snapshot. */
-  async currentMonthSpend(): Promise<MonthSpend> {
-    const month = currentMonthOf(this.ctx.clock);
+  currentMonthSpend(): Promise<MonthSpend> {
+    return this.monthSpend(currentMonthOf(this.ctx.clock));
+  }
+
+  /** A month's spend so far against its Budget (the alert email may go out after month end). */
+  async monthSpend(month: MonthKey): Promise<MonthSpend> {
     const statements = new Statements(this.ctx);
     const [statement, budgetCents, alertsSent] = await Promise.all([
       statements.month(month),

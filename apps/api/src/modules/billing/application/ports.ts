@@ -54,6 +54,17 @@ export interface PurchaseRepository {
   findBySessionIdForUpdate(sessionId: string): Promise<Purchase | null>;
   findByPaymentIntentIdForUpdate(paymentIntentId: string): Promise<Purchase | null>;
   save(purchase: Purchase): Promise<void>;
+  /** Adds one refund row; returns false (writing nothing) when its Stripe event id exists. */
+  addRefund(refund: PurchaseRefund): Promise<boolean>;
+}
+
+/** One increase of a Purchase's cumulative refunded amount, from one Stripe event. */
+export interface PurchaseRefund {
+  id: string;
+  purchaseId: string;
+  stripeEventId: string;
+  deltaCents: number;
+  refundedAt: Date;
 }
 
 /** Outbox events billing publishes (a subset of the shared outbox event map). */

@@ -7,12 +7,13 @@ import { createAuditLog } from '../../platform/index.js';
 import { Expense } from '../domain/expense.js';
 import { bill, NOW, oneOff, STAFF_ID } from '../test/factories.js';
 import { KyselyFinanceStore } from './kysely-finance.js';
+import { KyselyOutbox } from '../../../shared/infrastructure/outbox/index.js';
 
 const db = createDatabase(process.env.DATABASE_URL_TEST ?? '');
 const clock = new FixedClock(NOW);
 const ids = new Uuid7Generator();
 const audit = createAuditLog({ db, clock, ids });
-const store = new KyselyFinanceStore(db, audit);
+const store = new KyselyFinanceStore(db, audit, new KyselyOutbox(ids, clock));
 
 const TABLES = [
   'expense_prices',

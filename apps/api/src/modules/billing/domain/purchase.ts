@@ -111,12 +111,13 @@ export class Purchase {
   /**
    * A refund from Stripe's `charge.refunded` (FR-7). `refundedCents` is the charge's cumulative
    * amount, so a repeated or older event changes nothing: it only ever grows. Credits stay.
-   * Returns false when nothing changed.
+   * Returns the increase (the refund to record as a row), 0 when nothing changed.
    */
-  recordRefund(props: { refundedCents: number; now: Date }): boolean {
-    if (!this.isPaid || props.refundedCents <= this.s.refundedCents) return false;
+  recordRefund(props: { refundedCents: number; now: Date }): number {
+    if (!this.isPaid || props.refundedCents <= this.s.refundedCents) return 0;
+    const delta = props.refundedCents - this.s.refundedCents;
     this.s = { ...this.s, refundedCents: props.refundedCents, refundedAt: props.now };
-    return true;
+    return delta;
   }
 
   toSnapshot(): PurchaseSnapshot {

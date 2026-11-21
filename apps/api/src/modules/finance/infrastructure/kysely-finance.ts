@@ -1,5 +1,6 @@
 import type { Kysely, Selectable, Transaction } from 'kysely';
 import type { DB } from '../../../shared/infrastructure/db/schema.js';
+import type { Outbox } from '../../../shared/infrastructure/outbox/index.js';
 import type {
   BudgetRepository,
   ExpenseRepository,
@@ -83,6 +84,19 @@ class KyselyExpenseRepository implements ExpenseRepository {
       };
       return Expense.restore(snapshot);
     });
+  }
+
+  /**
+   * The finance_settings row (id 1, written by the init migration) is the coverage mutex: FOR
+   * UPDATE holds it until the transaction ends, so concurrent coverage checks run one at a time.
+   */
+  async lockCoverage(): Promise<void> {
+    await this.db
+      .selectFrom('finance_settings')
+      .select('id')
+      .where('id', '=', 1)
+      .forUpdate()
+      .execute();
   }
 
   async save(expense: Expense): Promise<void> {
@@ -299,20 +313,23 @@ const repos = (db: Db) => ({
 
 /** finance's tables on MySQL. A unit of work is one transaction, with its Audit entries. */
 export class KyselyFinanceStore implements FinanceStore {
-  readonly read: Omit<FinanceRepos, 'audit'>;
+  readonly read: Omit<FinanceRepos, 'audit' | 'events'>;
 
   constructor(
     private readonly db: Kysely<DB>,
     private readonly audit: FinanceAudit,
+    private readonly outbox: Outbox,
   ) {
     this.read = repos(db);
   }
 
   run<T>(fn: (repos: FinanceRepos) => Promise<T>): Promise<T> {
-    return this.db
-      .transaction()
-      .execute((trx) =>
-        fn({ ...repos(trx), audit: { record: (entry) => this.audit.record(entry, trx) } }),
-      );
+    return this.db.transaction().execute((trx) =>
+      fn({
+        ...repos(trx),
+        audit: { record: (entry) => this.audit.record(entry, trx) },
+        events: { publish: (type, payload) => this.outbox.add(trx, type, payload) },
+      }),
+    );
   }
 }

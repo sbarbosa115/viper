@@ -13,6 +13,7 @@ import type {
   CreditsSummary,
   LedgerCursor,
   MonthlyRevenue,
+  PurchaseRefund,
   TrialCreditsSetting,
 } from '../application/ports.js';
 
@@ -22,6 +23,7 @@ export interface BillingState {
   reservations: ReservationSnapshot[];
   packs: CreditPackSnapshot[];
   purchases: PurchaseSnapshot[];
+  refunds: PurchaseRefund[];
   events: { type: keyof BillingEvents; payload: BillingEvents[keyof BillingEvents] }[];
 }
 
@@ -35,7 +37,14 @@ const newer = (a: LedgerCursor, b: LedgerCursor) =>
  * back on error.
  */
 export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
-  state: BillingState = { ledger: [], reservations: [], packs: [], purchases: [], events: [] };
+  state: BillingState = {
+    ledger: [],
+    reservations: [],
+    packs: [],
+    purchases: [],
+    refunds: [],
+    events: [],
+  };
   private queue: Promise<unknown> = Promise.resolve();
 
   /** `audit` receives the Audit entries written inside a transaction (a failed write rolls back). */
@@ -107,19 +116,20 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
             ]
           : [],
       ),
-      refunds: purchases.flatMap((p) =>
-        p.refundedCents > 0 && within(p.refundedAt)
+      refunds: this.state.refunds.flatMap((r) => {
+        const p = purchases.find((x) => x.id === r.purchaseId);
+        return p && within(r.refundedAt)
           ? [
               {
                 purchaseId: p.id,
-                refundedCents: p.refundedCents,
+                refundedCents: r.deltaCents,
                 amountCents: p.amountCents,
                 taxCents: p.taxCents,
-                refundedAt: p.refundedAt,
+                refundedAt: r.refundedAt,
               },
             ]
-          : [],
-      ),
+          : [];
+      }),
     });
   }
 
@@ -219,6 +229,13 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
         findByPaymentIntentIdForUpdate: (intent) => {
           const found = s().purchases.find((p) => p.stripePaymentIntentId === intent);
           return Promise.resolve(found ? Purchase.restore(structuredClone(found)) : null);
+        },
+        addRefund: (refund) => {
+          if (s().refunds.some((r) => r.stripeEventId === refund.stripeEventId)) {
+            return Promise.resolve(false);
+          }
+          s().refunds.push({ ...refund });
+          return Promise.resolve(true);
         },
         save: (purchase) => {
           const snap = purchase.toSnapshot();

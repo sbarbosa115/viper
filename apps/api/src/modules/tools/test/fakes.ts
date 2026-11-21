@@ -135,6 +135,20 @@ export class InMemoryToolCallRepository implements ToolCallRepository {
         .map(([toolKey, micros]) => ({ toolKey, micros })),
     );
   }
+  costByToolMonthBetween(window: {
+    from: Date;
+    to: Date;
+  }): Promise<{ toolKey: string; month: string; micros: number }[]> {
+    const cost = new Map<string, { toolKey: string; month: string; micros: number }>();
+    for (const r of this.rows) {
+      if (r.createdAt < window.from || r.createdAt >= window.to) continue;
+      const month = r.createdAt.toISOString().slice(0, 7);
+      const key = `${r.toolKey}|${month}`;
+      const entry = cost.get(key) ?? { toolKey: r.toolKey, month, micros: 0 };
+      cost.set(key, { ...entry, micros: entry.micros + r.providerCostMicros });
+    }
+    return Promise.resolve([...cost.values()].filter((c) => c.micros > 0));
+  }
   statsSince(since: Date): Promise<Map<string, ToolStats>> {
     const stats = new Map<string, ToolStats>();
     const counted = this.rows
