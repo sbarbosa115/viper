@@ -35,6 +35,7 @@ import type {
   ToolCatalogPort,
   ToolRunnerPort,
 } from './application/ports.js';
+import { ResearchSupportQueries } from './application/support-queries.js';
 import { RunExecutor } from './application/run-executor.js';
 import { RunEmails } from './application/run-emails.js';
 import { RunUseCases } from './application/runs.js';
@@ -51,7 +52,7 @@ import {
   RESEARCH_RUNS_QUEUE,
 } from './infrastructure/bullmq.js';
 import { KyselyResearchStore } from './infrastructure/kysely-research-store.js';
-import { seedDemoRun, type ResearchDemoIds } from './infrastructure/seed.js';
+import { seedDemoRun, seedFailedRun, type ResearchDemoIds } from './infrastructure/seed.js';
 
 export type {
   AuditPort,
@@ -77,6 +78,7 @@ export type {
   ToolCatalogPort,
   ToolRunnerPort,
 } from './application/ports.js';
+export type { SupportRun } from './application/support-queries.js';
 export { LOCAL_BUYERS_KEY, LOCAL_BUYERS_V1, TOOL_KEYS } from './domain/local-buyers.js';
 export { fakeResearchAgent, isResearchRequest } from './infrastructure/fake-research-agent.js';
 export { RESEARCH_EMAILS_QUEUE, RESEARCH_RUNS_QUEUE } from './infrastructure/bullmq.js';
@@ -185,6 +187,15 @@ export function createResearchReportingQueries(deps: {
   return new ResearchReportingQueries(new KyselyResearchStore(deps.db, deps));
 }
 
+/** research's reads for support's run picker and ticket view: MySQL alone, no collaborators. */
+export function createResearchSupportQueries(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+}): ResearchSupportQueries {
+  return new ResearchSupportQueries(new KyselyResearchStore(deps.db, deps));
+}
+
 /** The same module on storage and fakes the caller provides (other modules' and HTTP tests). */
 export function createResearchWith(deps: AssembleDeps): Research {
   return assemble(deps);
@@ -274,7 +285,8 @@ export function registerResearchWorkers(deps: ResearchWorkerDeps): Worker[] {
 /**
  * Demo data (PRD section 8a), idempotent: Flow template "Local buyers" v1 (default) and one
  * completed run of "Bakeries near Austin" for Sweet Supply Co (25 Leads, 137 credits; the Leads
- * are seeded by the leads module with `demo.runs.bakeriesNearAustin`). Runs before planning
+ * are seeded by the leads module with `demo.runs.bakeriesNearAustin`), plus one failed run of the
+ * same Plan (stopped at Websites, 0 credits charged; the support demo's linked run). Runs before planning
  * seeds the Plan: modules share ids, not foreign keys.
  */
 export async function seed(deps: {
@@ -298,4 +310,5 @@ export async function seed(deps: {
   });
   await flows.ensureTemplate(LOCAL_BUYERS_V1, true);
   await seedDemoRun({ store, clock, ids, demo: deps.demo });
+  await seedFailedRun({ store, clock, ids, demo: deps.demo });
 }

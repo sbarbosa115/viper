@@ -3,7 +3,7 @@
 | Field   | Value |
 |---------|-------|
 | Status  | Draft |
-| Version | 0.2 |
+| Version | 0.3 |
 | Date    | 2026-11-21 |
 | Persona | Sam, Maria and team members (customers); Staff (the founder) |
 | Tests assumption | None directly. Supports A-5 (trial-to-paid: a stuck trial customer who can't reach anyone won't buy) and A-1 (tickets about wrong leads are direct quality evidence) |
@@ -392,6 +392,7 @@ All names and text are invented.
 - Linked run limited to the Business's runs from the last 90 days; the Lead list's Report a problem links the Plan's latest run.
 - Business hours Mon–Fri 09:00–17:00 America/Chicago, no holidays, for the first-reply metric.
 - Ticket numbers are global (not per Business), starting at 1001.
+- Seed and tests use the real "Local buyers" flow: the seeded failed run stops at step 05 "Websites" (the mocks' "03 Website reader" was illustrative copy, not a UI change).
 - Help is a 5th mobile tab; on desktop it sits in the rail above the back-office shield. Support is second in the back-office nav.
 - Internal notes and assignment are Staff-only events; customers see status changes only.
 - New `support` context rather than extending identity or platform.
@@ -407,6 +408,7 @@ All names and text are invented.
 |---------|------|--------|
 | 0.1 | 2026-11-21 | Initial draft from the approved Support Tickets canvas |
 | 0.2 | 2026-11-21 | Build preflight: `members.role` only allowed `owner` (team members aren't built yet), so W0 widens it to `owner`/`member`; identity seeds Jo Kim as a Member and research seeds the failed run; support seeds only Tickets |
+| 0.3 | 2026-11-21 | Build W1: the session actor now carries `member` (not `owner`) for a non-Owner Member, so the visibility rule works; existing Owner-only checks (Plans, Leads, research, credits) therefore answer 403 for such Members until team members ship. Support emails use the display name "Llyner Leads Support" via a new optional `fromName` on email messages |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |

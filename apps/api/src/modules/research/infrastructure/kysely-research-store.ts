@@ -326,6 +326,19 @@ class KyselyRunRepository implements RunRepository {
     return rows.map(toRun);
   }
 
+  async recentForBusiness(businessId: string, since: Date, limit: number): Promise<ResearchRun[]> {
+    const rows = await this.db
+      .selectFrom('research_runs')
+      .selectAll()
+      .where('business_id', '=', businessId)
+      .where('queued_at', '>=', since)
+      .orderBy('queued_at', 'desc')
+      .orderBy('id', 'desc')
+      .limit(limit)
+      .execute();
+    return rows.map(toRun);
+  }
+
   async recentCompletedCredits(flowKey: string, limit: number): Promise<number[]> {
     const rows = await this.db
       .selectFrom('research_runs as r')

@@ -6,6 +6,7 @@ import { InMemoryEmailSender } from '../../../shared/infrastructure/email/in-mem
 import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
 import { SequentialIdGenerator } from '../../../shared/infrastructure/time/uuid7.js';
 import { identityQueriesFrom } from '../application/queries.js';
+import { identitySupportQueriesFrom } from '../application/support-queries.js';
 import { createIdentityUseCases } from '../application/use-cases.js';
 import { Business } from '../domain/business.js';
 import { EmailToken } from '../domain/email-token.js';
@@ -424,5 +425,102 @@ describe('prd-expenses FR-12: staffRecipients (MySQL)', () => {
     expect((await identityQueriesFrom(services()).staffRecipients()).map((r) => r.email)).toEqual([
       'owner3@example.com',
     ]);
+  });
+});
+
+describe('prd-support FR-3: identity reads for support (MySQL)', () => {
+  async function addTeamMember(businessId: string, n: number) {
+    const base = Member.registerOwner({
+      id: ids.next(),
+      businessId,
+      email: `member${n}@example.com`,
+      name: `Member ${n}`,
+      passwordHash: 'hash',
+      now,
+    });
+    const member = Member.restore({ ...base.toSnapshot(), role: 'member' });
+    await repos().members.save(member);
+    return member;
+  }
+  const support = () => identitySupportQueriesFrom(services(), identityQueriesFrom(services()));
+
+  test('memberSummaries returns id, name, email, Business, role and Staff flag; unknown ids are left out', async () => {
+    const owner = await seedOwner(1);
+    const staff = await seedOwner(2);
+    staff.member.grantStaff();
+    await repos().members.save(staff.member);
+    const teammate = await addTeamMember(owner.business.id, 3);
+
+    const found = await support().memberSummaries([
+      owner.member.id,
+      teammate.id,
+      staff.member.id,
+      'unknown',
+    ]);
+    expect(found.sort((a, b) => a.email.localeCompare(b.email))).toEqual([
+      {
+        id: teammate.id,
+        name: 'Member 3',
+        email: 'member3@example.com',
+        businessId: owner.business.id,
+        role: 'member',
+        isStaff: false,
+      },
+      {
+        id: owner.member.id,
+        name: 'Owner 1',
+        email: 'owner1@example.com',
+        businessId: owner.business.id,
+        role: 'owner',
+        isStaff: false,
+      },
+      {
+        id: staff.member.id,
+        name: 'Owner 2',
+        email: 'owner2@example.com',
+        businessId: staff.business.id,
+        role: 'owner',
+        isStaff: true,
+      },
+    ]);
+    expect(await support().memberSummaries([])).toEqual([]);
+  });
+
+  test("staffMembers lists only Staff; staffRecipients is identity's existing list", async () => {
+    const a = await seedOwner(1);
+    await seedOwner(2);
+    a.member.grantStaff();
+    await repos().members.save(a.member);
+    expect(await support().staffMembers()).toEqual([
+      { id: a.member.id, name: 'Owner 1', email: 'owner1@example.com' },
+    ]);
+    expect(await support().staffRecipients()).toEqual([
+      { memberId: a.member.id, email: 'owner1@example.com', name: 'Owner 1' },
+    ]);
+  });
+
+  test('businessNames returns names for known ids only', async () => {
+    const a = await seedOwner(1);
+    const b = await seedOwner(2);
+    const names = await support().businessNames([a.business.id, b.business.id, 'unknown']);
+    expect(names.sort((x, y) => x.name.localeCompare(y.name))).toEqual([
+      { id: a.business.id, name: 'Business 1' },
+      { id: b.business.id, name: 'Business 2' },
+    ]);
+  });
+
+  test('a second Member in a Business does not duplicate it or replace its Owner', async () => {
+    const owner = await seedOwner(1);
+    await addTeamMember(owner.business.id, 2);
+    const queries = identityQueriesFrom(services());
+    expect((await queries.getOwnerContact(owner.business.id))?.email).toBe('owner1@example.com');
+    expect((await repos().members.findOwnersOf([owner.business.id])).map((m) => m.email)).toEqual([
+      'owner1@example.com',
+    ]);
+    expect((await queries.allBusinesses()).map((b) => b.ownerEmail)).toEqual([
+      'owner1@example.com',
+    ]);
+    const list = await services().directory.list({ limit: 10, sort: 'signedUp' });
+    expect(list.items).toHaveLength(1);
   });
 });

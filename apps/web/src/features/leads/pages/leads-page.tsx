@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError } from '../../../shared/api/client';
 import { Button, ErrorState, KeyboardHint, Select, Skeleton, SplitView } from '../../../shared/ui';
 import { useLead, useLeadList, usePlan, usePlanChoices, usePlanRuns } from '../api/hooks';
@@ -35,6 +35,7 @@ function LeadsView({ planId }: { planId: string }) {
   const plans = usePlanChoices();
   const runs = usePlanRuns(planId);
   const phone = useIsPhone();
+  const { pathname } = useLocation();
 
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
   const stats = list.data?.pages[0]?.stats;
@@ -77,6 +78,13 @@ function LeadsView({ planId }: { planId: string }) {
     return <ErrorState title={copy.planNotFound} description={copy.planNotFoundBody} />;
   }
 
+  // FR-3: the Plan's latest run (the API lists runs newest first), or none when there is no run.
+  const latestRunId = runs.data?.items[0]?.id;
+  const reportQuery = new URLSearchParams({
+    ...(latestRunId ? { runId: latestRunId } : {}),
+    source: 'leads',
+    from: `/app${pathname}`,
+  }).toString();
   const csv = `/api/plans/${planId}/leads.csv?${filtersToQuery(filters).toString()}`;
   const active = hasActiveFilters(filters);
 
@@ -105,10 +113,16 @@ function LeadsView({ planId }: { planId: string }) {
           ))}
         </Select>
       </div>
+      <Link
+        to={`/support/new?${reportQuery}`}
+        className="ml-auto inline-flex h-10 items-center rounded-control px-3 text-sm text-muted underline hover:text-fg"
+      >
+        Report a problem
+      </Link>
       <a
         href={csv}
         download
-        className="ml-auto inline-flex h-10 items-center rounded-control border border-line-control px-4 text-sm font-medium text-fg hover:bg-surface"
+        className="inline-flex h-10 items-center rounded-control border border-line-control px-4 text-sm font-medium text-fg hover:bg-surface"
       >
         {copy.exportCsv}
       </a>

@@ -130,6 +130,8 @@ export interface RunRepository {
   ): Promise<ResearchRun[]>;
   /** The newest run of each Plan (planning's PlanActivity.lastRuns). */
   latestForPlans(businessId: string, planIds: readonly string[]): Promise<ResearchRun[]>;
+  /** The Business's runs queued at or after `since`, newest first (support's run picker). */
+  recentForBusiness(businessId: string, since: Date, limit: number): Promise<ResearchRun[]>;
   /** Credits spent by the last 20 completed runs of the flow with ≥ 1 Lead, newest first. */
   recentCompletedCredits(flowKey: string, limit: number): Promise<number[]>;
   /** Retrying runs whose next attempt is due before `before` (the sweeper re-queues them). */

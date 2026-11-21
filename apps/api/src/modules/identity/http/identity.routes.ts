@@ -151,6 +151,7 @@ export function identityRoutes(
         actor: req.actor,
         token: readSessionToken(req),
         businessId: req.body.businessId,
+        ticketNumber: req.body.ticketNumber,
       }),
   );
 

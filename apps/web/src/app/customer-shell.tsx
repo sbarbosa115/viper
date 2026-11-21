@@ -45,18 +45,18 @@ function Rail({ me }: { me: Me }) {
           aria-label={t(n.label)}
           title={t(n.label)}
           aria-current={current === n.section ? 'page' : undefined}
-          className={cx(item, current === n.section && 'bg-raised text-fg')}
+          className={cx(
+            item,
+            current === n.section && 'bg-raised text-fg',
+            // Help sits at the bottom of the rail, above the back-office shield (prd-support FR-1).
+            n.section === 'help' && 'mt-auto',
+          )}
         >
           <Icon name={n.icon} />
         </Link>
       ))}
       {showStaff && (
-        <Link
-          to="/staff"
-          aria-label={t('nav.staff')}
-          title={t('nav.staff')}
-          className={cx(item, 'mt-auto')}
-        >
+        <Link to="/staff" aria-label={t('nav.staff')} title={t('nav.staff')} className={item}>
           <Icon name="staff" />
         </Link>
       )}
@@ -131,7 +131,7 @@ function TabBar() {
   return (
     <nav
       aria-label={t('nav.mobile')}
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-bg pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-bg pb-[env(safe-area-inset-bottom)]"
     >
       {customerNav.map((n) => (
         <Link

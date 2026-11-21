@@ -381,7 +381,7 @@ describe('KyselyResearchStore (MySQL)', () => {
     expect((await f.store.transaction((tx) => tx.runs.find(run.id)))?.status).toBe('queued');
   });
 
-  test('section 8a: the seed writes "Local buyers" v1 and the completed demo run, idempotently', async () => {
+  test('section 8a: the seed writes "Local buyers" v1 and the completed and the failed demo runs, idempotently', async () => {
     const demo = {
       businesses: { sweetSupply: BUSINESS },
       members: { owner: '00000000-0000-7000-8000-00000000d101' },
@@ -400,12 +400,16 @@ describe('KyselyResearchStore (MySQL)', () => {
       is_template: 1,
     });
     const runs = await db.selectFrom('research_runs').selectAll().execute();
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({
-      status: 'completed',
+    expect(runs).toHaveLength(2);
+    expect(runs.find((r) => r.status === 'completed')).toMatchObject({
       leads_delivered: 25,
       credits_spent: 137,
       millicredits_spent: 136_200,
+      plan_id: PLAN,
+    });
+    expect(runs.find((r) => r.status === 'failed')).toMatchObject({
+      leads_delivered: 0,
+      credits_spent: 0,
       plan_id: PLAN,
     });
     expect(await db.selectFrom('outbox').selectAll().execute()).toEqual([]);

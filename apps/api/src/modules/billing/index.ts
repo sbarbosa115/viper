@@ -84,6 +84,27 @@ export type BillingQueries = Pick<
   | 'revenueForMonths'
 >;
 
+/** billing's read for the support module (`BillingForSupport`). */
+export interface BillingSupportQueries {
+  /** The Business's available credits: what the header pill shows (balance minus holds). */
+  balanceFor(businessId: string): Promise<number>;
+}
+
+/** billing's reads for support on MySQL alone (no gateway, no audit). */
+export function createBillingSupportQueries(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+}): BillingSupportQueries {
+  const uow = kyselyUnitOfWork(deps.db, deps.clock, deps.ids, new RecordingAuditRecorder());
+  return {
+    async balanceFor(businessId) {
+      const wallet = await uow.run(({ wallets }) => wallets.totals(businessId));
+      return wallet.available;
+    },
+  };
+}
+
 /** The HTTP module's shape (matches app.ts AppModule). */
 export interface BillingHttpModule {
   readonly name: 'billing';

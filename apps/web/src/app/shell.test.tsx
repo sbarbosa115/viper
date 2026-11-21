@@ -107,7 +107,7 @@ describe('app: customer shell', () => {
       within(tabs)
         .getAllByRole('link')
         .map((l) => l.textContent),
-    ).toEqual(['Chat', 'Plans', 'Leads', 'Credits']);
+    ).toEqual(['Chat', 'Plans', 'Leads', 'Credits', 'Help']);
     expect(within(tabs).getByRole('link', { name: 'Credits' })).toHaveAttribute(
       'aria-current',
       'page',

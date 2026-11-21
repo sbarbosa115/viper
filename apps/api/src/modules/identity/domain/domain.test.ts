@@ -209,6 +209,13 @@ describe('FR-5: Staff two-factor (domain)', () => {
   });
 });
 
+test('prd-support: a non-Owner Member gets the member role, not owner', () => {
+  const s = Session.start({ id: 's', memberId: 'm1', now });
+  const jo = Member.restore({ ...owner().toSnapshot(), role: 'member' });
+  const access = sessionAccess({ session: s, member: jo, actingAs: null });
+  expect(access.kind === 'full' && access.actor.roles).toEqual(['member']);
+});
+
 describe('FR-6: Acting as (domain)', () => {
   const target = Business.create({ id: 'b2', name: 'Clean Desk Co', now });
   const targetOwner = Member.registerOwner({

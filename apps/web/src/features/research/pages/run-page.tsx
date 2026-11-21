@@ -1,6 +1,6 @@
 import type { RunSummary } from '@app/contracts/research';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { z } from 'zod';
 import { ApiError } from '../../../shared/api/client';
 import { Banner, Button, Dialog, ErrorState, Skeleton } from '../../../shared/ui';
@@ -24,6 +24,22 @@ const linkButton =
   'inline-flex h-10 items-center justify-center whitespace-nowrap rounded-control px-4 text-sm';
 const primaryLink = `${linkButton} bg-accent font-semibold text-accent-ink hover:bg-accent-hover`;
 const secondaryLink = `${linkButton} border border-line-control font-medium text-fg hover:bg-surface`;
+
+/** FR-3: opens a ticket with this run attached; `from` carries the app path (basename /app). */
+const reportNote = 'Report a problem opens a ticket with this run attached.';
+
+function ReportLink({ runId }: { runId: string }) {
+  const { pathname } = useLocation();
+  const query = new URLSearchParams({ runId, source: 'run', from: `/app${pathname}` });
+  return (
+    <Link
+      to={`/support/new?${query.toString()}`}
+      className="inline-flex h-11 w-full items-center justify-center rounded-control text-sm text-fg-2 hover:text-fg max-md:border max-md:border-line-control md:h-10 md:w-auto md:px-3 md:text-muted md:underline"
+    >
+      <span className="md:hidden">Something wrong?&nbsp;</span>Report a problem
+    </Link>
+  );
+}
 
 function Heading({ children }: { children: string }) {
   return <h1 className="m-0 text-[26px] font-semibold tracking-tight text-fg">{children}</h1>;
@@ -122,8 +138,10 @@ function FailedFooter({ run }: { run: RunSummary }) {
         <Link to={`/plans/${run.planId}`} className={secondaryLink}>
           {copy.backToPlan}
         </Link>
+        <ReportLink runId={run.id} />
       </div>
       <p className="m-0 text-sm text-muted">{copy.tryAgainNote}</p>
+      <p className="m-0 text-sm text-muted">{reportNote}</p>
       {shortfall !== false && (
         <CreditsDialog
           shortfall={shortfall}

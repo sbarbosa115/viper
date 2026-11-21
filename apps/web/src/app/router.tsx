@@ -9,6 +9,7 @@ import { routes as legalRoutes } from '../features/legal';
 import { routes as plansRoutes } from '../features/plans';
 import { routes as profileRoutes } from '../features/profile';
 import { routes as researchRoutes } from '../features/research';
+import { routes as supportRoutes } from '../features/support';
 import { AuthLayout } from './auth-layout';
 import { CustomerShell } from './customer-shell';
 import { RedirectIfSignedIn, RequireAuth, RequireStaff } from './guards';
@@ -27,6 +28,7 @@ const featureRoutes: RouteObject[] = [
   ...creditsRoutes,
   ...backofficeRoutes,
   ...financeRoutes,
+  ...supportRoutes,
   ...legalRoutes,
 ];
 

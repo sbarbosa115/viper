@@ -44,7 +44,7 @@ export class SmtpEmailSender implements EmailSender {
     const { host, fromAddress } = settings;
     if (!host || !fromAddress) throw new EmailNotConfiguredError();
     await this.transporterFor({ ...settings, host }).sendMail({
-      from: { name: settings.fromName, address: fromAddress },
+      from: { name: message.fromName ?? settings.fromName, address: fromAddress },
       ...(settings.replyTo ? { replyTo: settings.replyTo } : {}),
       to: message.to,
       subject: message.subject,

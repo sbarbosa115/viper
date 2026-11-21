@@ -30,7 +30,7 @@ describe('shared kernel: database URL to mysql2 options', () => {
     expect(options.ssl).toBeUndefined();
   });
 
-  test("an explicit mysql2 ssl parameter wins over ssl-mode", () => {
+  test('an explicit mysql2 ssl parameter wins over ssl-mode', () => {
     const ssl = 'ssl=%7B%22rejectUnauthorized%22%3Afalse%7D';
     const options = connectionOptions(`${BASE}?ssl-mode=REQUIRED&${ssl}`);
     expect(options.uri).toBe(`${BASE}?${ssl}`);

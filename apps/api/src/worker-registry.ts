@@ -12,6 +12,9 @@ import {
   researchSubscriptions,
 } from './modules/research/index.js';
 import { financeSubscriptions, registerFinanceWorkers } from './modules/finance/index.js';
+import { registerSupportWorkers, supportSubscriptions } from './modules/support/index.js';
+import { createIdentitySupportQueries } from './modules/identity/index.js';
+import { createResearchSupportQueries } from './modules/research/index.js';
 import type { Clock } from './shared/domain/clock.js';
 import type { Database } from './shared/infrastructure/db/database.js';
 import {
@@ -32,6 +35,7 @@ export const outboxSubscriptions: readonly OutboxSubscription[] = [
   ...billingSubscriptions,
   ...researchSubscriptions,
   ...financeSubscriptions,
+  ...supportSubscriptions,
 ];
 
 export const MAINTENANCE_QUEUE = 'maintenance';
@@ -117,6 +121,15 @@ export function registerWorkers(deps: WorkerDeps): RegisteredWorkers {
       finance: modules.finance,
       connection: deps.connection,
       logger: deps.logger,
+    }),
+    ...registerSupportWorkers({
+      store: modules.support.store,
+      identity: createIdentitySupportQueries({ db: deps.db, clock: core.clock, ids: core.ids }),
+      research: createResearchSupportQueries({ db: deps.db, clock: core.clock, ids: core.ids }),
+      email: modules.email,
+      appUrl: deps.config.APP_URL,
+      logger: deps.logger,
+      connection: deps.connection,
     }),
   ];
   return { workers, close: () => modules.email.close() };

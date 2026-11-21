@@ -5,7 +5,7 @@ import { createDatabase } from '../../../shared/infrastructure/db/database.js';
 import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
 import { Uuid7Generator } from '../../../shared/infrastructure/time/uuid7.js';
 import { CodedError } from '../../../shared/domain/errors.js';
-import { createBilling, seed } from '../index.js';
+import { createBilling, createBillingSupportQueries, seed } from '../index.js';
 import { FakePaymentGateway } from './fake-payment-gateway.js';
 import { FixedTrialCredits, RecordingAuditRecorder } from './in-memory-billing.js';
 
@@ -627,5 +627,22 @@ describe('prd-expenses FR-7: refunds and revenueForMonth (MySQL)', () => {
     await expect(billingQueries.revenueForMonths('2026-1', '2026-11')).rejects.toThrow(
       'Invalid month',
     );
+  });
+});
+
+describe('prd-support FR-3: balanceFor (MySQL)', () => {
+  test('is the available credits (balance minus holds), scoped to the Business', async () => {
+    const queries = createBillingSupportQueries({ db, clock, ids });
+    expect(await queries.balanceFor(BUSINESS)).toBe(0);
+    await fund(500);
+    await fund(70, OTHER);
+    expect(await queries.balanceFor(BUSINESS)).toBe(500);
+    await build().billingCommands.reserve({
+      businessId: BUSINESS,
+      runId: ids.next(),
+      credits: 120,
+    });
+    expect(await queries.balanceFor(BUSINESS)).toBe(380);
+    expect(await queries.balanceFor(OTHER)).toBe(70);
   });
 });

@@ -208,6 +208,14 @@ export class InMemoryResearchStore implements ResearchStore {
           }
           return Promise.resolve([...latest.values()].map(restore));
         },
+        recentForBusiness: (businessId, since, limit) =>
+          Promise.resolve(
+            runs()
+              .filter((x) => x.businessId === businessId && x.queuedAt >= since)
+              .sort(byNewest)
+              .slice(0, limit)
+              .map(restore),
+          ),
         recentCompletedCredits: (flowKey, limit) =>
           Promise.resolve(
             runs()

@@ -1,6 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from '../../shared/infrastructure/db/database.js';
-import type { OutboxSubscription } from '../../shared/infrastructure/outbox/index.js';
+import type { Clock } from '../../shared/domain/clock.js';
+import type { IdGenerator } from '../../shared/domain/id-generator.js';
+import { KyselyOutbox } from '../../shared/infrastructure/outbox/index.js';
+import { createCustomerSupport } from './application/customer/index.js';
+import { createStaffSupport } from './application/staff/index.js';
+import type { SupportStore } from './domain/index.js';
+import { customerSupportRoutes } from './http/customer.routes.js';
+import { staffSupportRoutes } from './http/staff.routes.js';
+import { supportTestRoutes } from './http/test-hooks.routes.js';
+import { KyselySupportStore } from './infrastructure/kysely-support.js';
+import type {
+  AnalyticsTracker,
+  BillingForSupport,
+  IdentityForSupport,
+  ResearchForSupport,
+  SupportAudit,
+} from './ports.js';
 
 export type { SupportTables } from './infrastructure/tables.js';
 export type {
@@ -29,32 +45,78 @@ export interface SupportHttpModule {
   register(app: FastifyInstance): void;
 }
 
-/**
- * support: Tickets between Members and Staff (prd-support, ADR 0021). Skeleton from WP-0: no
- * routes yet; the customer and Staff endpoints, the domain and the email worker land in Wave 1.
- */
-export const supportModule: SupportHttpModule = {
-  name: 'support',
-  register: () => undefined,
-};
+/** What support needs from the composition root (prd-support section 7, module ports). */
+export interface SupportDeps {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+  identity: IdentityForSupport;
+  research: ResearchForSupport;
+  billing: BillingForSupport;
+  audit: SupportAudit;
+  analytics: AnalyticsTracker;
+  /** NODE_ENV when test hooks are enabled; the hooks register only for `test`. */
+  testHooksEnv: string | null;
+  /** The Business's Owner, for the fill-open test hook. */
+  ownerOf(businessId: string): Promise<string | null>;
+}
 
-/**
- * Outbox events this module consumes (`TicketOpened`, `CustomerReplied`, `StaffReplied`,
- * `TicketClosed` on the `support` queue, FR-11). Empty until the email worker lands.
- */
-export const supportSubscriptions: readonly OutboxSubscription[] = [];
-
-/** Fixed ids the seed shares across modules (scripts/seed.ts `demo`). */
-interface DemoIds {
-  businesses: { sweetSupply: string; cleanDesk: string };
-  members: { owner: string; newOwner: string; staff: string };
-  runs: Record<string, string>;
+export interface Support {
+  module: SupportHttpModule;
+  store: SupportStore;
 }
 
 /**
- * Demo data (prd-support section 8a), called by scripts/seed.ts after leads. Never in production.
- * A no-op until the support seed lands (Jo Kim, the failed run and Tickets #1001 to #1005).
+ * support: Tickets between Members and Staff (prd-support, ADR 0021). Customer endpoints under
+ * /api/support, Staff endpoints under /api/staff/support, test hooks under /api/test/support.
  */
-export function seed(_deps: { db: Database; demo: DemoIds }): Promise<void> {
-  return Promise.resolve();
+export function createSupport(deps: SupportDeps): Support {
+  const { db, clock, ids, identity, research, billing, audit, analytics } = deps;
+  const store = new KyselySupportStore(db, new KyselyOutbox(ids, clock));
+  const customer = createCustomerSupport({
+    store,
+    identity,
+    research,
+    billing,
+    analytics,
+    clock,
+    ids,
+  });
+  const staff = createStaffSupport({
+    store,
+    identity,
+    research,
+    billing,
+    audit,
+    analytics,
+    clock,
+    ids,
+  });
+  const testRoutes = supportTestRoutes({
+    nodeEnv: deps.testHooksEnv ?? 'production',
+    store,
+    identity,
+    ownerOf: (businessId) => deps.ownerOf(businessId),
+    clock,
+    ids,
+  });
+  return {
+    store,
+    module: {
+      name: 'support',
+      register: (app) => {
+        customerSupportRoutes(app, customer);
+        staffSupportRoutes(staff)(app);
+        testRoutes(app);
+      },
+    },
+  };
 }
+
+export {
+  supportSubscriptions,
+  registerSupportWorkers,
+  SUPPORT_QUEUE,
+} from './email/support-worker.js';
+export type { SupportWorkerDeps } from './email/support-worker.js';
+export { seed } from './seed.js';

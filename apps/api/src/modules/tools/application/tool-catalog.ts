@@ -289,7 +289,8 @@ export class ToolQueries {
       months.push({ month: start.toISOString().slice(0, 7), start, end });
     }
     const now = this.deps.clock?.now().getTime();
-    const isClosed = (end: Date) => now !== undefined && end.getTime() + CLOSED_MONTH_GRACE_MS <= now;
+    const isClosed = (end: Date) =>
+      now !== undefined && end.getTime() + CLOSED_MONTH_GRACE_MS <= now;
     const firstUncached = months.findIndex((m) => !this.closedMonthCosts.has(m.month));
     const cached = (firstUncached === -1 ? months : months.slice(0, firstUncached)).flatMap((m) =>
       (this.closedMonthCosts.get(m.month) ?? []).map((c) => ({ ...c, month: m.month })),
@@ -304,7 +305,9 @@ export class ToolQueries {
       if (!isClosed(m.end)) continue;
       this.closedMonthCosts.set(
         m.month,
-        fresh.filter((c) => c.month === m.month).map(({ toolKey, micros }) => ({ toolKey, micros })),
+        fresh
+          .filter((c) => c.month === m.month)
+          .map(({ toolKey, micros }) => ({ toolKey, micros })),
       );
     }
     return [...cached, ...fresh];

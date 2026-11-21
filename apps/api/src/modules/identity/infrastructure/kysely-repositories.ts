@@ -129,8 +129,16 @@ export class KyselyMemberRepository implements MemberRepository {
     return this.one('email', email);
   }
 
-  findOwnerOf(businessId: string): Promise<Member | null> {
-    return this.one('business_id', businessId);
+  async findOwnerOf(businessId: string): Promise<Member | null> {
+    const row = await this.db
+      .selectFrom('members')
+      .selectAll()
+      .where('business_id', '=', businessId)
+      .where('role', '=', 'owner')
+      .orderBy('created_at')
+      .limit(1)
+      .executeTakeFirst();
+    return row ? toMember(row) : null;
   }
 
   async findOwnersOf(businessIds: readonly string[]): Promise<Member[]> {
@@ -139,6 +147,7 @@ export class KyselyMemberRepository implements MemberRepository {
       .selectFrom('members')
       .selectAll()
       .where('business_id', 'in', [...businessIds])
+      .where('role', '=', 'owner')
       .execute();
     return rows.map(toMember);
   }
@@ -496,7 +505,9 @@ export class KyselyBusinessDirectory implements BusinessDirectory {
         : sql<Date>`b.created_at`;
     let q = this.db
       .selectFrom('businesses as b')
-      .innerJoin('members as m', 'm.business_id', 'b.id')
+      .innerJoin('members as m', (join) =>
+        join.onRef('m.business_id', '=', 'b.id').on('m.role', '=', 'owner'),
+      )
       .select([
         'b.id',
         'b.name',

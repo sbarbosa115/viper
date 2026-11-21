@@ -4,11 +4,17 @@ import type { Logger } from 'pino';
 import type { AppDeps, AppModule } from './app.js';
 import type { Config } from './config/env.js';
 import { createAssistant } from './modules/assistant/index.js';
-import { createBilling, createPaymentGateway, type Billing } from './modules/billing/index.js';
+import {
+  createBilling,
+  createBillingSupportQueries,
+  createPaymentGateway,
+  type Billing,
+} from './modules/billing/index.js';
 import {
   createActorResolver,
   createIdentityModule,
   createIdentityQueries,
+  createIdentitySupportQueries,
   createIdentityUseCasesFor,
   type IdentityDeps,
   type IdentityQueries,
@@ -32,8 +38,10 @@ import {
 import { createProfile, type Profile } from './modules/profile/index.js';
 import { createReporting } from './modules/reporting/index.js';
 import { createFinance, type Finance } from './modules/finance/index.js';
+import { createSupport, type Support } from './modules/support/index.js';
 import {
   createResearch,
+  createResearchSupportQueries,
   fakeResearchAgent,
   isResearchRequest,
   type Research,
@@ -190,6 +198,7 @@ export interface ComposedModules {
   leads: Leads;
   research: Research;
   finance: Finance;
+  support: Support;
   /** research's collaborators, for the worker's research workers. */
   researchCollaborators: ResearchCollaborators & { testHooks: boolean };
   testHooks: boolean;
@@ -420,6 +429,27 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     members: { memberEmails: (memberIds) => identityQueries.getMemberEmails(memberIds) },
   });
 
+  const support = createSupport({
+    db,
+    clock,
+    ids,
+    identity: createIdentitySupportQueries({ db, clock, ids }),
+    research: createResearchSupportQueries({ db, clock, ids }),
+    billing: createBillingSupportQueries({ db, clock, ids }),
+    audit: auditLog,
+    analytics,
+    testHooksEnv: testHooks ? config.NODE_ENV : null,
+    ownerOf: async (businessId) => {
+      const row = await db
+        .selectFrom('members')
+        .select('id')
+        .where('business_id', '=', businessId)
+        .where('role', '=', 'owner')
+        .executeTakeFirst();
+      return row?.id ?? null;
+    },
+  });
+
   return {
     core,
     email,
@@ -433,6 +463,7 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     leads,
     research,
     finance,
+    support,
     researchCollaborators,
     testHooks,
   };
@@ -455,7 +486,7 @@ export function composeApp(
   const { db, logger } = infra;
   const m = composeModules(config, infra);
   const { core, email, identityQueries, llm, geocoder, billing, tools } = m;
-  const { profile, planning, leads, research, finance } = m;
+  const { profile, planning, leads, research, finance, support } = m;
   const { clock, ids, secretBox, settings, auditLog, analytics } = core;
 
   const identityDeps: IdentityDeps = {
@@ -554,6 +585,7 @@ export function composeApp(
     leads.module,
     reporting.module,
     finance.module,
+    support.module,
   ];
 
   return { core, deps, modules, billing, close: () => email.close() };

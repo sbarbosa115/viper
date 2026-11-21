@@ -45,6 +45,7 @@ const demo = {
     newOwner: id(0xd102),
     lowOwner: id(0xd103),
     staff: id(0xd104),
+    member: id(0xd105),
   },
   products: {
     caneSugar: id(0xd201),

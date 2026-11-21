@@ -88,6 +88,9 @@ export class Member {
   get isStaff(): boolean {
     return this.state.isStaff;
   }
+  get role(): 'owner' | 'member' {
+    return this.state.role;
+  }
   get emailVerified(): boolean {
     return this.state.emailVerifiedAt !== null;
   }
