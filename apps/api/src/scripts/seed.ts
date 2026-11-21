@@ -3,6 +3,7 @@ import { createTotpCipher } from '../composition.js';
 import { loadConfig } from '../config/env.js';
 import * as assistant from '../modules/assistant/index.js';
 import * as billing from '../modules/billing/index.js';
+import * as finance from '../modules/finance/index.js';
 import * as identity from '../modules/identity/index.js';
 import * as leads from '../modules/leads/index.js';
 import * as planning from '../modules/planning/index.js';
@@ -74,8 +75,11 @@ const deps = {
  *   (Corner Coffee Roasters), staff@demo.test (Staff, "Llyner Leads (internal)" marked internal,
  *   TOTP secret JBSWY3DPEHPK3PXP); all verified, password demo1234.
  * platform: Platform settings (SMTP → Mailpit, fake provider keys, default models and ceilings).
- * billing: Credit packs Starter/Growth/Pro; wallets: Sweet Supply 863, Clean Desk 50, Corner 120.
- * tools: the Tool catalog with the seeded Rate card.
+ * billing: Credit packs Starter/Growth/Pro; wallets: Sweet Supply 863, Clean Desk 50, Corner 120;
+ *   paid November 2026 purchases $49 + $49 + $99 (prd-expenses 8a).
+ * tools: the Tool catalog with the seeded Rate card; November 2026 metered Tool calls.
+ * finance: November 2026 bills, the One-off legal review, Provider invoices, the $300 Budget and
+ *   its 80% and 100% alerts (prd-expenses 8a; the P&L shows net −$325.75).
  * research: Flow template "Local buyers" v1 and the completed demo run of "Bakeries near Austin".
  * profile: complete profiles for Sweet Supply Co and Corner Coffee Roasters; Clean Desk empty.
  * planning: "Bakeries near Austin" (Sweet Supply Co) and one Plan for Corner Coffee Roasters.
@@ -87,6 +91,7 @@ const steps = [
   ['platform', platform.seed],
   ['billing', billing.seed],
   ['tools', tools.seed],
+  ['finance', finance.seed],
   ['research', research.seed],
   ['profile', profile.seed],
   ['planning', planning.seed],

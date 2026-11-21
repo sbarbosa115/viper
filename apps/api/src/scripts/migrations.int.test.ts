@@ -23,6 +23,12 @@ afterAll(async () => {
 
 /** Every table in PRD section 8 (the Removal list is deferred). */
 const prdTables = [
+  'expenses',
+  'expense_prices',
+  'provider_invoices',
+  'finance_budgets',
+  'finance_settings',
+  'budget_alerts',
   'credit_wallets',
   'businesses',
   'members',
@@ -90,6 +96,8 @@ describe('migrations: PRD section 8 schema', () => {
     expect(await uniqueKeys('members')).toContain('email');
     expect(await uniqueKeys('email_tokens')).toContain('token_hash');
     expect(await uniqueKeys('credit_ledger')).toContain('idempotency_key');
+    expect(await uniqueKeys('purchases')).toContain('stripe_payment_intent_id');
+    expect(await uniqueKeys('expense_prices')).toContain('expense_id,effective_from');
     expect(await uniqueKeys('purchases')).toEqual(
       expect.arrayContaining(['stripe_session_id', 'stripe_event_id']),
     );

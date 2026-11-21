@@ -48,11 +48,16 @@ export interface PurchasesTable {
   credits: number;
   stripe_session_id: string;
   stripe_event_id: string | null;
+  /** The Checkout Session's payment intent, stored when paid (refund lookup, prd-expenses FR-7). */
+  stripe_payment_intent_id: ColumnType<string | null, string | null | undefined, string | null>;
   amount_cents: number;
   tax_cents: Generated<number>;
+  /** The charge's cumulative `amount_refunded` (tax included). */
+  refunded_cents: Generated<number>;
   status: 'pending' | 'paid' | 'failed';
   created_at: Timestamp;
   paid_at: Timestamp | null;
+  refunded_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
 }
 
 /** One lock row per Business's Credit wallet (no balance: that stays derived from the ledger). */

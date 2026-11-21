@@ -41,6 +41,17 @@ export const errorCode = z.enum([
   'RUN_NOT_ACTIVE',
   'RUN_NOT_FAILED',
   'STEP_TIME_OVER_ACTIVE_TIME',
+  // Finance
+  'BEFORE_HISTORY_START',
+  'FUTURE_MONTH',
+  'UNKNOWN_PROVIDER',
+  'PROVIDER_ALREADY_COVERED',
+  'COVERS_PROVIDER_CATEGORY',
+  'NOT_RECURRING',
+  'EFFECTIVE_BEFORE_START',
+  'FIRST_VERSION',
+  'HAS_CHARGES',
+  'NO_INVOICE',
 ]);
 export type ErrorCode = z.infer<typeof errorCode>;
 

@@ -39,6 +39,7 @@ export const staffNav: StaffNavItem[] = [
   { to: '/staff/flows', label: 'staff.flows' },
   { to: '/staff/tools', label: 'staff.tools' },
   { to: '/staff/packs', label: 'staff.packs' },
+  { to: '/staff/expenses', label: 'staff.expenses' },
   { to: '/staff/settings', label: 'staff.settings' },
   { to: '/staff/audit-log', label: 'staff.auditLog' },
 ];

@@ -31,6 +31,7 @@ import {
 } from './modules/platform/index.js';
 import { createProfile, type Profile } from './modules/profile/index.js';
 import { createReporting } from './modules/reporting/index.js';
+import { createFinance } from './modules/finance/index.js';
 import {
   createResearch,
   fakeResearchAgent,
@@ -496,6 +497,8 @@ export function composeApp(
     tools: { spendByTool: (window) => tools.toolQueries.spendByTool(window) },
   });
 
+  const finance = createFinance({ db, clock, ids });
+
   const deps: AppDeps = {
     logger,
     clock,
@@ -528,6 +531,7 @@ export function composeApp(
     tools.module,
     leads.module,
     reporting.module,
+    finance.module,
   ];
 
   return { core, deps, modules, billing, close: () => email.close() };

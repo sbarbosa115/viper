@@ -27,6 +27,7 @@ import { ReservationCommands } from './application/reservations.js';
 import { AdjustCredits, ManageCreditPacks } from './application/staff.js';
 import { GrantTrialCredits } from './application/trial-credits.js';
 import type { WalletQueries } from './application/wallet-queries.js';
+import { Purchase } from './domain/purchase.js';
 import { FakePaymentGateway } from './infrastructure/fake-payment-gateway.js';
 import {
   AnyBusinessDirectory,
@@ -218,9 +219,25 @@ export const DEMO_PACKS = [
 const BETA_REASON = 'Beta credit from Llyner';
 
 /**
+ * prd-expenses section 8a: paid purchases in November 2026 (revenue $197.00, no tax). Purchase
+ * history only: no ledger entries, so the demo wallets above stay as documented.
+ */
+const NOVEMBER_PURCHASES = [
+  { key: 'nov-1', business: 'sweetSupply', amountCents: 4_900, paidAt: '2026-11-06T15:20:00.000Z' },
+  {
+    key: 'nov-2',
+    business: 'cornerCoffee',
+    amountCents: 4_900,
+    paidAt: '2026-11-10T11:05:00.000Z',
+  },
+  { key: 'nov-3', business: 'sweetSupply', amountCents: 9_900, paidAt: '2026-11-15T17:45:00.000Z' },
+] as const;
+
+/**
  * Demo data (PRD section 8a), idempotent. Credit packs Starter, Growth, Pro; wallets: Sweet
  * Supply Co 863 available (+50 trial, +950 "Beta credit from Llyner", −137 for the demo run of
  * "Bakeries near Austin"), Clean Desk Co 50 (trial), Corner Coffee Roasters 120 (+50 trial, +70).
+ * Three paid November 2026 purchases ($49, $49, $99) for the finance P&L (prd-expenses 8a).
  */
 export async function seed(deps: {
   db: Database;
@@ -235,7 +252,11 @@ export async function seed(deps: {
   const { businesses, members, runs } = deps.demo;
 
   const packs = new ManageCreditPacks(system);
-  for (const pack of DEMO_PACKS) await packs.ensure(pack);
+  let starterPackId = '';
+  for (const pack of DEMO_PACKS) {
+    const view = await packs.ensure(pack);
+    if (pack.name === 'Starter') starterPackId = view.id;
+  }
 
   const trial = new GrantTrialCredits({ ...system, trialCredits: new FixedTrialCredits(50) });
   for (const businessId of [
@@ -261,6 +282,25 @@ export async function seed(deps: {
   const runId = runs.bakeriesNearAustin;
   await reservations.reserve({ businessId: businesses.sweetSupply, runId, credits: 400 });
   await reservations.settle({ runId, creditsSpent: 137, planName: 'Bakeries near Austin' });
+
+  for (const p of NOVEMBER_PURCHASES) {
+    const sessionId = `cs_seed_${p.key}`;
+    await uow.run(async ({ purchases }) => {
+      if (await purchases.findBySessionIdForUpdate(sessionId)) return;
+      const paidAt = new Date(p.paidAt);
+      const purchase = Purchase.start({
+        id: ids.next(),
+        businessId: businesses[p.business],
+        packId: starterPackId,
+        credits: p.amountCents,
+        amountCents: p.amountCents,
+        stripeSessionId: sessionId,
+        now: new Date(paidAt.getTime() - 60_000),
+      });
+      purchase.markPaid({ eventId: `evt_seed_${p.key}`, taxCents: 0, now: paidAt });
+      await purchases.save(purchase);
+    });
+  }
 }
 
 export const BILLING_QUEUE = 'billing';

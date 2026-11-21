@@ -2,6 +2,7 @@
 import type { ColumnType } from 'kysely';
 import type { AssistantTables } from '../../../modules/assistant/infrastructure/tables.js';
 import type { BillingTables } from '../../../modules/billing/infrastructure/tables.js';
+import type { FinanceTables } from '../../../modules/finance/infrastructure/tables.js';
 import type { IdentityTables } from '../../../modules/identity/infrastructure/tables.js';
 import type { LeadsTables } from '../../../modules/leads/infrastructure/tables.js';
 import type { PlanningTables } from '../../../modules/planning/infrastructure/tables.js';
@@ -44,4 +45,5 @@ export interface DB
     PlanningTables,
     ResearchTables,
     ToolsTables,
-    LeadsTables {}
+    LeadsTables,
+    FinanceTables {}

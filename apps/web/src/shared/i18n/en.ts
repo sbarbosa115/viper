@@ -32,6 +32,7 @@ export const en = {
   'staff.flows': 'Research flows',
   'staff.tools': 'Tools & Rate card',
   'staff.packs': 'Credit packs',
+  'staff.expenses': 'Expenses',
   'staff.settings': 'Settings',
   'staff.auditLog': 'Audit log',
   'staff.back': 'Back to my account',

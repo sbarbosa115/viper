@@ -2,6 +2,7 @@ import { createBrowserRouter, type RouteObject } from 'react-router';
 import { routes as assistantRoutes } from '../features/assistant';
 import { routes as authRoutes } from '../features/auth';
 import { routes as backofficeRoutes } from '../features/backoffice';
+import { routes as financeRoutes } from '../features/finance';
 import { routes as creditsRoutes } from '../features/credits';
 import { routes as leadsRoutes } from '../features/leads';
 import { routes as legalRoutes } from '../features/legal';
@@ -25,6 +26,7 @@ const featureRoutes: RouteObject[] = [
   ...leadsRoutes,
   ...creditsRoutes,
   ...backofficeRoutes,
+  ...financeRoutes,
   ...legalRoutes,
 ];
 

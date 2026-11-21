@@ -5,6 +5,7 @@ export * from './health.js';
 /** Per-context contracts; also importable as `@app/contracts/<context>`. */
 export * as assistant from './assistant.js';
 export * as billing from './billing.js';
+export * as finance from './finance.js';
 export * as identity from './identity.js';
 export * as leads from './leads.js';
 export * as planning from './planning.js';
