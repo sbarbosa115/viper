@@ -8,7 +8,8 @@ export interface MemberSnapshot {
   email: string;
   name: string;
   passwordHash: string;
-  role: 'owner';
+  /** `member` exists only through the seed until team invites ship (prd-support v0.2). */
+  role: 'owner' | 'member';
   isStaff: boolean;
   emailVerifiedAt: Date | null;
   /** The TOTP secret, encrypted by the SecretCipher port (ADR 0012). */

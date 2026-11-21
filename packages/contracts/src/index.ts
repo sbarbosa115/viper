@@ -14,4 +14,5 @@ export * as profile from './profile.js';
 export * as reporting from './reporting.js';
 export * as research from './research.js';
 export * as site from './site.js';
+export * as support from './support.js';
 export * as tools from './tools.js';

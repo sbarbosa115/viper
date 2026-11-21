@@ -23,6 +23,9 @@ afterAll(async () => {
 
 /** Every table in PRD section 8 (the Removal list is deferred). */
 const prdTables = [
+  'support_tickets',
+  'support_messages',
+  'support_ticket_views',
   'expenses',
   'expense_prices',
   'provider_invoices',
@@ -107,6 +110,26 @@ describe('migrations: PRD section 8 schema', () => {
     expect(await uniqueKeys('run_attempts')).toContain('run_id,n');
     expect(await uniqueKeys('run_steps')).toContain('run_id,step_key');
     expect(await uniqueKeys('leads')).toContain('plan_id,place_key');
+    expect(await uniqueKeys('support_tickets')).toContain('number');
+    expect(await uniqueKeys('support_ticket_views')).toContain('ticket_id,member_id');
+  });
+
+  test('support Ticket numbers start at 1001 and members.role allows member (prd-support 8, 9)', async () => {
+    const { rows } = await sql<{ next: number | null; extra: string }>`
+      SELECT t.AUTO_INCREMENT AS next, c.EXTRA AS extra
+      FROM information_schema.TABLES t
+      JOIN information_schema.COLUMNS c
+        ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME
+      WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = 'support_tickets'
+        AND c.COLUMN_NAME = 'number'`.execute(db);
+    expect(rows[0]?.extra).toContain('auto_increment');
+    expect(Number(rows[0]?.next ?? 1001)).toBeGreaterThanOrEqual(1001);
+    const role = await sql<{ type: string; dflt: string }>`
+      SELECT COLUMN_TYPE AS type, COLUMN_DEFAULT AS dflt FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members' AND COLUMN_NAME = 'role'`.execute(
+      db,
+    );
+    expect(role.rows[0]).toEqual({ type: "enum('owner','member')", dflt: 'owner' });
   });
 
   test('every column ending in _id is indexed (foreign keys and filters; audit_log.target_id is polymorphic)', async () => {

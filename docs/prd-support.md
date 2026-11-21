@@ -3,7 +3,7 @@
 | Field   | Value |
 |---------|-------|
 | Status  | Draft |
-| Version | 0.1 |
+| Version | 0.2 |
 | Date    | 2026-11-21 |
 | Persona | Sam, Maria and team members (customers); Staff (the founder) |
 | Tests assumption | None directly. Supports A-5 (trial-to-paid: a stuck trial customer who can't reach anyone won't buy) and A-1 (tickets about wrong leads are direct quality evidence) |
@@ -350,6 +350,7 @@ Added to the existing seed (Business "Sweet Supply Co", `owner@demo.test` is Sam
 All names and text are invented.
 
 ## 9. Technical notes
+- `members.role` becomes `ENUM('owner','member')` (migration in W0). Only the seed creates Members until team invites ship; no other identity behaviour changes.
 - New bounded context **support** (ADR 0021): `apps/api/src/modules/support` (domain, application/customer, application/staff, application/notifications, http, infrastructure), web `apps/web/src/features/support` with `customer/` and `staff/` subfolders; the staff pages mount inside the back-office layout.
 - Domain core: a `Ticket` aggregate with pure transition functions (`open`, `customerReply`, `staffReply`, `note`, `take`, `assign`, `setStatus`, `close`, `markRead`) returning the new state plus the events and messages to persist; the visibility rule and the waiting rule as pure functions; `businessMinutesBetween` (America/Chicago via `Intl`, no new dependency).
 - Persistence: one transaction per command writes the ticket row (`UPDATE … WHERE id = ? AND version = ?` for versioned commands), the messages, and the outbox events. Ticket numbers come from AUTO_INCREMENT (set to 1001 in the migration).
@@ -405,6 +406,7 @@ All names and text are invented.
 | Version | Date | Change |
 |---------|------|--------|
 | 0.1 | 2026-11-21 | Initial draft from the approved Support Tickets canvas |
+| 0.2 | 2026-11-21 | Build preflight: `members.role` only allowed `owner` (team members aren't built yet), so W0 widens it to `owner`/`member`; identity seeds Jo Kim as a Member and research seeds the failed run; support seeds only Tickets |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |

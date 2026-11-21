@@ -10,6 +10,7 @@ import * as planning from '../modules/planning/index.js';
 import * as platform from '../modules/platform/index.js';
 import * as profile from '../modules/profile/index.js';
 import * as research from '../modules/research/index.js';
+import * as support from '../modules/support/index.js';
 import * as tools from '../modules/tools/index.js';
 import { createDatabase } from '../shared/infrastructure/db/database.js';
 import { SystemClock } from '../shared/infrastructure/time/system-clock.js';
@@ -84,6 +85,8 @@ const deps = {
  * profile: complete profiles for Sweet Supply Co and Corner Coffee Roasters; Clean Desk empty.
  * planning: "Bakeries near Austin" (Sweet Supply Co) and one Plan for Corner Coffee Roasters.
  * leads: 25 Leads for the demo run from the fake-Tool fixtures, Feedback on 5.
+ * support: Jo Kim (member@demo.test), a failed run and Tickets #1001 to #1005 (prd-support 8a;
+ *   a no-op until the support seed lands).
  * assistant and reporting have no demo data (assistant's seed is a no-op kept for symmetry).
  */
 const steps = [
@@ -96,6 +99,7 @@ const steps = [
   ['profile', profile.seed],
   ['planning', planning.seed],
   ['leads', leads.seed],
+  ['support', support.seed],
   ['assistant', assistant.seed],
 ] as const;
 

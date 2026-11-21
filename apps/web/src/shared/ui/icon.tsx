@@ -43,6 +43,13 @@ const paths = {
   download: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" />,
   chevron: <path d="m9 6 6 6-6 6" />,
   sort: <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />,
+  help: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof paths;

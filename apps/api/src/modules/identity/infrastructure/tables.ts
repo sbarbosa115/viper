@@ -22,7 +22,7 @@ export interface MembersTable {
   email: string;
   name: string;
   password_hash: string;
-  role: Generated<'owner'>;
+  role: Generated<'owner' | 'member'>;
   is_staff: DefaultedBool;
   email_verified_at: Timestamp | null;
   /** AES-256-GCM ciphertext (ADR 0012). */

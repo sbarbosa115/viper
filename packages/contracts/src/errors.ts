@@ -52,6 +52,16 @@ export const errorCode = z.enum([
   'FIRST_VERSION',
   'HAS_CHARGES',
   'NO_INVOICE',
+  // Support
+  'OPEN_TICKET_LIMIT',
+  'UNKNOWN_RUN',
+  'NOT_WHILE_ACTING_AS',
+  'TICKET_NOT_FOUND',
+  'TICKET_CLOSED_TOO_LONG',
+  'ALREADY_CLOSED',
+  'TICKET_CLOSED',
+  'VERSION_CONFLICT',
+  'UNKNOWN_STAFF',
 ]);
 export type ErrorCode = z.infer<typeof errorCode>;
 

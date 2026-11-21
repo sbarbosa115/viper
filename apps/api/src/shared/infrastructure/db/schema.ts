@@ -9,6 +9,7 @@ import type { PlanningTables } from '../../../modules/planning/infrastructure/ta
 import type { PlatformTables } from '../../../modules/platform/infrastructure/tables.js';
 import type { ProfileTables } from '../../../modules/profile/infrastructure/tables.js';
 import type { ResearchTables } from '../../../modules/research/infrastructure/tables.js';
+import type { SupportTables } from '../../../modules/support/infrastructure/tables.js';
 import type { ToolsTables } from '../../../modules/tools/infrastructure/tables.js';
 import type { OutboxTables } from '../outbox/table.js';
 
@@ -46,4 +47,5 @@ export interface DB
     ResearchTables,
     ToolsTables,
     LeadsTables,
-    FinanceTables {}
+    FinanceTables,
+    SupportTables {}
