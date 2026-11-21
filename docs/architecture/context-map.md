@@ -44,6 +44,6 @@ flowchart LR
 - **research → leads:** writes Prospects and qualified Leads through leads' public API (merge, verify, score). Leads owns the records, their Sources and the Removal list check.
 - **Events:** `RunCompleted` and `RunFailed` (research) trigger the "leads ready" email and analytics. They go through the outbox and the worker queue.
 - **platform:** every context may read Platform settings (`SettingsReader`, keys decrypted on use) and write the Audit log and analytics events; platform depends on nothing.
-- **finance:** reads billing (`revenueForMonth`), tools (`meteredCostByProvider`, `providers`) and identity (`staffRecipients`) through public query functions, and writes only its own tables plus the Audit log, analytics and email through platform. Nothing depends on finance.
+- **finance:** reads billing (`revenueForMonth`), tools (`meteredCostByProvider`, `providers`) and identity (`staffRecipients`) through public query functions, and writes only its own tables plus the Audit log, analytics and email through platform. Budget alerts go through the outbox (`BudgetAlertRecorded`, consumed by finance's own `finance-events` queue). Nothing depends on finance.
 - **reporting:** reads other contexts through their public query functions only; nothing depends on reporting.
 - **No cycles:** platform, tools and identity depend on nothing except platform; leads depends only on identity.

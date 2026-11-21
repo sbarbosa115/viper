@@ -2,7 +2,7 @@
 
 | Field   | Value |
 |---------|-------|
-| Status  | Draft |
+| Status  | Built |
 | Version | 0.2 |
 | Date    | 2026-11-20 |
 | Persona | Staff (Viper operator, initially the founder) |
@@ -497,4 +497,35 @@ execution:
 The orchestrator wires the finance module into `app.ts`/`composition.ts`, the `finance` queue into `worker-registry.ts`, the route and the "Expenses" item into `apps/web/src/app/**` (`staffNav`, between Credit packs and Settings), and the test-only job endpoint.
 
 ## 17. Implementation notes
-_Filled in by /build-requirement: FR → test files, AJ → Playwright specs, sign-off per wave, decisions on gaps._
+Built 2026-11-21 on branch `feat/expenses` (autopilot: no per-wave demo pauses, at the founder's request). Paths below are under `apps/api/src/modules/finance/` (API) and `apps/web/src/features/finance/` (web) unless stated.
+
+**FR → tests**
+| FR | Tests |
+|----|-------|
+| FR-1 | application/finance.test.ts, http/finance.routes.test.ts, web test/finance.test.tsx |
+| FR-2, FR-3 | domain/expense.test.ts, application/finance.test.ts, infrastructure/coverage-lock.int.test.ts, kysely-finance.int.test.ts, web test/finance.test.tsx |
+| FR-4 | application/finance.test.ts, http/finance.routes.test.ts |
+| FR-5, FR-6 | domain/pnl.test.ts, application/finance.test.ts; billing infrastructure/kysely-billing.int.test.ts, tools infrastructure/kysely-tool-repositories.int.test.ts |
+| FR-7 | billing domain/domain.test.ts, http/billing.routes.test.ts, infrastructure/kysely-billing.int.test.ts, stripe-payment-gateway.test.ts |
+| FR-8, FR-9 | domain/pnl.test.ts, application/finance.test.ts, infrastructure/november-pnl.int.test.ts (seeded November equals FR-9), web test/finance.test.tsx |
+| FR-10, FR-11 | application/finance.test.ts, http/finance.routes.test.ts, web test/finance.test.tsx |
+| FR-12 | application/budget-alerts.test.ts, infrastructure/budget-alerts.int.test.ts (concurrency, outbox, Mailpit) |
+| FR-13 | http/finance.routes.test.ts (401/403 incl. half session on all 14 routes; audit on every write) |
+| NFR-1 | infrastructure/pnl-performance.int.test.ts: 500,000 Tool calls, 202 expenses, 12 months, P&L p95 198–210 ms |
+
+**AJ → specs:** `e2e/aj-expenses-1-add-bill.spec.ts`, `-2-price-change`, `-3-provider-invoice`, `-4-budget-alert`, `-5-export`, `-6-not-for-customers`.
+
+**Migrations:** 20261121000100_finance_init, 20261121000200_billing_refunds, 20261121000300_billing_refund_rows (backfills existing refunds), 20261121000400_tools_cost_covering_index.
+
+**Packages:** W0 WP-0 (opus); W1 WP-1 finance module (opus), WP-2 billing/tools/identity queries (sonnet), WP-3 web (sonnet); W2 WP-4 budget alerts (sonnet), WP-5 journey specs (sonnet); review (opus) and fixes FIX-A (sonnet), FIX-B (opus), FIX-C (sonnet).
+
+**Decisions on gaps**
+- Expenses list shows a bill when it isn't ended, charged in the month, or `includeEnded` is set; status is relative to today.
+- A yearly covering bill that charged in the month but ended before the cutoff still counts as the plan (its charge would otherwise vanish).
+- Billing frequency of a bill is read-only after creation (no cadence in PATCH); stop a bill with an end date.
+- The budget banner says alerts were emailed "this month" (the P&L response has no alert dates).
+- CSV: category column holds the key; sale and refund rows are named by purchase id; CRLF; cells starting with `= + - @` are prefixed with `'`.
+- Finance analytics events carry `business_id` null (not the Acting-as target).
+- The Stripe fees label is shortened in the web layer; the API and CSV keep the long label.
+- Purchases paid before the release have no stored payment intent; their refunds are logged and ignored.
+
