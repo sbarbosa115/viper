@@ -66,7 +66,7 @@ Describe what you sell in a short chat, and Viper's research agent returns verif
 | Item | Tests assumption | Status | PRD |
 |------|------------------|--------|-----|
 | First version: public landing page (SEO, video, pricing, sign-up/log-in card); sign up, welcome chat → Business Profile → Plan → default "Local buyers" research flow run by a background agent that resumes across attempts → lead list, lead detail, CSV export; credit wallet with 50 trial credits and Stripe packs; Staff back office (dashboard, customers, Acting as, runs, research flow settings, tools and rate card, platform settings, audit log); legal pages | A-1, A-2, A-3, A-4, A-5 | Built (v0.3, 2026-11-20) | [prd-first-version](prd-first-version.md) |
-| Expenses and P&L (Staff): recurring bills, one-offs, metered usage and Stripe fees, provider invoices with gap flags, monthly cash P&L, budget alerts | A-2 | Built (v0.2, 2026-11-21) | [prd-expenses](prd-expenses.md) |
+| Expenses and P&L (Staff): recurring bills, one-offs, metered usage and Stripe fees, provider invoices with gap flags, monthly cash P&L, budget alerts | A-2 | Shipped (2026-11-21) | [prd-expenses](prd-expenses.md) |
 | Research flows: market templates and the flow editor | A-1 (other markets) | Idea | — |
 | Team members and invites | A-5 | Idea | — |
 | CRM sync (HubSpot) and outreach sequences | — | Later | — |

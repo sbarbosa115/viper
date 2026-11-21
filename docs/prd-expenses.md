@@ -2,7 +2,7 @@
 
 | Field   | Value |
 |---------|-------|
-| Status  | Built |
+| Status  | Shipped |
 | Version | 0.2 |
 | Date    | 2026-11-20 |
 | Persona | Staff (Viper operator, initially the founder) |
@@ -529,3 +529,6 @@ Built 2026-11-21 on branch `feat/expenses` (autopilot: no per-wave demo pauses, 
 - The Stripe fees label is shortened in the web layer; the API and CSV keep the long label.
 - Purchases paid before the release have no stored payment intent; their refunds are logged and ignored.
 
+### Release
+- Shipped 2026-11-21: `ebdd8ec` to production (Deploy run 44913085715); previous deployment `de2b1cfb-6af1-4cd4-b1f7-95e2f84134b3`. Migrations 20261121000100–000400 ran in the pre-deploy job; backup of 2026-11-21 09:14 UTC was taken before it.
+- Pre-ship fix: CI's runner measured the NFR-1 P&L p95 at 365 ms. `ToolQueries` now caches closed months' per-Tool metered cost in memory (a month is closed an hour after it ends); NFR-1 measures the real tools read side at ~26 ms p95. The first P&L after a deploy still scans every month.
