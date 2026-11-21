@@ -8,7 +8,13 @@ import type {
   PaymentGateway,
   TrialCreditsSetting,
 } from './ports.js';
-import { FailPurchase, FulfilPurchase, HandleStripeWebhook, StartCheckout } from './purchases.js';
+import {
+  FailPurchase,
+  FulfilPurchase,
+  HandleStripeWebhook,
+  RecordRefund,
+  StartCheckout,
+} from './purchases.js';
 import { ReservationCommands } from './reservations.js';
 import { AdjustCredits, ManageCreditPacks } from './staff.js';
 import { GrantTrialCredits } from './trial-credits.js';
@@ -29,6 +35,7 @@ export interface BillingApplicationDeps {
 /** Builds every billing use case from its ports. */
 export function createBillingApplication(deps: BillingApplicationDeps) {
   const fulfilPurchase = new FulfilPurchase(deps);
+  const recordRefund = new RecordRefund(deps);
   return {
     reservations: new ReservationCommands(deps),
     queries: new WalletQueries(deps),
@@ -37,10 +44,12 @@ export function createBillingApplication(deps: BillingApplicationDeps) {
     creditPacks: new ManageCreditPacks(deps),
     startCheckout: new StartCheckout(deps),
     fulfilPurchase,
+    recordRefund,
     handleStripeWebhook: new HandleStripeWebhook({
       gateway: deps.gateway,
       fulfilPurchase,
       failPurchase: new FailPurchase(deps),
+      recordRefund,
     }),
   };
 }

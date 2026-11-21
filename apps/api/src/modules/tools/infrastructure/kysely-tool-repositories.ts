@@ -177,6 +177,21 @@ export class KyselyToolCallRepository implements ToolCallRepository {
     }));
   }
 
+  async costByToolBetween(window: {
+    from: Date;
+    to: Date;
+  }): Promise<{ toolKey: string; micros: number }[]> {
+    const rows = await this.db
+      .selectFrom('tool_calls')
+      .select(['tool_key', (eb) => eb.fn.sum<number>('provider_cost_micros').as('micros')])
+      .where('created_at', '>=', window.from)
+      .where('created_at', '<', window.to)
+      .groupBy('tool_key')
+      .having((eb) => eb.fn.sum('provider_cost_micros'), '>', 0)
+      .execute();
+    return rows.map((r) => ({ toolKey: r.tool_key, micros: Number(r.micros) }));
+  }
+
   async statsSince(since: Date): Promise<Map<string, ToolStats>> {
     const counted = this.db
       .selectFrom('tool_calls')

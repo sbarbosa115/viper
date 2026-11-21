@@ -497,7 +497,20 @@ export function composeApp(
     tools: { spendByTool: (window) => tools.toolQueries.spendByTool(window) },
   });
 
-  const finance = createFinance({ db, clock, ids });
+  const finance = createFinance({
+    db,
+    clock,
+    ids,
+    audit: auditLog,
+    analytics,
+    billing: { revenueForMonth: (month) => billing.billingQueries.revenueForMonth(month) },
+    tools: {
+      meteredCostByProvider: (month) => tools.toolQueries.meteredCostByProvider(month),
+      providers: () => tools.toolQueries.providers(),
+    },
+    staff: { staffRecipients: () => identityQueries.staffRecipients() },
+    members: { memberEmails: (ids) => identityQueries.getMemberEmails(ids) },
+  });
 
   const deps: AppDeps = {
     logger,

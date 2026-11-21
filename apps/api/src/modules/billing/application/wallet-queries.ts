@@ -6,6 +6,7 @@ import type {
   BillingUnitOfWork,
   CreditsSummary,
   LedgerCursor,
+  MonthlyRevenue,
   PaymentGateway,
 } from './ports.js';
 
@@ -143,6 +144,21 @@ export class WalletQueries {
       from: filter.from,
       to: filter.to,
       excludeBusinessIds: filter.excludeBusinessIds ?? [],
+    });
+  }
+
+  /**
+   * Sales (paid in the UTC month) and refunds (refunded in it), raw for finance. `month` is
+   * 'YYYY-MM'.
+   */
+  async revenueForMonth(month: string): Promise<MonthlyRevenue> {
+    const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+    if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });
+    const year = Number(match[1]);
+    const index = Number(match[2]) - 1;
+    return await this.deps.readModel.revenueBetween({
+      from: new Date(Date.UTC(year, index, 1)),
+      to: new Date(Date.UTC(year, index + 1, 1)),
     });
   }
 

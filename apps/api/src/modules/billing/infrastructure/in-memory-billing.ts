@@ -12,6 +12,7 @@ import type {
   BusinessDirectory,
   CreditsSummary,
   LedgerCursor,
+  MonthlyRevenue,
   TrialCreditsSetting,
 } from '../application/ports.js';
 
@@ -87,6 +88,38 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
       creditsPurchased: sum((e) => e.type === 'purchase'),
       creditsSpent: -sum((e) => e.type === 'settlement'),
       unspentCredits: [...businesses].reduce((s, b) => s + this.totals(b).available, 0),
+    });
+  }
+
+  revenueBetween(range: { from: Date; to: Date }): Promise<MonthlyRevenue> {
+    const within = (d: Date | null): d is Date => d !== null && d >= range.from && d < range.to;
+    const purchases = this.state.purchases;
+    return Promise.resolve({
+      sales: purchases.flatMap((p) =>
+        p.status === 'paid' && within(p.paidAt)
+          ? [
+              {
+                purchaseId: p.id,
+                amountCents: p.amountCents,
+                taxCents: p.taxCents,
+                paidAt: p.paidAt,
+              },
+            ]
+          : [],
+      ),
+      refunds: purchases.flatMap((p) =>
+        p.refundedCents > 0 && within(p.refundedAt)
+          ? [
+              {
+                purchaseId: p.id,
+                refundedCents: p.refundedCents,
+                amountCents: p.amountCents,
+                taxCents: p.taxCents,
+                refundedAt: p.refundedAt,
+              },
+            ]
+          : [],
+      ),
     });
   }
 
@@ -181,6 +214,10 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
       purchases: {
         findBySessionIdForUpdate: (sessionId) => {
           const found = s().purchases.find((p) => p.stripeSessionId === sessionId);
+          return Promise.resolve(found ? Purchase.restore(structuredClone(found)) : null);
+        },
+        findByPaymentIntentIdForUpdate: (intent) => {
+          const found = s().purchases.find((p) => p.stripePaymentIntentId === intent);
           return Promise.resolve(found ? Purchase.restore(structuredClone(found)) : null);
         },
         save: (purchase) => {

@@ -262,6 +262,7 @@ describe('FR-19 / FR-36: deferred recording (the provider runs outside any trans
       listForRun: base.calls.listForRun.bind(base.calls),
       statsSince: base.calls.statsSince.bind(base.calls),
       spendBetween: base.calls.spendBetween.bind(base.calls),
+      costByToolBetween: base.calls.costByToolBetween.bind(base.calls),
       add: (records: readonly ToolCallRecord[]) => {
         log.push({ op: 'add', within: within?.tx, statuses: records.map((r) => r.status) });
         return base.calls.add(records);

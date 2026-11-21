@@ -47,6 +47,8 @@ export interface IdentityQueries {
    * entry is written in the same transaction (nothing is written for an unknown Business: 404).
    */
   setBusinessInternal(businessId: string, internal: boolean, by?: StaffChange): Promise<void>;
+  /** Staff Members to notify (finance's budget alerts), ordered by email. */
+  staffRecipients(): Promise<{ memberId: string; email: string; name: string }[]>;
   /** Member emails by id, for the Audit log (missing ids are skipped). */
   getMemberEmails(memberIds: readonly string[]): Promise<Map<string, string>>;
 }
@@ -107,6 +109,13 @@ export function identityQueriesFrom(
     renameBusiness: (businessId, name) => update(businessId, (b) => b.rename(name)),
     setBusinessInternal: (businessId, internal, by) =>
       update(businessId, (b) => b.markInternal(internal), by),
+    async staffRecipients() {
+      return (await s.repos.members.findStaff()).map((m) => ({
+        memberId: m.id,
+        email: m.email,
+        name: m.name,
+      }));
+    },
     async getMemberEmails(memberIds) {
       const ids = [...new Set(memberIds)];
       if (ids.length === 0) return new Map();

@@ -143,6 +143,16 @@ export class KyselyMemberRepository implements MemberRepository {
     return rows.map(toMember);
   }
 
+  async findStaff(): Promise<Member[]> {
+    const rows = await this.db
+      .selectFrom('members')
+      .selectAll()
+      .where('is_staff', '=', 1)
+      .orderBy('email')
+      .execute();
+    return rows.map(toMember);
+  }
+
   async claimTotpStep(memberId: string, step: number): Promise<boolean> {
     const result = await this.db
       .updateTable('members')

@@ -4,8 +4,15 @@ import type { PaymentEvent } from '../application/ports.js';
 interface StripeLikeEvent {
   id?: unknown;
   type?: unknown;
+  created?: unknown;
   data?: {
-    object?: { id?: unknown; payment_status?: unknown; total_details?: { amount_tax?: unknown } };
+    object?: {
+      id?: unknown;
+      payment_status?: unknown;
+      payment_intent?: unknown;
+      amount_refunded?: unknown;
+      total_details?: { amount_tax?: unknown };
+    };
   };
 }
 
@@ -31,6 +38,7 @@ export function parseEvent(rawBody: Buffer | StripeLikeEvent): PaymentEvent {
   }
   const id = typeof event.id === 'string' ? event.id : '';
   const session = event.data?.object;
+  if (event.type === 'charge.refunded') return parseRefund(id, event);
   const type = SESSION_EVENTS.find((t) => t === event.type);
   if (!type || typeof session?.id !== 'string') return { id, type: 'other' };
   const tax = session.total_details?.amount_tax;
@@ -40,5 +48,22 @@ export function parseEvent(rawBody: Buffer | StripeLikeEvent): PaymentEvent {
     sessionId: session.id,
     paid: session.payment_status === 'paid' || session.payment_status === 'no_payment_required',
     taxCents: typeof tax === 'number' ? tax : 0,
+    paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+  };
+}
+
+/** `charge.refunded`: the charge's payment intent and cumulative refunded amount (FR-7). */
+function parseRefund(id: string, event: StripeLikeEvent): PaymentEvent {
+  const charge = event.data?.object;
+  const intent = charge?.payment_intent;
+  const refunded = charge?.amount_refunded;
+  if (typeof intent !== 'string' || typeof refunded !== 'number') return { id, type: 'other' };
+  const created = typeof event.created === 'number' ? event.created * 1000 : Date.now();
+  return {
+    id,
+    type: 'charge.refunded',
+    paymentIntentId: intent,
+    amountRefundedCents: refunded,
+    occurredAt: new Date(created),
   };
 }

@@ -1,12 +1,62 @@
 import { sql } from 'kysely';
 import type { Database } from '../../../shared/infrastructure/db/database.js';
-import type { BillingReadModel, CreditsSummary } from '../application/ports.js';
+import type { BillingReadModel, CreditsSummary, MonthlyRevenue } from '../application/ports.js';
 
 const n = (v: unknown) => Number(v ?? 0);
 
 /** Aggregates for Staff reporting (FR-30, FR-31); each is one query, never per Business. */
 export class KyselyBillingReadModel implements BillingReadModel {
   constructor(private readonly db: Database) {}
+
+  async revenueBetween(range: { from: Date; to: Date }): Promise<MonthlyRevenue> {
+    const [sales, refunds] = await Promise.all([
+      this.db
+        .selectFrom('purchases')
+        .select(['id', 'amount_cents', 'tax_cents', 'paid_at'])
+        .where('status', '=', 'paid')
+        .where('paid_at', '>=', range.from)
+        .where('paid_at', '<', range.to)
+        .orderBy('paid_at')
+        .orderBy('id')
+        .execute(),
+      this.db
+        .selectFrom('purchases')
+        .select(['id', 'amount_cents', 'tax_cents', 'refunded_cents', 'refunded_at'])
+        .where('refunded_cents', '>', 0)
+        .where('refunded_at', '>=', range.from)
+        .where('refunded_at', '<', range.to)
+        .orderBy('refunded_at')
+        .orderBy('id')
+        .execute(),
+    ]);
+    return {
+      sales: sales.flatMap((r) =>
+        r.paid_at
+          ? [
+              {
+                purchaseId: r.id,
+                amountCents: r.amount_cents,
+                taxCents: r.tax_cents,
+                paidAt: r.paid_at,
+              },
+            ]
+          : [],
+      ),
+      refunds: refunds.flatMap((r) =>
+        r.refunded_at
+          ? [
+              {
+                purchaseId: r.id,
+                refundedCents: r.refunded_cents,
+                amountCents: r.amount_cents,
+                taxCents: r.tax_cents,
+                refundedAt: r.refunded_at,
+              },
+            ]
+          : [],
+      ),
+    };
+  }
 
   async creditsSummary(filter: {
     from: Date;

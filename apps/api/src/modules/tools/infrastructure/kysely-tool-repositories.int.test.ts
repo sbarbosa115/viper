@@ -15,7 +15,7 @@ import {
   RUN,
   ScriptedAdapter,
 } from '../test/fakes.js';
-import { seed } from '../index.js';
+import { createToolQueries, seed } from '../index.js';
 import { KyselyToolCallRepository, KyselyToolRepository } from './kysely-tool-repositories.js';
 
 const db = createDatabase(process.env.DATABASE_URL_TEST ?? '');
@@ -222,5 +222,60 @@ describe('FR-36: ToolRunner on MySQL inside a caller transaction', () => {
       [1, false, 9_000],
       [2, true, 0],
     ]);
+  });
+});
+
+describe('prd-expenses FR-6: ToolQueries metered cost and providers (MySQL)', () => {
+  const queries = () => createToolQueries({ db, settings: new FakeSettings() });
+
+  test('meteredCostByProvider: UTC month edges, every status, only providers with cost', async () => {
+    await calls.add([
+      record({ providerCostMicros: 1_000, createdAt: new Date('2026-10-31T23:59:59.999Z') }),
+      record({ providerCostMicros: 35_000, createdAt: new Date('2026-11-01T00:00:00.000Z') }),
+      record({
+        providerCostMicros: 5_000,
+        status: 'error',
+        error: 'x',
+        output: null,
+        createdAt: new Date('2026-11-30T23:59:59.000Z'),
+      }),
+      record({
+        toolKey: 'firecrawl.scrape',
+        providerCostMicros: 2_000,
+        reused: true,
+        output: null,
+        createdAt: new Date('2026-11-15T00:00:00.000Z'),
+      }),
+      record({
+        toolKey: 'firecrawl.scrape',
+        providerCostMicros: 0,
+        createdAt: new Date('2026-11-16T00:00:00.000Z'),
+      }),
+      record({ providerCostMicros: 9_000, createdAt: new Date('2026-12-01T00:00:00.000Z') }),
+    ]);
+    const q = queries();
+    expect(await q.meteredCostByProvider('2026-11')).toEqual([
+      { provider: 'Firecrawl', micros: 2_000 },
+      { provider: 'Google Maps Platform', micros: 40_000 },
+    ]);
+    expect(await q.meteredCostByProvider('2026-12')).toEqual([
+      { provider: 'Google Maps Platform', micros: 9_000 },
+    ]);
+    expect(await q.meteredCostByProvider('2026-09')).toEqual([]);
+    await expect(q.meteredCostByProvider('2026-1')).rejects.toThrow('Invalid month');
+  });
+
+  test('providers: distinct providers with their Tool keys, sorted by name', async () => {
+    const list = await queries().providers();
+    expect(list.map((p) => p.name)).toEqual(
+      [...new Set(TOOL_CATALOG.map((t) => t.provider))].sort((a, b) => a.localeCompare(b)),
+    );
+    expect(list.find((p) => p.name === 'Firecrawl')?.toolKeys).toEqual(['firecrawl.scrape']);
+    expect(list.find((p) => p.name === 'Google Maps Platform')?.toolKeys).toEqual(
+      TOOL_CATALOG.filter((t) => t.provider === 'Google Maps Platform')
+        .map((t) => t.key)
+        .sort(),
+    );
+    expect(list.flatMap((p) => p.toolKeys).sort()).toEqual(TOOL_CATALOG.map((t) => t.key).sort());
   });
 });

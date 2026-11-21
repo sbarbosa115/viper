@@ -5,6 +5,7 @@ import {
   ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
+  ValidationError,
 } from '../../../shared/domain/errors.js';
 import { toolDefinition } from '../domain/catalog.js';
 import { NO_STATS, toolHealth, type ToolStats } from '../domain/health.js';
@@ -204,6 +205,45 @@ export class ToolQueries {
   /** Provider cost, calls and errors per Tool for calls made in [from, to) (Staff dashboard, FR-30). */
   spendByTool(window: { from: Date; to: Date }): Promise<ToolSpend[]> {
     return this.deps.calls.spendBetween(window);
+  }
+
+  /**
+   * Metered provider cost in the UTC month ('YYYY-MM') per provider, in micro-dollars: every
+   * Tool call created in it, whatever its status; providers with no cost are left out.
+   */
+  async meteredCostByProvider(month: string): Promise<{ provider: string; micros: number }[]> {
+    const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+    if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });
+    const year = Number(match[1]);
+    const index = Number(match[2]) - 1;
+    const [costs, tools] = await Promise.all([
+      this.deps.calls.costByToolBetween({
+        from: new Date(Date.UTC(year, index, 1)),
+        to: new Date(Date.UTC(year, index + 1, 1)),
+      }),
+      this.deps.tools.list(),
+    ]);
+    const providerOf = new Map(tools.map((t) => [t.key, t.provider]));
+    const byProvider = new Map<string, number>();
+    for (const c of costs) {
+      const provider = providerOf.get(c.toolKey);
+      if (provider) byProvider.set(provider, (byProvider.get(provider) ?? 0) + c.micros);
+    }
+    return [...byProvider]
+      .filter(([, micros]) => micros > 0)
+      .map(([provider, micros]) => ({ provider, micros }))
+      .sort((a, b) => a.provider.localeCompare(b.provider));
+  }
+
+  /** Every provider with its Tool keys, sorted by provider name (finance's provider list). */
+  async providers(): Promise<{ name: string; toolKeys: string[] }[]> {
+    const byName = new Map<string, string[]>();
+    for (const t of await this.deps.tools.list()) {
+      byName.set(t.provider, [...(byName.get(t.provider) ?? []), t.key]);
+    }
+    return [...byName]
+      .map(([name, toolKeys]) => ({ name, toolKeys: toolKeys.sort() }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** A run's Tool calls, oldest first (Staff run detail, FR-32/FR-36). */

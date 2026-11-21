@@ -75,7 +75,12 @@ export type BillingCommands = Pick<
 /** Reads for other modules: the header balance, run start checks and Staff reporting. */
 export type BillingQueries = Pick<
   WalletQueries,
-  'getWallet' | 'activePacks' | 'creditsSummary' | 'availableByBusiness' | 'payingBusinessIds'
+  | 'getWallet'
+  | 'activePacks'
+  | 'creditsSummary'
+  | 'availableByBusiness'
+  | 'payingBusinessIds'
+  | 'revenueForMonth'
 >;
 
 /** The HTTP module's shape (matches app.ts AppModule). */
@@ -132,6 +137,7 @@ function assemble(uow: BillingUnitOfWork, readModel: BillingReadModel, deps: Com
       creditsSummary: q.creditsSummary.bind(q),
       availableByBusiness: q.availableByBusiness.bind(q),
       payingBusinessIds: q.payingBusinessIds.bind(q),
+      revenueForMonth: q.revenueForMonth.bind(q),
     },
     module: {
       name: 'billing',

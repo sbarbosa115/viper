@@ -402,3 +402,27 @@ describe('identity repositories (MySQL)', () => {
     expect(await r.loginAttempts.countFailuresForEmail('m-1', since)).toBe(0);
   });
 });
+
+describe('prd-expenses FR-12: staffRecipients (MySQL)', () => {
+  test('lists only Staff Members, ordered by email, with member id, email and name', async () => {
+    const a = await seedOwner(3);
+    const b = await seedOwner(1);
+    await seedOwner(2);
+    a.member.grantStaff();
+    b.member.grantStaff();
+    await repos().members.save(a.member);
+    await repos().members.save(b.member);
+
+    const recipients = await identityQueriesFrom(services()).staffRecipients();
+    expect(recipients).toEqual([
+      { memberId: b.member.id, email: 'owner1@example.com', name: 'Owner 1' },
+      { memberId: a.member.id, email: 'owner3@example.com', name: 'Owner 3' },
+    ]);
+
+    b.member.revokeStaff();
+    await repos().members.save(b.member);
+    expect((await identityQueriesFrom(services()).staffRecipients()).map((r) => r.email)).toEqual([
+      'owner3@example.com',
+    ]);
+  });
+});

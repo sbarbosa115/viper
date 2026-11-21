@@ -75,12 +75,19 @@ export class FulfilPurchase {
     sessionId: string;
     eventId: string;
     taxCents: number;
+    paymentIntentId?: string | null;
   }): Promise<{ fulfilled: boolean }> {
     const paid = await this.deps.uow.run(async ({ purchases, packs, wallets, ledger, events }) => {
       const purchase = await purchases.findBySessionIdForUpdate(cmd.sessionId);
       if (!purchase) return null;
       const now = this.deps.clock.now();
-      if (!purchase.markPaid({ eventId: cmd.eventId, taxCents: cmd.taxCents, now })) return null;
+      const marked = purchase.markPaid({
+        eventId: cmd.eventId,
+        taxCents: cmd.taxCents,
+        now,
+        paymentIntentId: cmd.paymentIntentId ?? null,
+      });
+      if (!marked) return null;
       await purchases.save(purchase);
 
       const pack = await packs.findById(purchase.packId);
@@ -141,6 +148,31 @@ export class FailPurchase {
 }
 
 /**
+ * FR-7: `charge.refunded` sets the Purchase's cumulative refunded amount and time. Found by the
+ * payment intent stored when it was paid; unknown intents change nothing. Credits stay.
+ */
+export class RecordRefund {
+  constructor(private readonly deps: { uow: BillingUnitOfWork }) {}
+
+  execute(cmd: {
+    paymentIntentId: string;
+    refundedCents: number;
+    occurredAt: Date;
+  }): Promise<{ found: boolean }> {
+    return this.deps.uow.run(async ({ purchases }) => {
+      const purchase = await purchases.findByPaymentIntentIdForUpdate(cmd.paymentIntentId);
+      if (!purchase) return { found: false };
+      const changed = purchase.recordRefund({
+        refundedCents: cmd.refundedCents,
+        now: cmd.occurredAt,
+      });
+      if (changed) await purchases.save(purchase);
+      return { found: true };
+    });
+  }
+}
+
+/**
  * POST /api/webhooks/stripe: verify the raw body, then act on the Checkout Session events.
  * `completed` fulfils when already paid (cards); a method that settles later completes unpaid and
  * is fulfilled by `async_payment_succeeded` or failed by `async_payment_failed`. Fulfilment is
@@ -152,21 +184,36 @@ export class HandleStripeWebhook {
       gateway: PaymentGateway;
       fulfilPurchase: FulfilPurchase;
       failPurchase: FailPurchase;
+      recordRefund: RecordRefund;
     },
   ) {}
 
-  async execute(cmd: { rawBody: Buffer; signature: string | undefined }): Promise<void> {
+  /** `unknownPaymentIntent` is set when a refund matched no Purchase (the caller logs it). */
+  async execute(cmd: {
+    rawBody: Buffer;
+    signature: string | undefined;
+  }): Promise<{ unknownPaymentIntent?: string }> {
     const event = await this.deps.gateway.verifyWebhook(cmd.rawBody, cmd.signature);
-    if (event.type === 'other') return;
+    if (event.type === 'other') return {};
+    if (event.type === 'charge.refunded') {
+      const { found } = await this.deps.recordRefund.execute({
+        paymentIntentId: event.paymentIntentId,
+        refundedCents: event.amountRefundedCents,
+        occurredAt: event.occurredAt,
+      });
+      return found ? {} : { unknownPaymentIntent: event.paymentIntentId };
+    }
     if (event.type === 'checkout.session.async_payment_failed') {
       await this.deps.failPurchase.execute({ sessionId: event.sessionId });
-      return;
+      return {};
     }
-    if (!event.paid) return;
+    if (!event.paid) return {};
     await this.deps.fulfilPurchase.execute({
       sessionId: event.sessionId,
       eventId: event.id,
       taxCents: event.taxCents,
+      paymentIntentId: event.paymentIntentId,
     });
+    return {};
   }
 }

@@ -383,3 +383,148 @@ describe('PRD 8a: demo seed', () => {
     ]);
   });
 });
+
+describe('prd-expenses FR-7: refunds and revenueForMonth (MySQL)', () => {
+  async function pack() {
+    return build().app.creditPacks.ensure({
+      name: 'Growth',
+      credits: 11_000,
+      priceCents: 9_900,
+      active: true,
+    });
+  }
+
+  async function insertPurchase(
+    packId: string,
+    key: string,
+    fields: {
+      paidAt: string | null;
+      status?: 'paid' | 'pending';
+      amountCents?: number;
+      taxCents?: number;
+      refundedCents?: number;
+      refundedAt?: string | null;
+    },
+  ) {
+    await db
+      .insertInto('purchases')
+      .values({
+        id: ids.next(),
+        business_id: BUSINESS,
+        pack_id: packId,
+        credits: 11_000,
+        stripe_session_id: `cs_${key}`,
+        stripe_event_id: null,
+        stripe_payment_intent_id: `pi_${key}`,
+        amount_cents: fields.amountCents ?? 9_900,
+        tax_cents: fields.taxCents ?? 0,
+        refunded_cents: fields.refundedCents ?? 0,
+        status: fields.status ?? 'paid',
+        created_at: new Date('2026-11-01T00:00:00.000Z'),
+        paid_at: fields.paidAt ? new Date(fields.paidAt) : null,
+        refunded_at: fields.refundedAt ? new Date(fields.refundedAt) : null,
+      })
+      .execute();
+  }
+
+  test('payment intent is stored when paid; charge.refunded is cumulative and idempotent', async () => {
+    const { app, gateway } = build();
+    const growth = await pack();
+    await app.startCheckout.execute(
+      { packId: growth.id },
+      { memberId: STAFF, businessId: BUSINESS, roles: ['owner'], emailVerified: true },
+    );
+    const sessionId = gateway.sessions[0]?.sessionId ?? '';
+    await app.fulfilPurchase.execute({
+      sessionId,
+      eventId: 'evt_1',
+      taxCents: 0,
+      paymentIntentId: 'pi_777',
+    });
+    const read = () => db.selectFrom('purchases').selectAll().executeTakeFirstOrThrow();
+    expect((await read()).stripe_payment_intent_id).toBe('pi_777');
+
+    const at = new Date('2026-12-03T09:00:00.000Z');
+    expect(
+      await app.handleStripeWebhook.execute({
+        rawBody: Buffer.from(
+          FakePaymentGateway.refundedEvent({
+            eventId: 'evt_r',
+            paymentIntentId: 'pi_777',
+            amountRefundedCents: 9_900,
+            createdAt: at,
+          }),
+        ),
+        signature: FakePaymentGateway.sign(
+          FakePaymentGateway.refundedEvent({
+            eventId: 'evt_r',
+            paymentIntentId: 'pi_777',
+            amountRefundedCents: 9_900,
+            createdAt: at,
+          }),
+        ),
+      }),
+    ).toEqual({});
+    expect(await read()).toMatchObject({ refunded_cents: 9_900, refunded_at: at });
+    const again = { paymentIntentId: 'pi_777', refundedCents: 9_900 };
+    await app.recordRefund.execute({ ...again, occurredAt: new Date('2026-12-09T00:00:00.000Z') });
+    await app.recordRefund.execute({
+      paymentIntentId: 'pi_777',
+      refundedCents: 100,
+      occurredAt: new Date('2026-12-10T00:00:00.000Z'),
+    });
+    expect(await read()).toMatchObject({ refunded_cents: 9_900, refunded_at: at });
+    expect(
+      await app.recordRefund.execute({ ...again, paymentIntentId: 'pi_nope', occurredAt: at }),
+    ).toEqual({ found: false });
+  });
+
+  test('revenueForMonth: UTC month edges, paid only; refunds by refunded_at', async () => {
+    const { billingQueries } = build();
+    const growth = await pack();
+    await insertPurchase(growth.id, 'oct-last', { paidAt: '2026-10-31T23:59:59.999Z' });
+    await insertPurchase(growth.id, 'nov-first', { paidAt: '2026-11-01T00:00:00.000Z' });
+    await insertPurchase(growth.id, 'nov-last', {
+      paidAt: '2026-11-30T23:59:59.000Z',
+      taxCents: 800,
+      amountCents: 4_900,
+      refundedCents: 4_900,
+      refundedAt: '2026-12-01T00:00:00.000Z',
+    });
+    await insertPurchase(growth.id, 'dec-first', { paidAt: '2026-12-01T00:00:00.000Z' });
+    await insertPurchase(growth.id, 'pending', { paidAt: null, status: 'pending' });
+    await insertPurchase(growth.id, 'nov-refund-partial', {
+      paidAt: '2026-10-15T00:00:00.000Z',
+      amountCents: 2_500,
+      taxCents: 200,
+      refundedCents: 1_000,
+      refundedAt: '2026-11-30T23:59:59.000Z',
+    });
+
+    const november = await billingQueries.revenueForMonth('2026-11');
+    expect(november.sales.map((s) => [s.amountCents, s.taxCents, s.paidAt.toISOString()])).toEqual([
+      [9_900, 0, '2026-11-01T00:00:00.000Z'],
+      [4_900, 800, '2026-11-30T23:59:59.000Z'],
+    ]);
+    expect(november.sales[0]?.purchaseId).toEqual(expect.any(String));
+    expect(november.refunds).toEqual([
+      {
+        purchaseId: expect.any(String),
+        refundedCents: 1_000,
+        amountCents: 2_500,
+        taxCents: 200,
+        refundedAt: new Date('2026-11-30T23:59:59.000Z'),
+      },
+    ]);
+
+    const december = await billingQueries.revenueForMonth('2026-12');
+    expect(december.sales).toHaveLength(1);
+    expect(december.sales[0]?.paidAt).toEqual(new Date('2026-12-01T00:00:00.000Z'));
+    expect(december.refunds).toMatchObject([
+      { refundedCents: 4_900, amountCents: 4_900, taxCents: 800 },
+    ]);
+
+    expect(await billingQueries.revenueForMonth('2027-01')).toEqual({ sales: [], refunds: [] });
+    await expect(billingQueries.revenueForMonth('2026-13')).rejects.toThrow('Invalid month');
+  });
+});
