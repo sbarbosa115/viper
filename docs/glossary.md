@@ -65,3 +65,9 @@ Use these exact terms in code, UI, tests and PRDs.
 | Cost of revenue | Provider costs and Stripe fees (categories AI, Data providers, Payments fees) | finance | COGS (in UI) |
 | Fixed run-rate | Monthly total of active Recurring bills, yearly ones divided by 12 | finance | burn |
 | Budget | The platform-wide monthly spending limit (default $300); all Staff are emailed at 80% and 100% | finance | cap, limit |
+| Ticket | A support request a Member opens in Help, with a number (#1042), category, status and thread; optionally linked to a Research run | support | case, issue, request (in UI) |
+| Reply | A message on a Ticket's thread, from the customer or from Staff (shown to customers as "Llyner Leads Support") | support | comment, response |
+| Internal note | A Staff-only message on a Ticket; customers never see it and nobody is emailed | support | private comment, whisper |
+| Waiting queue | The Tickets waiting on Staff (open or in progress, and unassigned or with an unread customer reply), longest wait first | support | inbox, backlog |
+| Support desk | The back-office area where Staff work Tickets | support | helpdesk, admin inbox |
+| Report a problem | The link on a failed run or a Lead list that opens a new Ticket with that run attached | support | feedback (that's for Leads) |
