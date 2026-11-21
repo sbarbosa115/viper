@@ -250,6 +250,19 @@ export class InMemoryFinanceStore implements FinanceStore {
         return Promise.resolve();
       },
       alertsSent: (month) => Promise.resolve([...(state.alerts.get(month) ?? [])]),
+      insertAlert: (month, threshold) => {
+        const sent = state.alerts.get(month) ?? [];
+        if (sent.includes(threshold)) return Promise.resolve(false);
+        state.alerts.set(
+          month,
+          [...sent, threshold].sort((a, b) => a - b),
+        );
+        return Promise.resolve(true);
+      },
+      clearAlerts: (month) => {
+        state.alerts.delete(month);
+        return Promise.resolve();
+      },
     };
     return { expenses, invoices, budgets };
   }

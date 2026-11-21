@@ -31,7 +31,7 @@ import {
 } from './modules/platform/index.js';
 import { createProfile, type Profile } from './modules/profile/index.js';
 import { createReporting } from './modules/reporting/index.js';
-import { createFinance } from './modules/finance/index.js';
+import { createFinance, type Finance } from './modules/finance/index.js';
 import {
   createResearch,
   fakeResearchAgent,
@@ -189,6 +189,7 @@ export interface ComposedModules {
   planning: Planning;
   leads: Leads;
   research: Research;
+  finance: Finance;
   /** research's collaborators, for the worker's research workers. */
   researchCollaborators: ResearchCollaborators & { testHooks: boolean };
   testHooks: boolean;
@@ -397,6 +398,25 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     },
   });
 
+  const finance = createFinance({
+    db,
+    clock,
+    ids,
+    audit: auditLog,
+    analytics,
+    email,
+    appUrl: config.APP_URL,
+    logger,
+    testHooks,
+    billing: { revenueForMonth: (month) => billing.billingQueries.revenueForMonth(month) },
+    tools: {
+      meteredCostByProvider: (month) => tools.toolQueries.meteredCostByProvider(month),
+      providers: () => tools.toolQueries.providers(),
+    },
+    staff: { staffRecipients: () => identityQueries.staffRecipients() },
+    members: { memberEmails: (memberIds) => identityQueries.getMemberEmails(memberIds) },
+  });
+
   return {
     core,
     email,
@@ -409,6 +429,7 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     planning,
     leads,
     research,
+    finance,
     researchCollaborators,
     testHooks,
   };
@@ -431,7 +452,7 @@ export function composeApp(
   const { db, logger } = infra;
   const m = composeModules(config, infra);
   const { core, email, identityQueries, llm, geocoder, billing, tools } = m;
-  const { profile, planning, leads, research } = m;
+  const { profile, planning, leads, research, finance } = m;
   const { clock, ids, secretBox, settings, auditLog, analytics } = core;
 
   const identityDeps: IdentityDeps = {
@@ -495,21 +516,6 @@ export function composeApp(
     },
     leads: leads.leadsQueries,
     tools: { spendByTool: (window) => tools.toolQueries.spendByTool(window) },
-  });
-
-  const finance = createFinance({
-    db,
-    clock,
-    ids,
-    audit: auditLog,
-    analytics,
-    billing: { revenueForMonth: (month) => billing.billingQueries.revenueForMonth(month) },
-    tools: {
-      meteredCostByProvider: (month) => tools.toolQueries.meteredCostByProvider(month),
-      providers: () => tools.toolQueries.providers(),
-    },
-    staff: { staffRecipients: () => identityQueries.staffRecipients() },
-    members: { memberEmails: (ids) => identityQueries.getMemberEmails(ids) },
   });
 
   const deps: AppDeps = {

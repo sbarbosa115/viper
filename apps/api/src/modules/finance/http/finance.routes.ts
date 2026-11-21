@@ -14,9 +14,12 @@ import {
   saveBudget,
   saveProviderInvoice,
   updateExpense,
+  financeTestContracts,
 } from '@app/contracts/finance';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
+import type { RunBudgetCheck } from '../application/budget-alerts.js';
 import type {
   AddExpensePrice,
   CreateExpense,
@@ -51,7 +54,11 @@ export interface FinanceUseCases {
 }
 
 /** prd-expenses section 7. Staff checks (403) live in the use cases. */
-export function financeRoutes(app: FastifyInstance, uc: FinanceUseCases): void {
+export function financeRoutes(
+  app: FastifyInstance,
+  uc: FinanceUseCases,
+  testHooks?: { budgetCheck: RunBudgetCheck },
+): void {
   const api = app.withTypeProvider<ZodTypeProvider>();
   const auth = { preHandler: app.authenticate };
   const tags = ['finance'];
@@ -203,4 +210,23 @@ export function financeRoutes(app: FastifyInstance, uc: FinanceUseCases): void {
     { ...auth, schema: { tags, body: saveBudget.body, response: { 200: saveBudget.response } } },
     (req) => uc.saveBudget.execute(req.actor, req.body),
   );
+
+  if (testHooks) {
+    const { runBudgetCheck } = financeTestContracts;
+    api.post(
+      routePath(runBudgetCheck),
+      {
+        schema: {
+          hide: true,
+          // `reset` is e2e-only: forget this month's recorded alerts first (the seed records some).
+          body: z.object({ reset: z.boolean().optional() }).nullish(),
+          response: { 200: runBudgetCheck.response },
+        },
+      },
+      async (req) => {
+        if (req.body?.reset) await testHooks.budgetCheck.resetMonth();
+        return { sent: await testHooks.budgetCheck.execute() };
+      },
+    );
+  }
 }

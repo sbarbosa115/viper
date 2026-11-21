@@ -96,6 +96,19 @@ export interface BudgetRepository {
   /** Writes the month's snapshot; `replace` overwrites one already there. */
   saveSnapshot(month: MonthKey, budgetCents: number, at: Date, replace: boolean): Promise<void>;
   alertsSent(month: MonthKey): Promise<BudgetThreshold[]>;
+  /**
+   * Records an alert (unique month + threshold); false when it was already recorded, so two
+   * concurrent budget checks cannot both send (FR-12).
+   */
+  insertAlert(
+    month: MonthKey,
+    threshold: BudgetThreshold,
+    spentCents: number,
+    budgetCents: number,
+    at: Date,
+  ): Promise<boolean>;
+  /** Test hook only: forgets a month's alerts. */
+  clearAlerts(month: MonthKey): Promise<void>;
 }
 
 export interface FinanceRepos {

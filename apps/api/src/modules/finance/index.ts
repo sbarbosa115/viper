@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import type { EmailSender } from '../../shared/application/email-sender.js';
 import type { AnalyticsTracker } from '../../shared/application/analytics-tracker.js';
 import type { Clock } from '../../shared/domain/clock.js';
 import type { IdGenerator } from '../../shared/domain/id-generator.js';
 import type { Database } from '../../shared/infrastructure/db/database.js';
+import type { AlertLogger } from './application/budget-alerts.js';
 import {
   AddExpensePrice,
   CreateExpense,
@@ -11,6 +13,7 @@ import {
   ListExpenses,
   UpdateExpense,
 } from './application/expenses.js';
+import { RunBudgetCheck, type BudgetAlertDeps } from './application/budget-alerts.js';
 import { BudgetService, ExportPnlCsv, GetBudget, GetPnl, SaveBudget } from './application/pnl.js';
 import type {
   FinanceAudit,
@@ -41,8 +44,14 @@ export type {
 export type { MonthSpend } from './application/pnl.js';
 export type { BudgetService } from './application/pnl.js';
 
-/** The finance BullMQ queue (the daily `budget-check` job scheduler, FR-12). */
-export const FINANCE_QUEUE = 'finance';
+export { createFinanceWorker, FINANCE_QUEUE } from './infrastructure/budget-worker.js';
+export type { FinanceWorkerDeps } from './infrastructure/budget-worker.js';
+
+const NO_ALERTS: BudgetAlertDeps = {
+  email: { send: () => Promise.reject(new Error('budget alerts are not wired')) },
+  appUrl: 'http://localhost',
+  logger: { info: () => undefined, warn: () => undefined },
+};
 
 /** The HTTP module's shape (matches app.ts AppModule). */
 export interface FinanceHttpModule {
@@ -56,6 +65,13 @@ export interface FinanceHttpModule {
  * identity's Staff recipients and Member emails, platform's Audit log and analytics.
  */
 export interface FinanceDeps extends FinanceSources {
+  /** Sends the budget alert emails (FR-12); the SMTP sender from Platform settings. */
+  email: EmailSender;
+  /** APP_URL, for the alert's link. */
+  appUrl: string;
+  logger: AlertLogger;
+  /** ENABLE_TEST_HOOKS and not production: registers POST /api/test/jobs/budget-check. */
+  testHooks?: boolean;
   db: Database;
   clock: Clock;
   ids: IdGenerator;
@@ -68,12 +84,17 @@ export interface Finance {
   useCases: FinanceUseCases;
   /** Month-to-date spend vs the Budget (FR-11), for the budget alert job (FR-12). */
   budget: BudgetService;
+  /** The daily budget check (FR-12), run by the worker and the test hook. */
+  budgetCheck: RunBudgetCheck;
   /** finance's tables (the budget alert job records alerts and snapshots through it). */
   store: FinanceStore;
 }
 
 /** Builds the module on any store (MySQL in production, in memory in tests). */
-export function assembleFinance(ctx: FinanceContext): Finance {
+export function assembleFinance(
+  ctx: FinanceContext,
+  alerts?: BudgetAlertDeps & { testHooks?: boolean },
+): Finance {
   const useCases: FinanceUseCases = {
     listExpenses: new ListExpenses(ctx),
     createExpense: new CreateExpense(ctx),
@@ -90,11 +111,18 @@ export function assembleFinance(ctx: FinanceContext): Finance {
     getBudget: new GetBudget(ctx),
     saveBudget: new SaveBudget(ctx),
   };
+  const budget = new BudgetService(ctx);
+  const budgetCheck = new RunBudgetCheck(ctx, budget, alerts ?? NO_ALERTS);
   return {
     useCases,
-    budget: new BudgetService(ctx),
+    budget,
+    budgetCheck,
     store: ctx.store,
-    module: { name: 'finance', register: (app) => financeRoutes(app, useCases) },
+    module: {
+      name: 'finance',
+      register: (app) =>
+        financeRoutes(app, useCases, alerts?.testHooks ? { budgetCheck } : undefined),
+    },
   };
 }
 
@@ -103,8 +131,11 @@ export function assembleFinance(ctx: FinanceContext): Finance {
  * only. Charges, metered costs and the P&L are computed on read; nothing depends on finance.
  */
 export function createFinance(deps: FinanceDeps): Finance {
-  const { db, audit, ...rest } = deps;
-  return assembleFinance({ ...rest, store: new KyselyFinanceStore(db, audit) });
+  const { db, audit, email, appUrl, logger, testHooks, ...rest } = deps;
+  return assembleFinance(
+    { ...rest, store: new KyselyFinanceStore(db, audit) },
+    { email, appUrl, logger, testHooks: testHooks ?? false },
+  );
 }
 
 /** Fixed ids the seed shares across modules (scripts/seed.ts `demo`). */

@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { RecordingAnalyticsTracker } from '../../../shared/infrastructure/analytics/db-analytics-tracker.js';
 import { createDatabase } from '../../../shared/infrastructure/db/database.js';
+import { InMemoryEmailSender } from '../../../shared/infrastructure/email/in-memory-email-sender.js';
 import { FixedClock } from '../../../shared/infrastructure/time/system-clock.js';
 import { Uuid7Generator } from '../../../shared/infrastructure/time/uuid7.js';
 import { seed as seedBilling } from '../../billing/index.js';
@@ -55,6 +56,9 @@ const finance = createFinance({
   ids,
   audit: createAuditLog({ db, clock, ids }),
   analytics: new RecordingAnalyticsTracker(),
+  email: new InMemoryEmailSender(),
+  appUrl: 'http://localhost:5173',
+  logger: { info: () => undefined, warn: () => undefined },
   ...mysqlSources(db),
 });
 const staff = { ...staffActor, memberId: demo.members.staff };

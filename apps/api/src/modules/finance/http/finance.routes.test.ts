@@ -9,12 +9,16 @@ import {
   listProviderInvoices,
   listProviders,
   providerAlreadyCoveredError,
+  financeTestContracts,
   saveBudget,
   saveProviderInvoice,
   deleteProviderInvoice,
   updateExpense,
 } from '@app/contracts/finance';
 import { describe, expect, test } from 'vitest';
+
+const { runBudgetCheck } = financeTestContracts;
+import { InMemoryEmailSender } from '../../../shared/infrastructure/email/in-memory-email-sender.js';
 import { buildTestApp } from '../../../../test/build-test-app.js';
 import type { Actor } from '../../../shared/domain/actor.js';
 import { assembleFinance } from '../index.js';
@@ -517,5 +521,52 @@ describe('FR-9, FR-10, FR-11: P&L, CSV and Budget', () => {
       expect(bad.statusCode, JSON.stringify(payload)).toBe(400);
     }
     expect(world.audit.actions()).toEqual(['budget.changed']);
+  });
+});
+
+describe('FR-12 / AJ-4 support: POST /api/test/jobs/budget-check', () => {
+  async function hookApp(testHooks: boolean) {
+    const world = fakeWorld();
+    world.store.add(oneOff('Legal review', 'legal_admin', 25000, '2026-11-10'));
+    const email = new InMemoryEmailSender();
+    const app = await buildTestApp({
+      modules: [
+        assembleFinance(world.ctx, {
+          email,
+          appUrl: 'http://localhost:5173',
+          logger: { info: () => undefined, warn: () => undefined },
+          testHooks,
+        }).module,
+      ],
+    });
+    return { app, world, email };
+  }
+
+  test('is not registered without test hooks', async () => {
+    const { app, email } = await hookApp(false);
+    const res = await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
+    expect(res.statusCode).toBe(404);
+    expect(email.sent).toEqual([]);
+  });
+
+  test('runs the check now and answers with the thresholds sent', async () => {
+    const { app, email } = await hookApp(true);
+    const first = await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
+    expect(runBudgetCheck.response.parse(first.json())).toEqual({ sent: [80] });
+    const second = await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
+    expect(second.json()).toEqual({ sent: [] });
+    expect(email.sent).toHaveLength(1);
+  });
+
+  test('{ reset: true } forgets the month alerts first', async () => {
+    const { app, email } = await hookApp(true);
+    await app.inject({ method: 'POST', url: '/api/test/jobs/budget-check' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/test/jobs/budget-check',
+      payload: { reset: true },
+    });
+    expect(res.json()).toEqual({ sent: [80] });
+    expect(email.sent).toHaveLength(2);
   });
 });

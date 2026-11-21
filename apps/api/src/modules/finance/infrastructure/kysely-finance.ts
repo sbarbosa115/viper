@@ -264,6 +264,31 @@ class KyselyBudgetRepository implements BudgetRepository {
       .execute();
     return rows.map((r) => (Number(r.threshold) === 100 ? 100 : 80));
   }
+
+  async insertAlert(
+    month: string,
+    threshold: BudgetThreshold,
+    spentCents: number,
+    budgetCents: number,
+    at: Date,
+  ): Promise<boolean> {
+    const result = await this.db
+      .insertInto('budget_alerts')
+      .ignore()
+      .values({
+        month,
+        threshold,
+        spent_cents: spentCents,
+        budget_cents: budgetCents,
+        sent_at: at,
+      })
+      .executeTakeFirst();
+    return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
+  }
+
+  async clearAlerts(month: string): Promise<void> {
+    await this.db.deleteFrom('budget_alerts').where('month', '=', month).execute();
+  }
 }
 
 const repos = (db: Db) => ({

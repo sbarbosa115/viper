@@ -586,6 +586,7 @@ export const runBudgetCheck = defineContract({
   path: '/api/test/jobs/budget-check',
   auth: 'public',
   status: 200,
+  body: z.object({ reset: z.boolean().optional() }).nullish(),
   response: z.object({ sent: z.array(budgetThreshold) }),
 });
 
