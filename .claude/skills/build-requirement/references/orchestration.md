@@ -2,13 +2,20 @@
 
 The plan format and planning rules are in `.claude/skills/new-requirement/references/execution-plan.md`. This file covers running a plan.
 
-## Before each wave
-- All `depends_on` packages are done, and the build is green.
+## Scheduling: start packages when they're ready
+Waves are milestones, not barriers. Keep a ready queue:
+- A package is **ready** when every package in its `depends_on` is done and its owned files aren't owned by a running package.
+- Whenever a package finishes, check its ownership (below), run its own paths' tests, and **start every package that became ready, in one message** (at most 4 running at once; see execution-plan.md rule 7). Don't wait for the rest of its wave.
+- When **all packages of a wave** are done, run the milestone: wire in, full checks, commit (and the demo, unless on autopilot). A package of the next wave that is already running keeps running; its files are simply not in that commit yet (commit with explicit paths, or `git add -A` and let the next milestone include the rest).
+- If a finished package breaks something, the packages depending on it wait; others continue.
+
+## Before starting packages
+- The packages they depend on are done, and the build is green for their paths.
 - No two packages in a parallel wave have overlapping `owns`. If any do, re-split them or run them in sequence, and tell the user.
 - There are at most 4 packages in the wave. If there are more, run them in batches.
 - Build the shared test image once (`docker compose -f docker-compose.test.yml build`), so agents don't rebuild it in parallel.
 - Record the starting commit: `git rev-parse HEAD` → `W<n>_START`.
-- Give each package a Compose project name `<repo>-<package-id>` in lowercase (for example `viper-wp-1`), so each gets its own MySQL and network.
+- Give each package a Compose project name `<repo>-<package-id>` in lowercase (for example `viper-wp-1`), so each gets its own MySQL and network, and tell it to run tests with `TEST_KEEP=1` (warm stack) and to run `./dev test-down` when it finishes. After a package returns, run `COMPOSE_PROJECT_NAME=<its project> ./dev test-down` yourself in case it didn't.
 
 ## Starting agents
 - Send all of the wave's Agent calls **in one message**, using `subagent_type: "general-purpose"` and each package's `model`.
@@ -18,11 +25,12 @@ The plan format and planning rules are in `.claude/skills/new-requirement/refere
 - Background agents stop on permission prompts. If `./dev` or `docker` commands keep prompting, suggest the user allowlist them (for example with `/fewer-permission-prompts`). That's their decision; don't change permission settings yourself.
 
 ### Brief template
+The brief must be self-contained: **paste** the FR text, endpoints, tables, events and the port signatures it needs. Don't tell the agent to read the PRD in full; every agent re-reading a long PRD is minutes of wasted time and a chance to drift outside its package. Point only to specific files it must imitate (an existing module, a mock file).
 ```
 You are implementing work package <ID>: <title>, in <repo path>.
 First read .claude/skills/build-requirement/references/agent-guide.md and follow it exactly.
 
-PRD: <docs/prd-x.md> (v<version>)
+PRD: <docs/prd-x.md> (v<version>); everything you need from it is below.
 Requirements (copied from the PRD):
 <FR-n: full text with acceptance criteria, for every FR in the package>
 <AJ-n: full text, if this package owns a journey spec>
@@ -31,7 +39,9 @@ Tables (from §8): <the ones it uses>
 Analytics events (from §3a): <the ones for these FRs>
 
 You own (write only here): <owns globs>
-Compose project name for tests: <repo>-<id>
+Ports you call or provide (exact signatures): <from §7 Module ports>
+Code to imitate: <paths of an existing module / feature / mock files>
+Compose project name for tests: <repo>-<id> (run with TEST_KEEP=1; ./dev test-down at the end)
 Done when: <done_when items>, plus every listed FR has passing tests in your Docker run.
 Resume: if .build/<id>.md exists, continue from it.
 ```
@@ -52,7 +62,7 @@ Agents return early for contract defects, missing dependencies or ambiguous rule
    - compose the new table types into `shared/infrastructure/db/schema.ts`
    - apply requested shared-file changes and add requested dependencies.
 3. **Migrations:** list `apps/api/migrations/`, check that the names are unique and that there are no conflicting changes to the same table. The migrator runs with `allowUnorderedMigrations: true`, so parallel timestamps are fine.
-4. **Full checks:** `./dev lint && ./dev typecheck && ./dev test`, plus `./dev e2e` once any spec exists. The MSW handlers and the API's HTTP tests both parse against the contracts, so contract drift fails here too. If something fails, SendMessage the owning agent with the failing output, rather than starting a new agent with no context. Fix trivial wiring problems yourself.
+4. **Full checks (only here, once per milestone):** `./dev lint && ./dev typecheck && ./dev test`, plus `./dev e2e` once any spec exists. Agents run only their own paths; the full suite is the orchestrator's job. The MSW handlers and the API's HTTP tests both parse against the contracts, so contract drift fails here too. If something fails, SendMessage the owning agent with the failing output, rather than starting a new agent with no context. Fix trivial wiring problems yourself.
 5. **Demo and sign-off.** Run `./dev up`, then `./dev seed`, and post:
    ```
    Wave W1 done: <one line>. Tests: <n> unit/integration, <n> e2e, all green.
