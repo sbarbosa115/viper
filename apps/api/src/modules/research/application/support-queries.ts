@@ -54,6 +54,16 @@ export class ResearchSupportQueries {
     });
   }
 
+  /** Runs by id for list pages: one read of runs and one of steps; unknown ids are omitted. */
+  runSummaries(runIds: readonly string[]): Promise<RunRef[]> {
+    if (runIds.length === 0) return Promise.resolve([]);
+    return this.store.transaction(async (tx) => {
+      const runs = await tx.runs.findByIds(runIds);
+      const steps = await tx.steps.listForRuns(runs.map((r) => r.id));
+      return runs.map((r) => toRunRef(r, steps.get(r.id) ?? []));
+    });
+  }
+
   /** One run of any Business; null when it doesn't exist. */
   runForSupport(runId: string): Promise<SupportRun | null> {
     return this.store.transaction(async (tx) => {

@@ -161,6 +161,13 @@ export class InMemoryResearchStore implements ResearchStore {
           const s = st().runs.get(id);
           return Promise.resolve(s ? restore(s) : null);
         },
+        findByIds: (ids) =>
+          Promise.resolve(
+            [...new Set(ids)].flatMap((id) => {
+              const s = st().runs.get(id);
+              return s ? [restore(s)] : [];
+            }),
+          ),
         findForUpdate: (id) => {
           const s = st().runs.get(id);
           return Promise.resolve(s ? restore(s) : null);
@@ -211,8 +218,12 @@ export class InMemoryResearchStore implements ResearchStore {
         recentForBusiness: (businessId, since, limit) =>
           Promise.resolve(
             runs()
-              .filter((x) => x.businessId === businessId && x.queuedAt >= since)
-              .sort(byNewest)
+              .filter((x) => x.businessId === businessId && (x.startedAt ?? x.queuedAt) >= since)
+              .sort(
+                (a, b) =>
+                  (b.startedAt ?? b.queuedAt).getTime() - (a.startedAt ?? a.queuedAt).getTime() ||
+                  (b.id < a.id ? -1 : b.id > a.id ? 1 : 0),
+              )
               .slice(0, limit)
               .map(restore),
           ),

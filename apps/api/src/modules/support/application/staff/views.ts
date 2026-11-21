@@ -1,5 +1,6 @@
 import {
   SUPPORT_AUTHOR_NAME,
+  type RunRef,
   type StaffMessage,
   type StaffRunRef,
   type StaffTicketDetail,
@@ -25,6 +26,9 @@ export interface Lookups {
   businesses: Map<string, string>;
   runs: Map<string, SupportRun>;
 }
+
+/** What a list row needs: runs may be the batched summaries. */
+type RowLookups = Omit<Lookups, 'runs'> & { runs: ReadonlyMap<string, RunRef> };
 
 const UNKNOWN_MEMBER = 'Unknown member';
 
@@ -53,9 +57,10 @@ export async function lookup(
   };
 }
 
-const nameOf = (l: Lookups, id: string): string => l.members.get(id)?.name ?? UNKNOWN_MEMBER;
+const nameOf = (l: Pick<Lookups, 'members'>, id: string): string =>
+  l.members.get(id)?.name ?? UNKNOWN_MEMBER;
 
-function summaryOf(item: TicketListItem, l: Lookups, now: Date): StaffTicketSummary {
+function summaryOf(item: TicketListItem, l: RowLookups, now: Date): StaffTicketSummary {
   const t = item.ticket;
   const run = t.runId ? l.runs.get(t.runId) : undefined;
   const reply = item.lastReply;
@@ -97,16 +102,20 @@ export async function summariesOf(
   items: readonly TicketListItem[],
   now: Date,
 ): Promise<StaffTicketSummary[]> {
-  const l = await lookup(deps, {
-    memberIds: items.flatMap((i) => [
-      i.ticket.openedByMemberId,
-      i.ticket.assigneeId,
-      i.lastReply?.authorMemberId ?? null,
-    ]),
-    businessIds: items.map((i) => i.ticket.businessId),
-    runIds: items.map((i) => i.ticket.runId),
-  });
-  return items.map((item) => summaryOf(item, l, now));
+  const [l, runs] = await Promise.all([
+    lookup(deps, {
+      memberIds: items.flatMap((i) => [
+        i.ticket.openedByMemberId,
+        i.ticket.assigneeId,
+        i.lastReply?.authorMemberId ?? null,
+      ]),
+      businessIds: items.map((i) => i.ticket.businessId),
+      runIds: [],
+    }),
+    deps.research.runSummaries(unique(items.map((i) => i.ticket.runId))),
+  ]);
+  const rowLookups: RowLookups = { ...l, runs: new Map(runs.map((r) => [r.id, r])) };
+  return items.map((item) => summaryOf(item, rowLookups, now));
 }
 
 function messageOf(m: TicketMessage, l: Lookups): StaffMessage {

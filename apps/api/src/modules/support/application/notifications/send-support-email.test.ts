@@ -28,6 +28,7 @@ const run: SupportRun = {
 let store: InMemorySupportStore;
 let email: InMemoryEmailSender;
 let gone: Set<string>;
+let revoked: Set<string>;
 let warnings: object[];
 
 function deps(sender: SupportEmailDeps['email'] = email): SupportEmailDeps {
@@ -39,7 +40,9 @@ function deps(sender: SupportEmailDeps['email'] = email): SupportEmailDeps {
     identity: {
       memberSummaries: (ids) =>
         Promise.resolve(
-          Object.values(members).filter((m) => ids.includes(m.id) && !gone.has(m.id)),
+          Object.values(members)
+            .filter((m) => ids.includes(m.id) && !gone.has(m.id))
+            .map((m) => (revoked.has(m.id) ? { ...m, isStaff: false } : m)),
         ),
       staffMembers: () => Promise.resolve([]),
       staffRecipients: () => Promise.resolve(staff),
@@ -94,6 +97,7 @@ beforeEach(() => {
   store = new InMemorySupportStore();
   email = new InMemoryEmailSender();
   gone = new Set();
+  revoked = new Set();
   warnings = [];
 });
 
@@ -116,7 +120,9 @@ describe('FR-11: ticket emails', () => {
 
   test('CustomerReplied goes to the assignee only; to all Staff when unassigned', async () => {
     const t = await seed({ assigneeId: members.staff1.id, status: 'in_progress' });
-    await handler().execute(event('CustomerReplied', { ...base(t), messageId: 'm1' }));
+    await handler().execute(
+      event('CustomerReplied', { ...base(t), messageId: 'm1', status: 'in_progress' }),
+    );
     expect(email.sent.map((m) => m.to)).toEqual([members.staff1.email]);
     expect(email.sent[0]!.fromName).toBe('Llyner Leads Support');
     expect(email.sent[0]!.subject).toBe(`[#${t.number}] New reply · Sweet Supply Co.`);
@@ -124,7 +130,11 @@ describe('FR-11: ticket emails', () => {
 
     email.sent.length = 0;
     await handler().execute(
-      event('CustomerReplied', { ...base(t), assigneeId: null, messageId: 'm1' }, 'e2'),
+      event(
+        'CustomerReplied',
+        { ...base(t), assigneeId: null, messageId: 'm1', status: 'open' },
+        'e2',
+      ),
     );
     expect(email.sent.map((m) => m.to)).toEqual(staff.map((s) => s.email));
   });
@@ -223,10 +233,8 @@ describe('FR-11: ticket emails', () => {
     const t = await seed({ assigneeId: members.staff1.id }, 'Hi', 'staff_reply');
     gone.add(members.memberA.id);
     await handler().execute(event('StaffReplied', { ...base(t), messageId: 'm1' }));
-    gone.add(members.staff1.id);
-    await handler().execute(event('CustomerReplied', { ...base(t), messageId: 'm1' }, 'e2'));
     expect(email.sent).toEqual([]);
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
   });
 
   test('skips and logs when the Ticket is gone', async () => {
@@ -235,5 +243,30 @@ describe('FR-11: ticket emails', () => {
     );
     expect(email.sent).toEqual([]);
     expect(warnings).toHaveLength(1);
+  });
+
+  test('a reply for an assignee who is gone or no longer Staff goes to all Staff, with a warning', async () => {
+    const t = await seed({ assigneeId: members.staff1.id });
+    const payload = { ...base(t), messageId: 'm1', status: 'open' };
+    gone.add(members.staff1.id);
+    await handler().execute(event('CustomerReplied', payload, 'e1'));
+    expect(email.sent.map((m) => m.to)).toEqual(staff.map((s) => s.email));
+    expect(warnings).toHaveLength(1);
+
+    email.sent.length = 0;
+    gone.clear();
+    revoked.add(members.staff1.id);
+    await handler().execute(event('CustomerReplied', payload, 'e2'));
+    expect(email.sent.map((m) => m.to)).toEqual(staff.map((s) => s.email));
+    expect(warnings).toHaveLength(2);
+  });
+
+  test('the New reply email shows the status from the event, not the Ticket now', async () => {
+    const t = await seed({ status: 'closed' });
+    await handler().execute(
+      event('CustomerReplied', { ...base(t), assigneeId: null, messageId: 'm1', status: 'open' }),
+    );
+    expect(email.sent[0]!.text).toContain('· OPEN');
+    expect(email.sent[0]!.text).not.toContain('CLOSED');
   });
 });

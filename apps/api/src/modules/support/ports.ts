@@ -1,4 +1,4 @@
-import type { RunRef } from '@app/contracts/support';
+import type { RunRef, Status } from '@app/contracts/support';
 import type { AnalyticsTracker } from '../../shared/application/analytics-tracker.js';
 import type { EventPublisher } from '../../shared/application/event-publisher.js';
 
@@ -56,6 +56,8 @@ export interface ResearchForSupport {
   recentRunsForBusiness(businessId: string, since: Date, limit: number): Promise<RunRef[]>;
   /** One run of any Business; null when it doesn't exist. */
   runForSupport(runId: string): Promise<SupportRun | null>;
+  /** Several runs at once for list pages (review #2): one batched read; unknown ids are omitted. */
+  runSummaries(runIds: readonly string[]): Promise<RunRef[]>;
 }
 
 // billing -----------------------------------------------------------------------------------------
@@ -119,7 +121,7 @@ export interface SupportOutboxEvents {
   /** A new Ticket → "New ticket" to every Staff Member. `messageId`: the first message. */
   TicketOpened: TicketEventBase & { messageId: string };
   /** A customer reply → the assignee, or every Staff Member when unassigned. */
-  CustomerReplied: TicketEventBase & { messageId: string };
+  CustomerReplied: TicketEventBase & { messageId: string; status: Status };
   /** A Staff reply (not a close) → the opener. */
   StaffReplied: TicketEventBase & { messageId: string };
   /**

@@ -40,6 +40,7 @@ const ports = {
         },
       ]),
     runForSupport: () => Promise.resolve(null),
+    runSummaries: () => Promise.resolve([]),
   },
   billing: { balanceFor: () => Promise.resolve(863) },
 };

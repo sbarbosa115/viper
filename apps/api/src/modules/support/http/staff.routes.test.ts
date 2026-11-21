@@ -79,23 +79,27 @@ const identity: IdentityForSupport = {
     ),
 };
 
+const RUN = {
+  id: RUN_ID,
+  planId: '00000000-0000-4000-8000-0000000000e1',
+  planName: 'Local buyers',
+  startedAt: '2026-11-20T10:00:00.000Z',
+  status: 'failed' as const,
+  stoppedStep: { number: 5, name: 'Websites' },
+  creditsCharged: 12,
+};
+let summaryCalls = 0;
+
 const research: ResearchForSupport = {
   recentRunsForBusiness: () => Promise.resolve([]),
+  runSummaries: (ids) => {
+    summaryCalls += 1;
+    return Promise.resolve(ids.includes(RUN_ID) ? [RUN] : []);
+  },
   runForSupport: (runId) =>
     Promise.resolve(
       runId === RUN_ID
-        ? {
-            id: RUN_ID,
-            planId: '00000000-0000-4000-8000-0000000000e1',
-            planName: 'Local buyers',
-            startedAt: '2026-11-20T10:00:00.000Z',
-            status: 'failed',
-            stoppedStep: { number: 5, name: 'Websites' },
-            creditsCharged: 12,
-            businessId: BUSINESS_A,
-            attempt: 2,
-            lastError: 'Timeout reading site',
-          }
+        ? { ...RUN, businessId: BUSINESS_A, attempt: 2, lastError: 'Timeout reading site' }
         : null,
     ),
 };
@@ -657,7 +661,9 @@ describe('FR-9: status, reply, reply and wait, close', () => {
     const res = await post(w, 'replies', { message: 'Which step?', then: 'wait_on_customer' });
     expect(staffReplyToTicket.response.parse(res.json()).status).toBe('waiting_on_customer');
     expect(w.store.published.map((e) => e.type)).toEqual(['StaffReplied']);
-    expect(w.audit.entries[0]?.details).toEqual({ ticketNumber: 1001, waitOnCustomer: true });
+    expect(w.audit.entries.map((e) => [e.action, e.details])).toEqual([
+      ['support.replied', { ticketNumber: 1001, waitOnCustomer: true }],
+    ]);
   });
 
   test('Close with a reply: the reply is added, the Ticket closes, one TicketClosed carries the reply', async () => {
@@ -672,7 +678,12 @@ describe('FR-9: status, reply, reply and wait, close', () => {
       type: 'TicketClosed',
       payload: { messageId: reply?.id, closedBy: 'staff' },
     });
-    expect(w.audit.actions).toEqual(['support.replied', 'support.closed']);
+    expect(w.audit.entries.map((e) => [e.action, e.details])).toEqual([
+      [
+        'support.closed',
+        { ticketNumber: 1001, from: 'in_progress', to: 'closed', withReply: true },
+      ],
+    ]);
     expect(w.analytics.events.map((e) => e.name)).toEqual(
       expect.arrayContaining(['ticket_replied', 'ticket_status_changed', 'ticket_closed']),
     );
@@ -683,7 +694,9 @@ describe('FR-9: status, reply, reply and wait, close', () => {
     seed(w, ticketIn('closed', { number: 1001, closedDaysAgo: 5 }));
     const res = await post(w, 'replies', { message: 'One more thing.' });
     expect(staffReplyToTicket.response.parse(res.json()).status).toBe('in_progress');
-    expect(w.audit.actions).toEqual(['support.replied', 'support.reopened']);
+    expect(w.audit.entries.map((e) => [e.action, e.details])).toEqual([
+      ['support.replied', { ticketNumber: 1001, waitOnCustomer: false, reopened: true }],
+    ]);
     expect(w.analytics.events.some((e) => e.name === 'ticket_reopened')).toBe(true);
 
     const late = await staffApp();
@@ -742,5 +755,107 @@ describe('FR-10: internal notes', () => {
       payload: { note: '' },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('FR-12: exactly one Audit log entry per Staff action', () => {
+  const take = (w: World, version: number) =>
+    w.app.inject({
+      method: 'POST',
+      url: '/api/staff/support/tickets/1001/take',
+      payload: { version },
+    });
+
+  test('the current assignee taking a waiting_on_customer Ticket writes one support.taken with the status change', async () => {
+    const w = await staffApp();
+    const t = ticketIn('waiting_on_customer', { number: 1001 });
+    seed(w, t);
+    const res = await take(w, t.version);
+    expect(takeTicket.response.parse(res.json()).status).toBe('in_progress');
+    expect(w.audit.entries.map((e) => [e.action, e.details])).toEqual([
+      [
+        'support.taken',
+        {
+          ticketNumber: 1001,
+          from: staff1.id,
+          statusFrom: 'waiting_on_customer',
+          statusTo: 'in_progress',
+        },
+      ],
+    ]);
+  });
+
+  test('taking a Ticket you already have in progress changes nothing and writes nothing', async () => {
+    const w = await staffApp();
+    const t = ticketIn('in_progress', { number: 1001 });
+    seed(w, t);
+    await take(w, t.version);
+    expect(w.audit.entries).toEqual([]);
+  });
+
+  test('a reply that reopens, a reply and close, and a reply and wait each write exactly one entry', async () => {
+    const reopen = await staffApp();
+    seed(reopen, ticketIn('closed', { number: 1001, closedDaysAgo: 2 }));
+    await reopen.app.inject({
+      method: 'POST',
+      url: '/api/staff/support/tickets/1001/replies',
+      payload: { message: 'Back again.' },
+    });
+    expect(reopen.audit.actions).toEqual(['support.replied']);
+
+    const close = await staffApp();
+    seed(close, ticketIn('in_progress', { number: 1001 }));
+    await close.app.inject({
+      method: 'POST',
+      url: '/api/staff/support/tickets/1001/replies',
+      payload: { message: 'Done.', then: 'close' },
+    });
+    expect(close.audit.actions).toEqual(['support.closed']);
+
+    const wait = await staffApp();
+    seed(wait, ticketIn('in_progress', { number: 1001 }));
+    await wait.app.inject({
+      method: 'POST',
+      url: '/api/staff/support/tickets/1001/replies',
+      payload: { message: 'Which one?', then: 'wait_on_customer' },
+    });
+    expect(wait.audit.actions).toEqual(['support.replied']);
+  });
+});
+
+describe('version only guards status and assignee', () => {
+  test("the assignee opening the Ticket doesn't make another Staff's status change stale", async () => {
+    const w = await staffApp();
+    const t = ticketIn('in_progress', {
+      number: 1001,
+      waitingSince: new Date(NOW.getTime() - HOUR),
+    });
+    seed(w, t);
+    const seen = getStaffTicket.response.parse(
+      (await w.app.inject({ method: 'GET', url: '/api/staff/support/tickets/1001' })).json(),
+    );
+    expect(seen.waitingSince).toBeNull();
+    expect(seen.version).toBe(t.version);
+    const res = await w.app.inject({
+      method: 'POST',
+      url: '/api/staff/support/tickets/1001/status',
+      payload: { version: t.version, status: 'waiting_on_customer' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('FR-6: the desk list reads runs in one batch', () => {
+  test('one runSummaries call per page, and the row carries the plan name', async () => {
+    const w = await staffApp();
+    seed(w, aTicket({ number: 1001, runId: RUN_ID }));
+    seed(w, aTicket({ number: 1002, runId: RUN_ID }));
+    summaryCalls = 0;
+    const res = await w.app.inject({ method: 'GET', url: '/api/staff/support/tickets' });
+    expect(summaryCalls).toBe(1);
+    expect(listStaffTickets.response.parse(res.json()).items[0]?.run).toEqual({
+      id: RUN_ID,
+      planName: 'Local buyers',
+    });
   });
 });

@@ -429,25 +429,18 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     members: { memberEmails: (memberIds) => identityQueries.getMemberEmails(memberIds) },
   });
 
+  const supportIdentity = createIdentitySupportQueries({ db, clock, ids });
   const support = createSupport({
     db,
     clock,
     ids,
-    identity: createIdentitySupportQueries({ db, clock, ids }),
+    identity: supportIdentity,
     research: createResearchSupportQueries({ db, clock, ids }),
     billing: createBillingSupportQueries({ db, clock, ids }),
     audit: auditLog,
     analytics,
     testHooksEnv: testHooks ? config.NODE_ENV : null,
-    ownerOf: async (businessId) => {
-      const row = await db
-        .selectFrom('members')
-        .select('id')
-        .where('business_id', '=', businessId)
-        .where('role', '=', 'owner')
-        .executeTakeFirst();
-      return row?.id ?? null;
-    },
+    ownerOf: (businessId) => supportIdentity.ownerOf(businessId),
   });
 
   return {

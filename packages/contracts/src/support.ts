@@ -288,7 +288,13 @@ export const listTickets = defineContract({
 
 export const createTicketBody = z.object({
   category,
-  subject: z.string().trim().min(SUBJECT_MIN).max(SUBJECT_MAX),
+  subject: z
+    .string()
+    .trim()
+    .min(SUBJECT_MIN)
+    .max(SUBJECT_MAX)
+    // One line: it goes into email subject headers (review #7).
+    .regex(/^[^\p{Cc}]*$/u, 'Use a single line without control characters'),
   message: z.string().trim().min(MESSAGE_MIN).max(MESSAGE_MAX),
   runId: id.optional(),
   source: source.default('help'),

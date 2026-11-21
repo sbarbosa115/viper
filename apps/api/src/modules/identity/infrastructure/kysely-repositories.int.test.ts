@@ -499,6 +499,13 @@ describe('prd-support FR-3: identity reads for support (MySQL)', () => {
     ]);
   });
 
+  test('ownerOf returns the Owner id even when a team member joined earlier or later; null if unknown', async () => {
+    const owner = await seedOwner(1);
+    await addTeamMember(owner.business.id, 2);
+    expect(await support().ownerOf(owner.business.id)).toBe(owner.member.id);
+    expect(await support().ownerOf('unknown')).toBeNull();
+  });
+
   test('businessNames returns names for known ids only', async () => {
     const a = await seedOwner(1);
     const b = await seedOwner(2);

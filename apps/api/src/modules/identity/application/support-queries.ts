@@ -16,6 +16,8 @@ export interface IdentitySupportQueries {
   memberSummaries(ids: readonly string[]): Promise<SupportMemberSummary[]>;
   /** Every Staff Member, ordered by email. */
   staffMembers(): Promise<{ id: string; name: string; email: string }[]>;
+  /** The Owner's member id (role `owner`), or null; for the composition root's test hook. */
+  ownerOf(businessId: string): Promise<string | null>;
   staffRecipients: IdentityQueries['staffRecipients'];
   /** Business names by id, in one batch; unknown ids are left out. */
   businessNames(ids: readonly string[]): Promise<{ id: string; name: string }[]>;
@@ -44,6 +46,9 @@ export function identitySupportQueriesFrom(
         name: m.name,
         email: m.email,
       }));
+    },
+    async ownerOf(businessId) {
+      return (await s.repos.members.findOwnerOf(businessId))?.id ?? null;
     },
     staffRecipients: () => queries.staffRecipients(),
     async businessNames(ids) {

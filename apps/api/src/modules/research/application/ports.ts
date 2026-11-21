@@ -112,6 +112,8 @@ export interface StaffRunFilter {
 
 export interface RunRepository {
   find(id: string): Promise<ResearchRun | null>;
+  /** Runs by id in one query; unknown ids are left out. */
+  findByIds(ids: readonly string[]): Promise<ResearchRun[]>;
   /** Locks the run row for the rest of the transaction. */
   findForUpdate(id: string): Promise<ResearchRun | null>;
   insert(run: ResearchRun): Promise<void>;

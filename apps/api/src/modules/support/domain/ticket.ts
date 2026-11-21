@@ -25,9 +25,12 @@ import { supportErrors } from './errors.js';
  * facts the use case turns into Audit log entries and analytics. Nothing here does I/O; the use
  * case persists a change with `TicketRepository.saveChange` and publishes `outboxEvents(...)`.
  *
- * Every state change increments `version` and sets `updatedAt`; a command that changes nothing
- * (an Internal note, taking a Ticket you already have) returns `changed: false` with the version
- * untouched.
+ * `version` guards what another Staff Member could overwrite: it increments only when the status
+ * or the assignee changes (take, assign, status, and replies or closes that move either). Other
+ * row changes (`waitingSince` from the assignee's view, `lastMessageAt` from a reply) set
+ * `updatedAt` but keep the version, so they never cause a spurious VERSION_CONFLICT. A command
+ * that changes nothing (an Internal note, taking a Ticket you already have) returns
+ * `changed: false`.
  */
 
 export type TicketStatus = Status;
@@ -95,7 +98,7 @@ export type TicketEvent =
   | { readonly type: 'StaffReplied'; readonly messageId: string }
   | {
       readonly type: 'TicketClosed';
-      /** The closing reply sent with it (one email for both), or null. */
+      /** The closing reply sent with it (one email for both), or null. Staff closes only. */
       readonly messageId: string | null;
       readonly closedBy: TicketSide;
     };
@@ -142,7 +145,10 @@ export interface TicketChange {
   readonly ticket: Ticket;
   /** The version the command read: `saveChange` updates `WHERE version = expectedVersion`. */
   readonly expectedVersion: number;
-  /** False when the row needs no update (an Internal note, a no-op take or assign). */
+  /**
+   * False when the row needs no update (an Internal note, a no-op take or assign). A change can
+   * be true while `ticket.version === expectedVersion` (status and assignee unchanged).
+   */
   readonly changed: boolean;
   /** Oldest first; their `createdAt` is `ctx.now` and their ids sort in this order. */
   readonly messages: readonly TicketMessage[];
@@ -267,9 +273,12 @@ class Transition {
     const changed = (Object.keys(this.state) as (keyof Ticket)[]).some(
       (key) => !sameValue(this.state[key], this.before[key]),
     );
-    if (changed) {
+    if (changed) this.state.updatedAt = this.ctx.now;
+    if (
+      this.state.status !== this.before.status ||
+      this.state.assigneeId !== this.before.assigneeId
+    ) {
       this.state.version = this.before.version + 1;
-      this.state.updatedAt = this.ctx.now;
     }
     return {
       ticket: { ...this.state },
@@ -375,7 +384,7 @@ export function customerReply(
   return t.finish();
 }
 
-/** FR-5: the customer closes; 409 ALREADY_CLOSED if it is closed. No email (the consumer skips it). */
+/** FR-5: the customer closes; 409 ALREADY_CLOSED if it is closed. No outbox event: no email. */
 export function customerClose(
   ticket: Ticket,
   input: { memberId: string },
@@ -384,7 +393,6 @@ export function customerClose(
   if (ticket.status === 'closed') throw supportErrors.alreadyClosed();
   const t = new Transition(ticket, ctx);
   t.moveTo('closed', 'customer', input.memberId);
-  t.events.push({ type: 'TicketClosed', messageId: null, closedBy: 'customer' });
   return t.finish();
 }
 
@@ -539,7 +547,8 @@ export interface TicketEventIds {
 /** support's outbox event payloads (structurally ports.ts SupportOutboxEvents). */
 export interface TicketOutboxEvents {
   TicketOpened: TicketEventIds & { messageId: string };
-  CustomerReplied: TicketEventIds & { messageId: string };
+  /** `status`: the Ticket's status right after the reply. */
+  CustomerReplied: TicketEventIds & { messageId: string; status: TicketStatus };
   StaffReplied: TicketEventIds & { messageId: string };
   TicketClosed: TicketEventIds & { messageId: string | null; closedBy: TicketSide };
 }
@@ -566,6 +575,11 @@ export function outboxEvents(
         return {
           type: event.type,
           payload: { ...ids, messageId: event.messageId, closedBy: event.closedBy },
+        };
+      case 'CustomerReplied':
+        return {
+          type: event.type,
+          payload: { ...ids, messageId: event.messageId, status: ticket.status },
         };
       default:
         return { type: event.type, payload: { ...ids, messageId: event.messageId } };

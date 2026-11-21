@@ -4,6 +4,7 @@ import { Uuid7Generator } from '../../../shared/infrastructure/time/uuid7.js';
 import { statsSince, supportStats } from '../domain/listing.js';
 import type { SupportStore } from '../domain/repository.js';
 import {
+  assertVersion,
   assign,
   customerClose,
   customerReply,
@@ -11,6 +12,7 @@ import {
   addNote,
   openTicket,
   outboxEvents,
+  setStatus,
   staffReply,
   take,
   type OpenTicketInput,
@@ -155,6 +157,33 @@ export function describeTicketRepositoryContract(
         { type: 'status_changed', from: 'open', to: 'in_progress' },
       ]);
       expect(thread.map((m) => m.authorMemberId)).toEqual([members.memberA.id, staff1, staff1]);
+    });
+
+    test('the assignee viewing keeps the version: another Staff status change at it succeeds', async () => {
+      const t = await openAt(store, ago(30));
+      await applyAt(store, t, ago(25), (cur, ctx) => take(cur, { staffId: staff1 }, ctx));
+      const readByB = await store.read.findByNumber(t.number);
+      await applyAt(store, t, ago(20), (cur, ctx) =>
+        customerReply(cur, { memberId: members.memberA.id, text: 'More' }, ctx),
+      );
+      await applyAt(store, t, ago(15), (cur, ctx) =>
+        markReadByAssignee(cur, { staffId: staff1 }, ctx),
+      );
+      const viewed = await store.read.findByNumber(t.number);
+      expect(viewed).toMatchObject({ waitingSince: null, version: readByB?.version });
+
+      await store.run(async (tx) => {
+        const current = await tx.tickets.findByNumber(t.number);
+        if (!current || !readByB) throw new Error('missing');
+        assertVersion(current, readByB.version);
+        await tx.tickets.saveChange(
+          setStatus(current, { staffId: staff2, status: 'waiting_on_customer' }, ctxAt(ago(10))),
+        );
+      });
+      expect(await store.read.findByNumber(t.number)).toMatchObject({
+        status: 'waiting_on_customer',
+        version: (readByB?.version ?? 0) + 1,
+      });
     });
 
     test('an Internal note appends a message and leaves the row untouched', async () => {

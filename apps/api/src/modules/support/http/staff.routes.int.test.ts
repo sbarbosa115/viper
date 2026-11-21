@@ -39,6 +39,7 @@ const uc = createStaffSupport({
   },
   research: {
     recentRunsForBusiness: () => Promise.resolve([]),
+    runSummaries: () => Promise.resolve([]),
     runForSupport: () => Promise.resolve(null),
   },
   billing: { balanceFor: () => Promise.resolve(80) },
@@ -99,7 +100,7 @@ describe('FR-9 on MySQL: reply with close publishes one TicketClosed in the tran
     await uc.reply(staff(members.staff1.id), 1001, { message: 'Done.', then: 'close' });
     const rows = await db.selectFrom('outbox').select('type').execute();
     expect(rows.map((r) => r.type)).toEqual(['TicketClosed']);
-    expect(audit.map((e) => e.action)).toEqual(['support.replied', 'support.closed']);
+    expect(audit.map((e) => e.action)).toEqual(['support.closed']);
   });
 
   test('the first view per day writes a view row once', async () => {

@@ -44,10 +44,10 @@ export interface ListTicketsInput {
   limit: number;
 }
 
+/** The Staff action being audited: each writes at most one Audit log entry. */
 interface AuditPlan {
-  /** Add the status entry (status_changed, closed or reopened) for a status select. */
-  statusEntry?: boolean;
-  waitOnCustomer?: boolean;
+  kind: 'take' | 'assign' | 'status' | 'reply' | 'note';
+  then?: 'wait_on_customer' | 'close' | undefined;
 }
 
 export function createStaffSupport(deps: StaffSupportDeps) {
@@ -74,12 +74,19 @@ export function createStaffSupport(deps: StaffSupportDeps) {
   }
 
   /** Saves a change with its outbox events and one Audit log entry per Staff action. */
-  async function commit(tx: SupportTx, staff: Actor, change: TicketChange, plan: AuditPlan = {}) {
+  async function commit(
+    tx: SupportTx,
+    staff: Actor,
+    before: Ticket,
+    change: TicketChange,
+    plan: AuditPlan,
+  ) {
     await tx.tickets.saveChange(change);
     for (const e of outboxEvents(change.ticket, change.events)) {
       await tx.events.publish(e.type, e.payload);
     }
-    for (const entry of auditEntries(change.facts, plan)) {
+    const entry = auditEntry(before, change.facts, plan);
+    if (entry) {
       await audit.record(
         {
           staffMemberId: staff.memberId,
@@ -134,7 +141,7 @@ export function createStaffSupport(deps: StaffSupportDeps) {
         const before = await currentOrThrow(tx, number, version);
         const c = ctx();
         const change = command(before, c);
-        await commit(tx, staff, change, plan);
+        await commit(tx, staff, before, change, plan);
         return { before, change, counts: await replyCounts(tx, change) };
       });
       await track(staff, done.before, done.change, done.counts);
@@ -159,12 +166,12 @@ export function createStaffSupport(deps: StaffSupportDeps) {
     staff: Actor,
     number: number,
     command: (ticket: Ticket, c: TicketContext) => TicketChange,
-    plan: (change: TicketChange) => AuditPlan = () => ({}),
+    plan: AuditPlan,
   ): Promise<StaffTicketDetail> {
     const done = await store.run(async (tx) => {
       const before = await lockedOrThrow(tx, number);
       const change = command(before, ctx());
-      await commit(tx, staff, change, plan(change));
+      await commit(tx, staff, before, change, plan);
       return { before, change, counts: await replyCounts(tx, change) };
     });
     await track(staff, done.before, done.change, done.counts);
@@ -261,7 +268,7 @@ export function createStaffSupport(deps: StaffSupportDeps) {
         number,
         version,
         (ticket, c) => takeAndRead(ticket, staff.memberId, c),
-        {},
+        { kind: 'take' },
       );
     },
 
@@ -282,7 +289,7 @@ export function createStaffSupport(deps: StaffSupportDeps) {
         number,
         input.version,
         (ticket, c) => assign(ticket, { staffId: staff.memberId, assigneeId: input.assigneeId }, c),
-        {},
+        { kind: 'assign' },
       );
     },
 
@@ -298,7 +305,7 @@ export function createStaffSupport(deps: StaffSupportDeps) {
         number,
         input.version,
         (ticket, c) => setStatus(ticket, { staffId: staff.memberId, status: input.status }, c),
-        { statusEntry: true },
+        { kind: 'status' },
       );
     },
 
@@ -314,15 +321,18 @@ export function createStaffSupport(deps: StaffSupportDeps) {
         number,
         (ticket, c) =>
           staffReply(ticket, { staffId: staff.memberId, text: input.message, then: input.then }, c),
-        () => ({ waitOnCustomer: input.then === 'wait_on_customer' }),
+        { kind: 'reply', then: input.then },
       );
     },
 
     /** FR-10: an Internal note, Staff only. */
     addNote(caller: Actor, number: number, note: string): Promise<StaffTicketDetail> {
       const staff = requireStaff(caller);
-      return locked(staff, number, (ticket, c) =>
-        addNote(ticket, { staffId: staff.memberId, text: note }, c),
+      return locked(
+        staff,
+        number,
+        (ticket, c) => addNote(ticket, { staffId: staff.memberId, text: note }, c),
+        { kind: 'note' },
       );
     },
   };
@@ -333,8 +343,7 @@ function takeAndRead(ticket: Ticket, staffId: string, c: TicketContext): TicketC
   const taken = take(ticket, { staffId }, c);
   const read = markReadByAssignee(taken.ticket, { staffId }, c);
   if (!read.changed) return taken;
-  const version = taken.changed ? taken.ticket.version : read.ticket.version;
-  return { ...taken, ticket: { ...read.ticket, version }, changed: true };
+  return { ...taken, ticket: read.ticket, changed: true };
 }
 
 export type StaffSupport = ReturnType<typeof createStaffSupport>;
@@ -346,52 +355,58 @@ interface AuditEntry {
   details: Record<string, unknown>;
 }
 
-/** One entry per Staff action: taken, assigned, the status select, replied, note_added; closes and reopens too. */
-function auditEntries(facts: readonly TicketFact[], plan: AuditPlan): AuditEntry[] {
-  const entries: AuditEntry[] = [];
-  const statusChange = facts.find((f) => f.type === 'status_changed');
-  const statusDetails = statusChange ? { from: statusChange.from, to: statusChange.to } : {};
-  const closed = facts.some((f) => f.type === 'closed');
-  const reopened = facts.some((f) => f.type === 'reopened');
-  // The close or reopen entry follows the reply that caused it.
-  const ordered = [...facts].sort(
-    (a, b) =>
-      Number(a.type === 'closed' || a.type === 'reopened') -
-      Number(b.type === 'closed' || b.type === 'reopened'),
-  );
-  for (const fact of ordered) {
-    switch (fact.type) {
-      case 'taken':
-        entries.push({ action: 'support.taken', details: { from: fact.previousAssigneeId } });
-        break;
-      case 'assigned':
-        entries.push({
-          action: 'support.assigned',
-          details: { from: fact.previousAssigneeId, to: fact.assigneeId },
-        });
-        break;
-      case 'staff_replied':
-        entries.push({
-          action: 'support.replied',
-          details: { waitOnCustomer: plan.waitOnCustomer ?? false },
-        });
-        break;
-      case 'note_added':
-        entries.push({ action: 'support.note_added', details: {} });
-        break;
-      case 'closed':
-        entries.push({ action: 'support.closed', details: statusDetails });
-        break;
-      case 'reopened':
-        entries.push({ action: 'support.reopened', details: statusDetails });
-        break;
-      default:
+/** The one Audit log entry of a Staff action (FR-12); null when it changed nothing. */
+function auditEntry(
+  before: Ticket,
+  facts: readonly TicketFact[],
+  plan: AuditPlan,
+): AuditEntry | null {
+  const status = facts.find((f) => f.type === 'status_changed');
+  const statusDetails = status ? { from: status.from, to: status.to } : {};
+  const has = (type: TicketFact['type']) => facts.some((f) => f.type === type);
+  switch (plan.kind) {
+    case 'take':
+      return has('taken') || status
+        ? {
+            action: 'support.taken',
+            details: {
+              from: before.assigneeId,
+              ...(status ? { statusFrom: status.from, statusTo: status.to } : {}),
+            },
+          }
+        : null;
+    case 'assign': {
+      const assigned = facts.find((f) => f.type === 'assigned');
+      return assigned
+        ? {
+            action: 'support.assigned',
+            details: { from: assigned.previousAssigneeId, to: assigned.assigneeId },
+          }
+        : null;
     }
+    case 'status':
+      if (!status) return null;
+      return {
+        action: has('closed')
+          ? 'support.closed'
+          : has('reopened')
+            ? 'support.reopened'
+            : 'support.status_changed',
+        details: statusDetails,
+      };
+    case 'reply':
+      return plan.then === 'close'
+        ? { action: 'support.closed', details: { ...statusDetails, withReply: true } }
+        : {
+            action: 'support.replied',
+            details: {
+              waitOnCustomer: plan.then === 'wait_on_customer',
+              ...(has('reopened') ? { reopened: true } : {}),
+            },
+          };
+    case 'note':
+      return { action: 'support.note_added', details: {} };
   }
-  if (plan.statusEntry && statusChange && !closed && !reopened) {
-    entries.push({ action: 'support.status_changed', details: statusDetails });
-  }
-  return entries;
 }
 
 function analyticsFor(

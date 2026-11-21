@@ -45,27 +45,28 @@ export class CreateTicket {
     const subject = body.subject.trim();
     const message = body.message.trim();
 
-    const duplicate = await store.read.findDuplicate({
-      memberId: actor.memberId,
-      subject,
-      message,
-      since: windowStart(now, supportLimits.duplicateWindowMs),
-    });
-    if (duplicate) return { ticket: await toDetail(this.deps, actor, duplicate), created: false };
-
     await this.assertRunIsTheirs(actor, body.runId, now);
-    assertUnderRateLimit(
-      await store.read.ticketsOpenedBy(
-        actor.memberId,
-        windowStart(now, supportLimits.ticketsPerMember.windowMs),
-      ),
-      supportLimits.ticketsPerMember,
-      now,
-    );
     const balance = await this.deps.billing.balanceFor(actor.businessId);
 
-    const ticket = await store.run(async (tx) => {
-      assertUnderOpenLimit(await tx.tickets.lockOpenTicketsOfBusiness(actor.businessId));
+    // The Business lock serialises creates, so the duplicate and rate checks can't be raced.
+    const { ticket, created } = await store.run(async (tx) => {
+      const openCount = await tx.tickets.lockOpenTicketsOfBusiness(actor.businessId);
+      const duplicate = await tx.tickets.findDuplicate({
+        memberId: actor.memberId,
+        subject,
+        message,
+        since: windowStart(now, supportLimits.duplicateWindowMs),
+      });
+      if (duplicate) return { ticket: duplicate, created: false };
+      assertUnderOpenLimit(openCount);
+      assertUnderRateLimit(
+        await tx.tickets.ticketsOpenedBy(
+          actor.memberId,
+          windowStart(now, supportLimits.ticketsPerMember.windowMs),
+        ),
+        supportLimits.ticketsPerMember,
+        now,
+      );
       const opened = openTicket(
         {
           id: this.deps.ids.next(),
@@ -81,12 +82,13 @@ export class CreateTicket {
         },
         { now, ids: this.deps.ids },
       );
-      const created = await tx.tickets.create(opened);
-      for (const e of outboxEvents(created, opened.events)) {
+      const saved = await tx.tickets.create(opened);
+      for (const e of outboxEvents(saved, opened.events)) {
         await tx.events.publish(e.type, e.payload);
       }
-      return created;
+      return { ticket: saved, created: true };
     });
+    if (!created) return { ticket: await toDetail(this.deps, actor, ticket), created: false };
 
     await this.deps.analytics.track({
       name: 'ticket_opened',

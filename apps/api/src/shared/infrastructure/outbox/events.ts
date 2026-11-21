@@ -24,7 +24,11 @@ export interface OutboxEvents {
   BudgetAlertRecorded: { month: string; threshold: 80 | 100 };
   /** support → ticket emails (prd-support FR-11); payloads mirror SupportOutboxEvents. */
   TicketOpened: SupportTicketEvent & { messageId: string };
-  CustomerReplied: SupportTicketEvent & { messageId: string };
+  CustomerReplied: SupportTicketEvent & {
+    messageId: string;
+    /** The status right after the reply (the email shows it, not the status at send time). */
+    status: 'open' | 'in_progress' | 'waiting_on_customer' | 'closed';
+  };
   StaffReplied: SupportTicketEvent & { messageId: string };
   TicketClosed: SupportTicketEvent & { messageId: string | null; closedBy: 'customer' | 'staff' };
 }

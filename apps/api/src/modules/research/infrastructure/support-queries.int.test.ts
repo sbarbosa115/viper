@@ -147,6 +147,52 @@ describe('prd-support FR-3: research reads for support', () => {
     expect(runs.map((r) => r.id)).toEqual([edge]);
   });
 
+  test('the window uses the instant startedAt reports: a run queued before `since` but started after is in', async () => {
+    const f = await fixture();
+    const id = await f.addRun(ago(95), { start: false });
+    await f.store.transaction(async (tx) => {
+      const run = await tx.runs.find(id);
+      if (!run) throw new Error('missing');
+      run.beginAttempt(ago(80));
+      await tx.runs.save(run);
+    });
+    const runs = await f.queries.recentRunsForBusiness(BUSINESS, ago(90), 10);
+    expect(runs.map((r) => [r.id, r.startedAt])).toEqual([[id, ago(80).toISOString()]]);
+  });
+
+  test('runSummaries matches runForSupport, omits unknown ids and reads in a bounded number of queries', async () => {
+    const f = await fixture();
+    const failed = await f.addRun(ago(2), {
+      failedStep: 'websites',
+      finish: (run) => {
+        run.addSpend(20_000, 1);
+        run.waiveSpend();
+        run.fail('PROVIDER_ERROR', ago(2), 0);
+      },
+    });
+    const ids = [failed];
+    for (let i = 0; i < 24; i++)
+      ids.push(await f.addRun(ago(1 + i / 100), { businessId: i % 2 ? OTHER_BUSINESS : BUSINESS }));
+
+    let selects = 0;
+    const counting = db.withPlugin({
+      transformQuery: ({ node }) => {
+        if (node.kind === 'SelectQueryNode') selects += 1;
+        return node;
+      },
+      transformResult: (args) => Promise.resolve(args.result),
+    });
+    const q = createResearchSupportQueries({ db: counting, clock: f.clock, ids: f.ids });
+    const summaries = await q.runSummaries([...ids, UNKNOWN_ID]);
+
+    expect(summaries).toHaveLength(25);
+    expect(selects).toBe(2);
+    const one = await f.queries.runForSupport(failed);
+    const { businessId: _b, attempt: _a, lastError: _l, ...ref } = one ?? ({} as never);
+    expect(summaries.find((r) => r.id === failed)).toEqual(ref);
+    expect(await f.queries.runSummaries([])).toEqual([]);
+  });
+
   test('a queued run reads as running; its startedAt is when it was queued', async () => {
     const f = await fixture();
     const id = await f.addRun(ago(1), { start: false });

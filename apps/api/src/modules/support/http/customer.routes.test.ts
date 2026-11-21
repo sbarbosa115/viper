@@ -84,6 +84,7 @@ async function world(actor?: Actor) {
             .filter((r) => r.businessId === businessId && new Date(r.startedAt) >= since)
             .slice(0, limit),
         ),
+      runSummaries: (ids) => Promise.resolve(runs.filter((r) => ids.includes(r.id))),
       runForSupport: (id) => Promise.resolve(runs.find((r) => r.id === id) ?? null),
     },
     billing: { balanceFor: () => Promise.resolve(120) },
@@ -244,6 +245,17 @@ describe('FR-2: open a ticket', () => {
       expect(code(res)).toBe('UNKNOWN_RUN');
     }
     expect(w.store.tickets.all()).toHaveLength(0);
+  });
+
+  test('400 for a subject with a line break', async () => {
+    const w = await world(actors.memberA);
+    const res = await w.app.inject({
+      method: 'POST',
+      url: '/api/support/tickets',
+      payload: { ...body, subject: 'Run stopped\nearly' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(Object.keys(errorResponse.parse(res.json()).error.fields ?? {})).toContain('subject');
   });
 
   test('403 NOT_WHILE_ACTING_AS for Staff', async () => {
@@ -562,7 +574,7 @@ describe('FR-4: reply', () => {
 });
 
 describe('FR-5: close', () => {
-  test('closes, publishes TicketClosed by the customer and tracks status and closed events', async () => {
+  test('closes, publishes nothing and tracks status and closed events', async () => {
     const w = await world(actors.memberA);
     w.store.tickets.seed(aTicket({ number: 1001, createdAt: new Date(NOW.getTime() - 3 * HOUR) }));
     const res = await w.app.inject({
@@ -576,9 +588,7 @@ describe('FR-5: close', () => {
       canReply: true,
       canClose: false,
     });
-    expect(w.store.published).toMatchObject([
-      { type: 'TicketClosed', payload: { closedBy: 'customer', messageId: null } },
-    ]);
+    expect(w.store.published).toEqual([]);
     expect(w.analytics.events.map((e) => e.name)).toEqual([
       'ticket_status_changed',
       'ticket_closed',

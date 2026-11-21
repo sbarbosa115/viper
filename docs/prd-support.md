@@ -2,8 +2,8 @@
 
 | Field   | Value |
 |---------|-------|
-| Status  | Draft |
-| Version | 0.3 |
+| Status  | Built |
+| Version | 0.4 |
 | Date    | 2026-11-21 |
 | Persona | Sam, Maria and team members (customers); Staff (the founder) |
 | Tests assumption | None directly. Supports A-5 (trial-to-paid: a stuck trial customer who can't reach anyone won't buy) and A-1 (tickets about wrong leads are direct quality evidence) |
@@ -230,7 +230,7 @@ No emails for Internal notes, take, assign, status changes other than close, or 
 3. Type a subject and message, send.
 4. See the thread with status "Open" and the toast with the ticket number.
 5. In Mailpit, `staff@demo.test` has "[#N] New ticket · Research run / leads · Sweet Supply Co".
-6. Log in as Staff; the back-office nav shows "Support" with a badge; the Ticket is first in Waiting.
+6. Log in as Staff; the back-office nav shows "Support" with a badge; the Ticket is in Waiting (longest wait first, so older waiting Tickets stay above it).
 **Expected:** the Ticket exists, linked to the run, visible to the customer and at the top of the Waiting queue.
 
 ### AJ-2: Take, ask, answer
@@ -244,7 +244,7 @@ No emails for Internal notes, take, assign, status changes other than close, or 
 ### AJ-3: Internal note and Open as this Business
 **Persona:** Staff · **Covers:** FR-7, FR-10, FR-12
 1. As Staff, open a Ticket, switch to "Internal note", add a note.
-2. Click "Open as this Business"; the app opens as Sweet Supply Co with the Acting as banner; open Help and the Ticket.
+2. Click "Open as this Business"; the app opens as Sweet Supply Co (breadcrumb shows the Business; the account menu offers "Stop acting as Sweet Supply Co"); open Help and the Ticket.
 3. Stop Acting as; open the Audit log.
 **Expected:** the note isn't visible in the customer view (also not while Acting as); the reply box is disabled while Acting as; the Audit log shows `support.note_added` and `acting_as.started` with the Ticket number.
 
@@ -263,7 +263,7 @@ No emails for Internal notes, take, assign, status changes other than close, or 
 **Expected:** Members see only their own Tickets; Owners see the Business's.
 
 ### AJ-6: Limits and bad input (failure path)
-**Persona:** Sam, a Member · **Covers:** FR-2, FR-12
+**Persona:** Sam (Owner) and Jo (Member) · **Covers:** FR-2, FR-12
 1. Submit New ticket with a 3-character subject: inline error, nothing sent.
 2. With the Business at 5 open Tickets (seeded state toggle via the test helper), submit a valid Ticket: "You have 5 open tickets…" and the text is kept.
 3. As a Member, open `/app/staff/support`: the back office is not available.
@@ -396,6 +396,9 @@ All names and text are invented.
 - Help is a 5th mobile tab; on desktop it sits in the rail above the back-office shield. Support is second in the back-office nav.
 - Internal notes and assignment are Staff-only events; customers see status changes only.
 - New `support` context rather than extending identity or platform.
+- support's domain reads its limits, enums and labels from `@app/contracts/support` (a pure Zod package shared by API and web) instead of duplicating them; accepted deviation from the "domain imports nothing" rule (review finding #8).
+- `version` increases only when status or assignee changes; the assignee opening a Ticket (read) doesn't, so other Staff don't get spurious conflicts.
+- A customer reply to a Ticket whose assignee is no longer Staff is emailed to all Staff instead.
 
 ## 14. Risks & open questions
 - [ ] Which address do support emails come from (`support@leads.llyner.com`?), and does the founder read that mailbox for stray replies? Founder, not blocking (uses the existing SMTP from-address until set).
@@ -409,6 +412,7 @@ All names and text are invented.
 | 0.1 | 2026-11-21 | Initial draft from the approved Support Tickets canvas |
 | 0.2 | 2026-11-21 | Build preflight: `members.role` only allowed `owner` (team members aren't built yet), so W0 widens it to `owner`/`member`; identity seeds Jo Kim as a Member and research seeds the failed run; support seeds only Tickets |
 | 0.3 | 2026-11-21 | Build W1: the session actor now carries `member` (not `owner`) for a non-Owner Member, so the visibility rule works; existing Owner-only checks (Plans, Leads, research, credits) therefore answer 403 for such Members until team members ship. Support emails use the display name "Llyner Leads Support" via a new optional `fromName` on email messages |
+| 0.4 | 2026-11-21 | Built. Review fixes: batched run reads for lists, duplicate/hourly checks inside the create transaction, one audit entry per Staff action, version bumps only on status/assignee changes, customer close publishes no event, CustomerReplied carries the status, revoked-Staff assignee falls back to all Staff, single-line subjects, run window on `coalesce(started_at, queued_at)`. AJ-1/AJ-3/AJ-6 wording matched to the app |
 
 ## 16. Execution plan
 | Wave | Package | Title | Model | Depends on | FRs / AJs |
@@ -526,4 +530,44 @@ execution:
 The orchestrator wires the support module into `app.ts`/composition, the `support` queue into `worker-registry.ts`, the routes into `apps/web/src/app/router.tsx`, **Help** into `customerNav` (rail above the shield, 5th mobile tab, `activeSection` for `/support`), **Support** into `staffNav` (second, with the badge from `useSupportWaitingCount`), the seed entry point, and the test-only hooks. At most 4 packages run at once: WP-1–WP-4 start together; WP-5–WP-7 start as WP-1 and WP-2 finish.
 
 ## 17. Implementation notes
-_Filled in by /build-requirement: FR → test files, AJ → Playwright specs, sign-off per wave, decisions on gaps._
+Built 2026-11-21 on branch `feat/support` (autopilot: no per-wave demo pauses, at the founder's request). Paths are under `apps/api/src/modules/support/` (API) and `apps/web/src/features/support/` (web) unless stated.
+
+### FR → tests
+| FR | Tests |
+|----|-------|
+| FR-1 Help and Your tickets | `http/customer.routes.test.ts` (list, visibility, showFrom); web `customer/test/customer.test.tsx`; `apps/web/src/app/shell.test.tsx` (5th tab) |
+| FR-2 Open a ticket | `domain/ticket.test.ts`, `domain/rules.test.ts`; `http/customer.routes.test.ts` (validation, limits, 429, duplicate, Acting as, unknown run); `http/customer.routes.int.test.ts` (concurrent identical creates); `infrastructure/kysely-support.int.test.ts` (5-open limit under concurrency, numbers from 1001); web `customer.test.tsx` |
+| FR-3 Report a problem | web `apps/web/src/features/research/pages/run-page.test.tsx`, `apps/web/src/features/leads/pages/leads-page.test.tsx`, `customer.test.tsx` (prefill) |
+| FR-4 Thread and reopen | `domain/ticket.test.ts` (reopen window table); `http/customer.routes.test.ts` (no internal notes in any customer response); web `customer.test.tsx` |
+| FR-5 Member closes | `domain/ticket.test.ts`; `http/customer.routes.test.ts` |
+| FR-6 Desk and Waiting queue | `domain/listing.test.ts`, `domain/business-time.test.ts`; `http/staff.routes.test.ts` (order, badge, stats median 90); web `staff/test/staff-support.test.tsx` |
+| FR-7 Staff ticket view | `http/staff.routes.test.ts` (context, run card, assignee read, audit once per day); identity `identity.http.int.test.ts` (acting_as.started with ticketNumber) |
+| FR-8 Take and assign | `domain/ticket.test.ts`; `http/staff.routes.int.test.ts` (two concurrent takes → 409 with the current ticket); `infrastructure/kysely-support.int.test.ts` |
+| FR-9 Reply, wait, status, close | `domain/ticket.test.ts`; `http/staff.routes.test.ts` (first-reply analytics, one TicketClosed with the reply) |
+| FR-10 Internal notes | `domain/ticket.test.ts`; `http/staff.routes.test.ts`; `http/customer.routes.test.ts` (never visible) |
+| FR-11 Emails | `application/notifications/send-support-email.test.ts` (recipients, revoked-Staff fallback, escaping, idempotency); `email/support-worker.test.ts`; `email/support-emails.int.test.ts` (Mailpit, "Llyner Leads Support") |
+| FR-12 Audit, analytics, permissions | `http/staff.routes.test.ts` (exactly one audit entry per action), `http/customer.routes.test.ts` (analytics), `http/test-hooks.routes.test.ts`; identity `domain.test.ts` (member role) |
+
+Contracts: `packages/contracts/src/support.test.ts`. Ports: research `infrastructure/support-queries.int.test.ts` (incl. 25 runs in 2 queries), identity and billing support-query tests.
+
+### AJ → Playwright specs
+AJ-1 `e2e/aj-support-1-report-problem.spec.ts` · AJ-2 `e2e/aj-support-2-take-ask-answer.spec.ts` · AJ-3 `e2e/aj-support-3-note-and-open-as.spec.ts` · AJ-4 `e2e/aj-support-4-close-and-reopen.spec.ts` · AJ-5 `e2e/aj-support-5-who-sees-what.spec.ts` · AJ-6 `e2e/aj-support-6-limits.spec.ts`.
+
+### Waves
+- W0 (WP-0, opus): contracts, migrations (`20261121100100_support_init`, `20261121100200_identity_member_role`), table types, ports, skeletons, help icon. Commit `13f1c2a`.
+- W1 (WP-1 opus; WP-2–WP-7 sonnet): domain and persistence, cross-module queries and seeds, customer and Staff web, customer and Staff API, emails; orchestrator wiring (routes, nav, badge, composition, worker, outbox events, `fromName`). Commit `7bb37a5`.
+- W2 (WP-8 sonnet; review opus): six Playwright specs; senior review with 9 of 10 code findings fixed (see 0.4 change log; #8 accepted in §13).
+- Sign-off: autopilot; smoke-tested by hand against the dev stack (visibility, create, Staff email in Mailpit).
+
+### Decisions made during the build
+- `members.role` widened to owner/member; the session actor carries `member` for non-Owner Members (they get 403 on existing Owner-only areas until team members ship).
+- Seed/tests use the real flow: the failed run stops at step 05 "Websites".
+- Duplicate check runs before the open limit, so a double submit at 5 open Tickets returns the existing Ticket (200) rather than 422.
+- Take by the current assignee merges "mark read" into the same change; audit details carry `statusFrom/statusTo` when a take moves the status.
+- The 5-open lock can deadlock on an empty Business under concurrent creates; the store retries the unit of work up to 3 times (MySQL 1213).
+- Help is a 5th mobile tab and sits at the bottom of the rail; the Staff badge also shows in the mobile back-office header.
+- Two pre-existing files on `main` were reformatted by `./dev format` (`tools/application/tool-catalog.ts`, `shared/infrastructure/db/database.test.ts`); no behaviour change.
+
+### Deferred
+- MCP tools for the desk, attachments, reply by email and the other "Later" items in §5.
+- Business-hours metric ignores US public holidays (§14).

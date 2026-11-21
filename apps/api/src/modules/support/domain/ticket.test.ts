@@ -86,7 +86,9 @@ function check(before: Ticket, act: (t: Ticket) => TicketChange, expected: Expec
   const changed = expected.changed ?? true;
   expect(change.changed).toBe(changed);
   expect(change.expectedVersion).toBe(before.version);
-  expect(after.version).toBe(before.version + (changed ? 1 : 0));
+  // The version guards only what another Staff Member could overwrite: status and assignee.
+  const bumped = after.status !== before.status || after.assigneeId !== before.assigneeId;
+  expect(after.version).toBe(before.version + (bumped ? 1 : 0));
   if (changed) expect(after.updatedAt).toEqual(NOW);
   // Close fields always agree with the status.
   expect(after.closedAt === null).toBe(after.status !== 'closed');
@@ -250,7 +252,7 @@ describe('FR-5: customer closes', () => {
   const closedByCustomer: Expected = {
     status: 'closed',
     waitingSince: 'null',
-    events: ['TicketClosed'],
+    events: [],
     facts: ['status_changed', 'closed'],
     messages: ['event:status_changed'],
   };
@@ -262,12 +264,15 @@ describe('FR-5: customer closes', () => {
   ];
   test.each(rows)('%s', (_label, before, act, expected) => check(before, act, expected));
 
-  test('closedBy customer, closedAt now, TicketClosed without a message', () => {
+  test('closedBy customer, closedAt now, no outbox event (nobody is emailed)', () => {
     const change = close(aTicket());
-    expect(change.ticket).toMatchObject({ closedBy: 'customer', closedAt: NOW });
-    expect(change.events).toEqual([
-      { type: 'TicketClosed', messageId: null, closedBy: 'customer' },
-    ]);
+    expect(change.ticket).toMatchObject({ closedBy: 'customer', closedAt: NOW, version: 1 });
+    expect(change.events).toEqual([]);
+    expect(change.messages[0]?.event).toEqual({
+      type: 'status_changed',
+      from: 'open',
+      to: 'closed',
+    });
   });
 });
 
@@ -596,6 +601,58 @@ describe('FR-7: the assignee viewing reads customer replies', () => {
     expect(isWaiting(unread)).toBe(true);
     expect(isWaiting(view(staff1)(unread).ticket)).toBe(false);
   });
+
+  test('the assignee viewing keeps the version, so another Staff status change still applies', () => {
+    const viewed = view(staff1)(unread);
+    expect(viewed.changed).toBe(true);
+    expect(viewed.ticket.version).toBe(unread.version);
+    expect(() => assertVersion(viewed.ticket, unread.version)).not.toThrow();
+    const status = setStatus(
+      viewed.ticket,
+      { staffId: staff2, status: 'waiting_on_customer' },
+      ctx(),
+    );
+    expect(status.ticket.version).toBe(unread.version + 1);
+  });
+});
+
+describe('version: only status and assignee changes count', () => {
+  test.each([
+    [
+      'customer reply on in_progress',
+      ticketIn('in_progress'),
+      (t: Ticket) => customerReply(t, { memberId: customer, text: 'Hi' }, ctx()),
+      0,
+    ],
+    [
+      'customer reply on waiting_on_customer (status moves)',
+      ticketIn('waiting_on_customer'),
+      (t: Ticket) => customerReply(t, { memberId: customer, text: 'Hi' }, ctx()),
+      1,
+    ],
+    [
+      'Staff reply on assigned in_progress',
+      ticketIn('in_progress', { waitingSince: NOW }),
+      (t: Ticket) => staffReply(t, { staffId: staff1, text: 'Hi' }, ctx()),
+      0,
+    ],
+    [
+      'Staff reply on open (status and assignee move)',
+      aTicket(),
+      (t: Ticket) => staffReply(t, { staffId: staff1, text: 'Hi' }, ctx()),
+      1,
+    ],
+    ['note', aTicket(), (t: Ticket) => addNote(t, { staffId: staff1, text: 'n' }, ctx()), 0],
+    ['take', aTicket(), (t: Ticket) => take(t, { staffId: staff1 }, ctx()), 1],
+    [
+      'assign',
+      aTicket(),
+      (t: Ticket) => assign(t, { staffId: staff1, assigneeId: staff2 }, ctx()),
+      1,
+    ],
+  ])('%s → +%d', (_label, before, act, plus) => {
+    expect(act(before).ticket.version).toBe(before.version + plus);
+  });
 });
 
 describe('reopen window', () => {
@@ -614,5 +671,28 @@ describe('reopen window', () => {
     );
     const [first, second] = change.messages;
     expect((first?.id ?? '') < (second?.id ?? '')).toBe(true);
+  });
+});
+
+describe('FR-11: CustomerReplied carries the status right after the reply', () => {
+  test.each([
+    ['waiting_on_customer, assigned', ticketIn('waiting_on_customer'), 'in_progress'],
+    ['closed 10 days ago', closedDaysAgo(10), 'open'],
+    ['in_progress', ticketIn('in_progress'), 'in_progress'],
+  ])('%s → %s', (_label, before, status) => {
+    const change = customerReply(before, { memberId: customer, text: 'Hi' }, ctx());
+    const [event] = outboxEvents(change.ticket, change.events);
+    expect(event).toEqual({
+      type: 'CustomerReplied',
+      payload: {
+        ticketId: before.id,
+        ticketNumber: before.number,
+        businessId: before.businessId,
+        openedByMemberId: before.openedByMemberId,
+        assigneeId: before.assigneeId,
+        messageId: change.messages[0]?.id,
+        status,
+      },
+    });
   });
 });

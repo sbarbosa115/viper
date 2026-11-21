@@ -112,12 +112,23 @@ export class SendSupportEmail {
         return identity.staffRecipients();
       case 'CustomerReplied':
         return message.payload.assigneeId
-          ? toMember(message.payload.assigneeId, 'assignee')
+          ? this.assigneeOrAllStaff(message, message.payload.assigneeId)
           : identity.staffRecipients();
       case 'StaffReplied':
       case 'TicketClosed':
         return toMember(ticket.openedByMemberId, 'opener');
     }
+  }
+
+  /** The assignee when still Staff; otherwise every Staff Member (never a former Staff Member). */
+  private async assigneeOrAllStaff(
+    message: SupportEmailMessage,
+    assigneeId: string,
+  ): Promise<Recipient[]> {
+    const [m] = await this.deps.identity.memberSummaries([assigneeId]);
+    if (m?.isStaff) return [{ memberId: m.id, email: m.email, name: m.name }];
+    this.skip(message, 'assignee is gone or no longer Staff; sending to all Staff');
+    return this.deps.identity.staffRecipients();
   }
 
   private async renderer(
@@ -152,7 +163,7 @@ export class SendSupportEmail {
           customerRepliedEmail({
             ...common,
             to: to.email,
-            status: ticket.status,
+            status: message.payload.status,
             message: text ?? '',
           });
       case 'StaffReplied':

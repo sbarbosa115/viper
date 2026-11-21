@@ -61,11 +61,11 @@ export class ListTickets {
     };
   }
 
-  /** The distinct runs of one page (at most 25), looked up once each. */
+  /** The distinct runs of one page, in one batched read. */
   private async runsOf(items: readonly TicketListItem[]) {
     const ids = [...new Set(items.flatMap((i) => (i.ticket.runId ? [i.ticket.runId] : [])))];
-    const found = await Promise.all(ids.map((id) => this.deps.research.runForSupport(id)));
-    return new Map(found.flatMap((r) => (r ? [[r.id, r] as const] : [])));
+    const found = ids.length > 0 ? await this.deps.research.runSummaries(ids) : [];
+    return new Map(found.map((r) => [r.id, r] as const));
   }
 }
 
