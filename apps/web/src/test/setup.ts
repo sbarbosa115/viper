@@ -12,6 +12,9 @@ const handlers = Object.values(modules).flatMap((m) => m.handlers ?? []);
 
 export const server = setupServer(...handlers);
 
+// jsdom has no layout, so window.scrollTo only logs "Not implemented"; make it a quiet no-op.
+window.scrollTo = () => undefined;
+
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => {
   cleanup();

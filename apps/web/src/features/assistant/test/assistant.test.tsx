@@ -2,7 +2,7 @@ import { ids, profile as profileExample } from '@app/contracts/examples';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { server } from '../../../test/setup';
 import { assistantState, resetAssistantState } from './handlers';
 import { renderAssistant } from './render';
@@ -177,5 +177,41 @@ describe('PRD 6b: /app routing', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Sugar' }));
     expect(await screen.findByText('All set.')).toBeInTheDocument();
     expect(screen.queryByText('Plans page')).not.toBeInTheDocument();
+  });
+});
+
+describe('chat layout: the answer box stays in reach', () => {
+  const scrolled = vi.fn();
+  beforeEach(() => {
+    scrolled.mockClear();
+    window.scrollTo = scrolled;
+  });
+  afterEach(() => {
+    window.scrollTo = () => undefined; // the setup's no-op
+  });
+
+  test('the answer form is pinned to the bottom of the screen, above the mobile tab bar', async () => {
+    renderAssistant();
+    const form = (await screen.findByLabelText('Your answer')).closest('form');
+    // Sticky positioning is CSS (not laid out by jsdom): assert the classes that pin it.
+    expect(form).toHaveClass('sticky', 'bg-bg');
+    expect(form?.className).toMatch(/bottom-\[calc\(3\.5rem\+env\(safe-area-inset-bottom\)\)\]/);
+    expect(form).toHaveClass('md:bottom-0');
+  });
+
+  test('a new message scrolls the page to the newest one', async () => {
+    assistantState.next = { status: 200, reply: { text: 'Great, where are you located?' } };
+    let open!: () => void;
+    assistantState.gate = new Promise((r) => (open = r));
+    renderAssistant();
+    const sugar = await screen.findByRole('button', { name: 'Sugar' });
+    await waitFor(() => expect(scrolled).toHaveBeenCalled()); // opens at the newest message
+    scrolled.mockClear();
+    await userEvent.click(sugar);
+    open();
+    await screen.findByText('Great, where are you located?');
+    await waitFor(() =>
+      expect(scrolled).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) })),
+    );
   });
 });
