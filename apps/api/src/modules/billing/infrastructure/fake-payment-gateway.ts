@@ -62,6 +62,7 @@ export class FakePaymentGateway implements PaymentGateway {
     eventId: string;
     sessionId: string;
     taxCents?: number;
+    paymentIntentId?: string;
     type?:
       | 'checkout.session.completed'
       | 'checkout.session.async_payment_succeeded'
@@ -78,9 +79,36 @@ export class FakePaymentGateway implements PaymentGateway {
         object: {
           id: props.sessionId,
           payment_status: paymentStatus,
+          payment_intent: props.paymentIntentId ?? null,
           total_details: { amount_tax: props.taxCents ?? 0 },
         },
       },
     });
+  }
+
+  /** A Stripe-shaped `charge.refunded` event; `amountRefundedCents` is cumulative. */
+  static refundedEvent(props: {
+    eventId: string;
+    paymentIntentId: string;
+    amountRefundedCents: number;
+    createdAt: Date;
+  }): string {
+    return JSON.stringify({
+      id: props.eventId,
+      type: 'charge.refunded',
+      created: Math.floor(props.createdAt.getTime() / 1000),
+      data: {
+        object: {
+          id: `ch_fake_${props.paymentIntentId}`,
+          payment_intent: props.paymentIntentId,
+          amount_refunded: props.amountRefundedCents,
+        },
+      },
+    });
+  }
+
+  /** The payment intent the test hook gives a fake session when it completes it. */
+  static paymentIntentFor(sessionId: string): string {
+    return `pi_fake_${sessionId}`;
   }
 }

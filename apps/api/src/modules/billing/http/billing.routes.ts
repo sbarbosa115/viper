@@ -147,10 +147,16 @@ export async function billingRoutes(
         { schema: { tags: ['billing'], response: { 200: stripeWebhook.response } } },
         async (req) => {
           const signature = req.headers['stripe-signature'];
-          await billing.handleStripeWebhook.execute({
+          const result = await billing.handleStripeWebhook.execute({
             rawBody: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
             signature: Array.isArray(signature) ? signature[0] : signature,
           });
+          if (result.unknownPaymentIntent) {
+            req.log.warn(
+              { paymentIntentId: result.unknownPaymentIntent },
+              'charge.refunded for an unknown payment intent; nothing changed',
+            );
+          }
           return { received: true as const };
         },
       );
@@ -172,6 +178,8 @@ export async function billingRoutes(
           sessionId: req.params.sessionId,
           eventId: `evt_test_${req.params.sessionId}`,
           taxCents: 0,
+          // Same id as FakePaymentGateway.paymentIntentFor, so e2e can send a matching refund.
+          paymentIntentId: `pi_fake_${req.params.sessionId}`,
         }),
     );
   }

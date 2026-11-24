@@ -1,12 +1,68 @@
 import { sql } from 'kysely';
 import type { Database } from '../../../shared/infrastructure/db/database.js';
-import type { BillingReadModel, CreditsSummary } from '../application/ports.js';
+import type { BillingReadModel, CreditsSummary, MonthlyRevenue } from '../application/ports.js';
 
 const n = (v: unknown) => Number(v ?? 0);
 
 /** Aggregates for Staff reporting (FR-30, FR-31); each is one query, never per Business. */
 export class KyselyBillingReadModel implements BillingReadModel {
   constructor(private readonly db: Database) {}
+
+  async revenueBetween(range: { from: Date; to: Date }): Promise<MonthlyRevenue> {
+    const [sales, refunds] = await Promise.all([
+      this.db
+        .selectFrom('purchases')
+        .select(['id', 'amount_cents', 'tax_cents', 'paid_at'])
+        .where('status', '=', 'paid')
+        .where('paid_at', '>=', range.from)
+        .where('paid_at', '<', range.to)
+        .orderBy('paid_at')
+        .orderBy('id')
+        .execute(),
+      this.db
+        .selectFrom('purchase_refunds as r')
+        .innerJoin('purchases as p', 'p.id', 'r.purchase_id')
+        .select([
+          'p.id as purchase_id',
+          'p.amount_cents',
+          'p.tax_cents',
+          'r.delta_cents',
+          'r.refunded_at',
+        ])
+        .where('r.refunded_at', '>=', range.from)
+        .where('r.refunded_at', '<', range.to)
+        .orderBy('r.refunded_at')
+        .orderBy('r.id')
+        .execute(),
+    ]);
+    return {
+      sales: sales.flatMap((r) =>
+        r.paid_at
+          ? [
+              {
+                purchaseId: r.id,
+                amountCents: r.amount_cents,
+                taxCents: r.tax_cents,
+                paidAt: r.paid_at,
+              },
+            ]
+          : [],
+      ),
+      refunds: refunds.flatMap((r) =>
+        r.refunded_at
+          ? [
+              {
+                purchaseId: r.purchase_id,
+                refundedCents: r.delta_cents,
+                amountCents: r.amount_cents,
+                taxCents: r.tax_cents,
+                refundedAt: r.refunded_at,
+              },
+            ]
+          : [],
+      ),
+    };
+  }
 
   async creditsSummary(filter: {
     from: Date;

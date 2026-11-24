@@ -237,3 +237,66 @@ describe('FR-12: Purchase', () => {
     expect(paid.status).toBe('paid');
   });
 });
+
+describe('FR-7: Purchase refunds', () => {
+  const paidPurchase = () => {
+    const purchase = Purchase.start({
+      id: 'p',
+      businessId: 'b',
+      packId: 'k',
+      credits: 11_000,
+      amountCents: 9_900,
+      stripeSessionId: 'cs_1',
+      now,
+    });
+    purchase.markPaid({ eventId: 'evt_1', taxCents: 0, now: later, paymentIntentId: 'pi_1' });
+    return purchase;
+  };
+  const refundTime = new Date('2026-12-03T09:00:00.000Z');
+
+  test('payment intent is kept when paid; none by default', () => {
+    expect(paidPurchase().toSnapshot().stripePaymentIntentId).toBe('pi_1');
+    const bare = Purchase.start({
+      id: 'p2',
+      businessId: 'b',
+      packId: 'k',
+      credits: 1,
+      amountCents: 1,
+      stripeSessionId: 'cs_2',
+      now,
+    });
+    bare.markPaid({ eventId: 'e', taxCents: 0, now: later });
+    expect(bare.toSnapshot().stripePaymentIntentId).toBeNull();
+  });
+
+  test('a refund sets the cumulative amount and time', () => {
+    const purchase = paidPurchase();
+    expect(purchase.recordRefund({ refundedCents: 9_900, now: refundTime })).toBe(9_900);
+    expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 9_900, refundedAt: refundTime });
+  });
+
+  test('the same or an older cumulative amount changes nothing; it never decreases', () => {
+    const purchase = paidPurchase();
+    purchase.recordRefund({ refundedCents: 4_000, now: refundTime });
+    const later2 = new Date('2026-12-04T09:00:00.000Z');
+    expect(purchase.recordRefund({ refundedCents: 4_000, now: later2 })).toBe(0);
+    expect(purchase.recordRefund({ refundedCents: 1_000, now: later2 })).toBe(0);
+    expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 4_000, refundedAt: refundTime });
+    expect(purchase.recordRefund({ refundedCents: 9_900, now: later2 })).toBe(5_900);
+    expect(purchase.toSnapshot()).toMatchObject({ refundedCents: 9_900, refundedAt: later2 });
+  });
+
+  test('a purchase that is not paid cannot be refunded', () => {
+    const pending = Purchase.start({
+      id: 'p3',
+      businessId: 'b',
+      packId: 'k',
+      credits: 1,
+      amountCents: 1,
+      stripeSessionId: 'cs_3',
+      now,
+    });
+    expect(pending.recordRefund({ refundedCents: 1, now: refundTime })).toBe(0);
+    expect(pending.refundedCents).toBe(0);
+  });
+});

@@ -53,6 +53,16 @@ export interface ToolCallRepository {
   listForRun(runId: string): Promise<ToolCallRecord[]>;
   /** Per Tool key, provider cost, ok + error calls and errors in [from, to) (reused and skipped excluded). */
   spendBetween(window: { from: Date; to: Date }): Promise<ToolSpend[]>;
+  /** Per Tool key, summed provider cost for calls created in [from, to), every status and reused ones included; Tools with no cost are left out (finance, prd-expenses FR-6). */
+  costByToolBetween(window: {
+    from: Date;
+    to: Date;
+  }): Promise<{ toolKey: string; micros: number }[]>;
+  /** The same per Tool key and UTC month ('YYYY-MM') in one grouped query (the P&L's 12 months). */
+  costByToolMonthBetween(window: {
+    from: Date;
+    to: Date;
+  }): Promise<{ toolKey: string; month: string; micros: number }[]>;
 }
 
 /** What one Tool cost the platform in a window (Staff dashboard, FR-30). */

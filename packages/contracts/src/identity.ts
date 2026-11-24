@@ -163,7 +163,8 @@ export const startActingAs = defineContract({
   path: '/api/staff/acting-as',
   auth: 'staff',
   status: 200,
-  body: z.object({ businessId: id }),
+  /** `ticketNumber` (≥ 1001) when started from a support Ticket; stored in the Audit log entry. */
+  body: z.object({ businessId: id, ticketNumber: z.int().min(1001).optional() }),
   response: me,
   errors: [err(404, 'NOT_FOUND')],
 });

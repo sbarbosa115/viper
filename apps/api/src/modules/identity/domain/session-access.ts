@@ -28,7 +28,9 @@ export function sessionAccess(input: {
   const { session, member, actingAs } = input;
   if (isHalfSession(session, member)) return { kind: 'half' };
 
-  const roles: Role[] = member.isStaff ? ['owner', 'staff'] : ['owner'];
+  // A Member's own role for their Business (prd-support v0.3); Staff keep `owner` for Acting as.
+  const base: Role = member.role === 'member' && !member.isStaff ? 'member' : 'owner';
+  const roles: Role[] = member.isStaff ? [base, 'staff'] : [base];
   if (member.isStaff && actingAs) {
     return {
       kind: 'full',

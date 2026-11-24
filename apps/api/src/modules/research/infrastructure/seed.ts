@@ -60,6 +60,96 @@ function demoPlan(demo: ResearchDemoIds, ids: IdGenerator): PlanSnapshot {
   };
 }
 
+const FAILED_STEP_KEY = 'websites';
+const FAILED_ERROR = 'The website reader provider was unavailable (503) after 3 tries.';
+
+/**
+ * A failed run of "Bakeries near Austin" for the support demo: it stopped in the Websites step
+ * (step 5 of "Local buyers"), 0 Leads, so the failure policy waived its spend (0 credits charged).
+ * Started two days before the seed. Found by "the most recent failed run of that Plan". No
+ * outbox event (no email) and no Reservation: it is history only. Idempotent.
+ */
+export async function seedFailedRun(deps: {
+  store: ResearchStore;
+  clock: Clock;
+  ids: IdGenerator;
+  demo: ResearchDemoIds;
+}): Promise<void> {
+  const { store, ids, demo } = deps;
+  const started = new Date(deps.clock.now().getTime() - 2 * 24 * 3600 * 1000);
+  const failed = new Date(started.getTime() + 9 * 60_000);
+  await store.transaction(async (tx) => {
+    const existing = await tx.runs.listForPlan(
+      demo.businesses.sweetSupply,
+      demo.plans.bakeriesNearAustin,
+      {
+        limit: 50,
+      },
+    );
+    if (existing.some((r) => r.toSnapshot().status === 'failed')) return;
+    const flow = await tx.flows.latest(LOCAL_BUYERS_KEY);
+    if (!flow) throw new Error('Seed the "Local buyers" flow first');
+    const run = ResearchRun.queue({
+      id: ids.next(),
+      flowId: flow.id,
+      flow: {
+        key: flow.key,
+        name: flow.name,
+        version: flow.version,
+        runSettings: flow.runSettings,
+        planDefaults: flow.planDefaults,
+        steps: flow.steps,
+      },
+      plan: demoPlan(demo, ids),
+      promptVersion: PROMPT_VERSION,
+      startedByMemberId: demo.members.owner,
+      startedByStaffId: null,
+      now: started,
+    });
+    run.beginAttempt(started);
+    run.addSpend(20_000, 8_000);
+    run.addActiveSeconds(9 * 60);
+    run.waiveSpend();
+    run.fail('PROVIDER_ERROR', failed, 0);
+    await tx.runs.insert(run);
+
+    const failedAt = flow.steps.findIndex((d) => d.key === FAILED_STEP_KEY);
+    const steps: StepRecord[] = flow.steps.map((def, position) => ({
+      id: ids.next(),
+      runId: run.id,
+      key: def.key,
+      position,
+      status: position < failedAt ? 'done' : position === failedAt ? 'failed' : 'pending',
+      attempts: position <= failedAt ? 1 : 0,
+      progress: null,
+      startedAt: position <= failedAt ? new Date(started.getTime() + position * 60_000) : null,
+      finishedAt:
+        position <= failedAt ? new Date(started.getTime() + (position + 1) * 60_000) : null,
+      millicreditsSpent: position < failedAt ? Math.round(20_000 / failedAt) : 0,
+      checkpoint: null,
+      error: position === failedAt ? FAILED_ERROR : null,
+    }));
+    await tx.steps.insertMany(steps);
+    await tx.attempts.insert({
+      id: ids.next(),
+      runId: run.id,
+      n: 1,
+      status: 'final_error',
+      fromStep: flow.steps[0]?.key ?? FAILED_STEP_KEY,
+      fromItem: 0,
+      reachedStep: FAILED_STEP_KEY,
+      reachedItem: 0,
+      error: FAILED_ERROR,
+      handoff: null,
+      leaseOwner: 'seed',
+      leaseExpiresAt: null,
+      startedAt: started,
+      endedAt: failed,
+      activeSeconds: 9 * 60,
+    });
+  });
+}
+
 /**
  * The completed demo run of "Bakeries near Austin" (PRD section 8a): 25 Leads, 136,200
  * millicredits = 137 credits (billing seeds the matching Reservation and Settlement). No outbox

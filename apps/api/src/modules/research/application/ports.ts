@@ -112,6 +112,8 @@ export interface StaffRunFilter {
 
 export interface RunRepository {
   find(id: string): Promise<ResearchRun | null>;
+  /** Runs by id in one query; unknown ids are left out. */
+  findByIds(ids: readonly string[]): Promise<ResearchRun[]>;
   /** Locks the run row for the rest of the transaction. */
   findForUpdate(id: string): Promise<ResearchRun | null>;
   insert(run: ResearchRun): Promise<void>;
@@ -130,6 +132,8 @@ export interface RunRepository {
   ): Promise<ResearchRun[]>;
   /** The newest run of each Plan (planning's PlanActivity.lastRuns). */
   latestForPlans(businessId: string, planIds: readonly string[]): Promise<ResearchRun[]>;
+  /** The Business's runs queued at or after `since`, newest first (support's run picker). */
+  recentForBusiness(businessId: string, since: Date, limit: number): Promise<ResearchRun[]>;
   /** Credits spent by the last 20 completed runs of the flow with ≥ 1 Lead, newest first. */
   recentCompletedCredits(flowKey: string, limit: number): Promise<number[]>;
   /** Retrying runs whose next attempt is due before `before` (the sweeper re-queues them). */

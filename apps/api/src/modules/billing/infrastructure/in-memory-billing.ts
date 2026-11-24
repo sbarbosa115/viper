@@ -12,6 +12,8 @@ import type {
   BusinessDirectory,
   CreditsSummary,
   LedgerCursor,
+  MonthlyRevenue,
+  PurchaseRefund,
   TrialCreditsSetting,
 } from '../application/ports.js';
 
@@ -21,6 +23,7 @@ export interface BillingState {
   reservations: ReservationSnapshot[];
   packs: CreditPackSnapshot[];
   purchases: PurchaseSnapshot[];
+  refunds: PurchaseRefund[];
   events: { type: keyof BillingEvents; payload: BillingEvents[keyof BillingEvents] }[];
 }
 
@@ -34,7 +37,14 @@ const newer = (a: LedgerCursor, b: LedgerCursor) =>
  * back on error.
  */
 export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
-  state: BillingState = { ledger: [], reservations: [], packs: [], purchases: [], events: [] };
+  state: BillingState = {
+    ledger: [],
+    reservations: [],
+    packs: [],
+    purchases: [],
+    refunds: [],
+    events: [],
+  };
   private queue: Promise<unknown> = Promise.resolve();
 
   /** `audit` receives the Audit entries written inside a transaction (a failed write rolls back). */
@@ -87,6 +97,39 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
       creditsPurchased: sum((e) => e.type === 'purchase'),
       creditsSpent: -sum((e) => e.type === 'settlement'),
       unspentCredits: [...businesses].reduce((s, b) => s + this.totals(b).available, 0),
+    });
+  }
+
+  revenueBetween(range: { from: Date; to: Date }): Promise<MonthlyRevenue> {
+    const within = (d: Date | null): d is Date => d !== null && d >= range.from && d < range.to;
+    const purchases = this.state.purchases;
+    return Promise.resolve({
+      sales: purchases.flatMap((p) =>
+        p.status === 'paid' && within(p.paidAt)
+          ? [
+              {
+                purchaseId: p.id,
+                amountCents: p.amountCents,
+                taxCents: p.taxCents,
+                paidAt: p.paidAt,
+              },
+            ]
+          : [],
+      ),
+      refunds: this.state.refunds.flatMap((r) => {
+        const p = purchases.find((x) => x.id === r.purchaseId);
+        return p && within(r.refundedAt)
+          ? [
+              {
+                purchaseId: p.id,
+                refundedCents: r.deltaCents,
+                amountCents: p.amountCents,
+                taxCents: p.taxCents,
+                refundedAt: r.refundedAt,
+              },
+            ]
+          : [];
+      }),
     });
   }
 
@@ -182,6 +225,17 @@ export class InMemoryBilling implements BillingUnitOfWork, BillingReadModel {
         findBySessionIdForUpdate: (sessionId) => {
           const found = s().purchases.find((p) => p.stripeSessionId === sessionId);
           return Promise.resolve(found ? Purchase.restore(structuredClone(found)) : null);
+        },
+        findByPaymentIntentIdForUpdate: (intent) => {
+          const found = s().purchases.find((p) => p.stripePaymentIntentId === intent);
+          return Promise.resolve(found ? Purchase.restore(structuredClone(found)) : null);
+        },
+        addRefund: (refund) => {
+          if (s().refunds.some((r) => r.stripeEventId === refund.stripeEventId)) {
+            return Promise.resolve(false);
+          }
+          s().refunds.push({ ...refund });
+          return Promise.resolve(true);
         },
         save: (purchase) => {
           const snap = purchase.toSnapshot();

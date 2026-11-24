@@ -2,12 +2,14 @@
 import type { ColumnType } from 'kysely';
 import type { AssistantTables } from '../../../modules/assistant/infrastructure/tables.js';
 import type { BillingTables } from '../../../modules/billing/infrastructure/tables.js';
+import type { FinanceTables } from '../../../modules/finance/infrastructure/tables.js';
 import type { IdentityTables } from '../../../modules/identity/infrastructure/tables.js';
 import type { LeadsTables } from '../../../modules/leads/infrastructure/tables.js';
 import type { PlanningTables } from '../../../modules/planning/infrastructure/tables.js';
 import type { PlatformTables } from '../../../modules/platform/infrastructure/tables.js';
 import type { ProfileTables } from '../../../modules/profile/infrastructure/tables.js';
 import type { ResearchTables } from '../../../modules/research/infrastructure/tables.js';
+import type { SupportTables } from '../../../modules/support/infrastructure/tables.js';
 import type { ToolsTables } from '../../../modules/tools/infrastructure/tables.js';
 import type { OutboxTables } from '../outbox/table.js';
 
@@ -44,4 +46,6 @@ export interface DB
     PlanningTables,
     ResearchTables,
     ToolsTables,
-    LeadsTables {}
+    LeadsTables,
+    FinanceTables,
+    SupportTables {}

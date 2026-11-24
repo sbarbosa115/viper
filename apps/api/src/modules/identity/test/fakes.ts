@@ -116,6 +116,14 @@ class InMemoryMembers implements MemberRepository {
         .map((m) => Member.restore(structuredClone(m))),
     );
   }
+  findStaff() {
+    return Promise.resolve(
+      [...this.db.members.values()]
+        .filter((m) => m.isStaff)
+        .sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0))
+        .map((m) => Member.restore(structuredClone(m))),
+    );
+  }
   claimTotpStep(memberId: string, step: number) {
     const last = this.db.totpSteps.get(memberId);
     if (last !== undefined && last >= step) return Promise.resolve(false);

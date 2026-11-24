@@ -233,6 +233,16 @@ class KyselyRunRepository implements RunRepository {
     return row ? toRun(row) : null;
   }
 
+  async findByIds(ids: readonly string[]): Promise<ResearchRun[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('research_runs')
+      .selectAll()
+      .where('id', 'in', [...new Set(ids)])
+      .execute();
+    return rows.map(toRun);
+  }
+
   async insert(run: ResearchRun): Promise<void> {
     await this.db.insertInto('research_runs').values(runRow(run)).execute();
   }
@@ -322,6 +332,19 @@ class KyselyRunRepository implements RunRepository {
             .limit(1),
         ),
       )
+      .execute();
+    return rows.map(toRun);
+  }
+
+  async recentForBusiness(businessId: string, since: Date, limit: number): Promise<ResearchRun[]> {
+    const rows = await this.db
+      .selectFrom('research_runs')
+      .selectAll()
+      .where('business_id', '=', businessId)
+      .where(sql<boolean>`COALESCE(started_at, queued_at) >= ${since}`)
+      .orderBy(sql`COALESCE(started_at, queued_at)`, 'desc')
+      .orderBy('id', 'desc')
+      .limit(limit)
       .execute();
     return rows.map(toRun);
   }

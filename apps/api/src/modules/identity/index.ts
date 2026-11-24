@@ -15,6 +15,10 @@ import type {
   TotpService,
 } from './application/ports.js';
 import { identityQueriesFrom, type IdentityQueries } from './application/queries.js';
+import {
+  identitySupportQueriesFrom,
+  type IdentitySupportQueries,
+} from './application/support-queries.js';
 import { ResolveActor } from './application/resolve-actor.js';
 import type { StaffCommand } from './application/staff-commands.js';
 import { createIdentityUseCases, type IdentityUseCases } from './application/use-cases.js';
@@ -38,6 +42,10 @@ export type {
   OwnerContact,
   StaffChange,
 } from './application/queries.js';
+export type {
+  IdentitySupportQueries,
+  SupportMemberSummary,
+} from './application/support-queries.js';
 export type { SignedIn } from './application/session-context.js';
 export type { IdentityUseCases } from './application/use-cases.js';
 export { assertStaff } from './application/acting-as.js';
@@ -157,7 +165,29 @@ export function createIdentityQueries(deps: {
   ids: IdGenerator;
   audit?: AuditRecorder;
 }): IdentityQueries {
-  const services = kyselyIdentityServices({
+  return identityQueriesFrom(queryServices(deps));
+}
+
+/**
+ * identity's reads for the support module: Members, Staff Members, Staff recipients and Business
+ * names, each in one batch.
+ */
+export function createIdentitySupportQueries(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+}): IdentitySupportQueries {
+  const services = queryServices(deps);
+  return identitySupportQueriesFrom(services, identityQueriesFrom(services));
+}
+
+function queryServices(deps: {
+  db: Database;
+  clock: Clock;
+  ids: IdGenerator;
+  audit?: AuditRecorder;
+}): IdentityServices {
+  return kyselyIdentityServices({
     ...deps,
     analytics: { track: () => Promise.resolve() },
     email: { send: () => Promise.reject(new Error('identity queries send no email')) },
@@ -173,7 +203,6 @@ export function createIdentityQueries(deps: {
     logger: { warn: () => undefined },
     appUrl: 'http://localhost',
   });
-  return identityQueriesFrom(services);
 }
 
 /** The use cases, for the server-rendered site's no-JavaScript forms (FR-35). */
@@ -209,7 +238,7 @@ interface DemoIds {
     cornerCoffee: string;
     llynerInternal: string;
   };
-  members: { owner: string; newOwner: string; lowOwner: string; staff: string };
+  members: { owner: string; newOwner: string; lowOwner: string; staff: string; member?: string };
   password: string;
   staffTotpSecret: string;
 }
@@ -294,4 +323,26 @@ export async function seed(deps: IdentitySeedDeps): Promise<void> {
     }
     await repos.members.save(member);
   }
+  await seedTeamMember(deps, repos, passwordHash);
+}
+
+/** Jo Kim: a verified `member` (not Owner) in Sweet Supply Co, for the support demo. */
+async function seedTeamMember(
+  deps: IdentitySeedDeps,
+  repos: ReturnType<typeof kyselyIdentityRepos>,
+  passwordHash: string,
+): Promise<void> {
+  const email = 'member@demo.test';
+  if (await repos.members.findByEmail(email)) return;
+  const now = deps.clock.now();
+  const owner = Member.registerOwner({
+    id: deps.demo.members.member ?? deps.ids.next(),
+    businessId: deps.demo.businesses.sweetSupply,
+    email,
+    name: 'Jo Kim',
+    passwordHash,
+    now,
+  });
+  owner.verifyEmail(now);
+  await repos.members.save(Member.restore({ ...owner.toSnapshot(), role: 'member' }));
 }

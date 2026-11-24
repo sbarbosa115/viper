@@ -61,8 +61,8 @@ Steps marked **Founder** need a login, a payment method or a secret; Claude guid
    - `SESSION_SECRET`: `openssl rand -base64 48`
    - `SETTINGS_ENCRYPTION_KEY`: `openssl rand -base64 32`. **Also save it in a password manager outside DigitalOcean**: without it, every key in Platform settings is unreadable (ADR 0012).
    - `DATABASE_URL`: from the MySQL cluster's **private** connection details, user `viper`:
-     `mysql://viper:<password>@<private-host>:25060/viper?ssl=%7B%22rejectUnauthorized%22%3Afalse%7D`
-     The `ssl` part turns TLS on for `mysql2` (it ignores DigitalOcean's own `ssl-mode=REQUIRED`). It encrypts without checking the certificate, which is acceptable on the private network; verifying it needs a small code change (see "Follow-ups").
+     `mysql://viper:<password>@<private-host>:25060/viper?ssl-mode=REQUIRED`, as DigitalOcean shows it.
+     `createDatabase` maps `ssl-mode` to `mysql2`'s TLS option (`REQUIRED` encrypts without checking the certificate, which is acceptable on the private network; `VERIFY_CA` checks it and needs the CA, see "Follow-ups"). An explicit `mysql2` `ssl=` parameter in the URL still wins.
    - `REDIS_URL`: from the Valkey cluster's **private** connection details: `rediss://default:<password>@<private-host>:25061`
    - `SENTRY_DSN`: the Sentry project's DSN, or delete the variable to run without Sentry.
    Saving starts a new deployment.

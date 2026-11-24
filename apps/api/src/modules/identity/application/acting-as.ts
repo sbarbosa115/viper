@@ -31,6 +31,8 @@ export class StartActingAs {
     actor: Actor | null;
     token: string | undefined;
     businessId: string;
+    /** When started from a support Ticket: stored in the Audit log entry. */
+    ticketNumber?: number | undefined;
   }): Promise<Me> {
     assertStaff(cmd.actor);
     const { session, member } = await requireActiveSession(this.s, cmd.token);
@@ -51,7 +53,14 @@ export class StartActingAs {
         auditEntry(member.id, previous, 'acting_as.stopped', { reason: 'replaced' }),
       );
     }
-    await this.s.audit.record(auditEntry(member.id, business.id, 'acting_as.started'));
+    await this.s.audit.record(
+      auditEntry(
+        member.id,
+        business.id,
+        'acting_as.started',
+        cmd.ticketNumber === undefined ? {} : { ticketNumber: cmd.ticketNumber },
+      ),
+    );
     await this.s.analytics.track({
       name: 'acting_as_started',
       actor: { memberId: member.id, businessId: business.id },

@@ -232,6 +232,131 @@ describe('FR-12: POST /api/webhooks/stripe', () => {
   });
 });
 
+describe('FR-7: charge.refunded on POST /api/webhooks/stripe', () => {
+  const PI = 'pi_123';
+  const refundAt = new Date('2026-12-03T09:00:00.000Z');
+
+  async function paidPurchase() {
+    const s = await setup({ actor: owner() });
+    await s.app.inject({
+      method: 'POST',
+      url: '/api/credits/checkout',
+      payload: { packId: s.starter.id },
+    });
+    const sessionId = s.billing.gateway.sessions[0]?.sessionId ?? '';
+    const post = (body: string) =>
+      s.app.inject({
+        method: 'POST',
+        url: '/api/webhooks/stripe',
+        headers: {
+          'content-type': 'application/json',
+          'stripe-signature': FakePaymentGateway.sign(body),
+        },
+        payload: body,
+      });
+    const paid = await post(
+      FakePaymentGateway.completedEvent({
+        eventId: 'evt_paid',
+        sessionId,
+        taxCents: 100,
+        paymentIntentId: PI,
+      }),
+    );
+    expect(paid.statusCode).toBe(200);
+    const refund = (eventId: string, cents: number, at = refundAt) =>
+      post(
+        FakePaymentGateway.refundedEvent({
+          eventId,
+          paymentIntentId: PI,
+          amountRefundedCents: cents,
+          createdAt: at,
+        }),
+      );
+    const purchase = () => s.billing.store.state.purchases[0];
+    return { ...s, refund, purchase, post };
+  }
+
+  test('the payment intent is stored when the purchase is paid', async () => {
+    const { purchase } = await paidPurchase();
+    expect(purchase()).toMatchObject({
+      status: 'paid',
+      stripePaymentIntentId: PI,
+      refundedCents: 0,
+      refundedAt: null,
+    });
+  });
+
+  test('a full refund sets refunded_cents and the event time; credits stay', async () => {
+    const { refund, purchase, billing } = await paidPurchase();
+    const res = await refund('evt_r1', 2_600);
+    expect(res.statusCode).toBe(200);
+    expect(stripeWebhook.response.parse(res.json())).toEqual({ received: true });
+    expect(purchase()).toMatchObject({ refundedCents: 2_600, refundedAt: refundAt });
+    expect((await billing.billingQueries.getWallet(BUSINESS)).available).toBe(2500);
+  });
+
+  test('a partial then a full refund accumulate; an older event never lowers it', async () => {
+    const { refund, purchase } = await paidPurchase();
+    await refund('evt_r1', 1_000);
+    const second = new Date('2026-12-05T09:00:00.000Z');
+    await refund('evt_r2', 2_600, second);
+    expect(purchase()).toMatchObject({ refundedCents: 2_600, refundedAt: second });
+    await refund('evt_r1_again', 1_000, new Date('2026-12-06T09:00:00.000Z'));
+    expect(purchase()).toMatchObject({ refundedCents: 2_600, refundedAt: second });
+  });
+
+  test('partial then full refund in different months are separate rows with their own deltas', async () => {
+    const { refund, billing } = await paidPurchase();
+    await refund('evt_r1', 4_000, new Date('2026-11-25T10:00:00.000Z'));
+    await refund('evt_r2', 9_900, new Date('2026-12-03T10:00:00.000Z'));
+    await refund('evt_r2', 9_900, new Date('2026-12-04T10:00:00.000Z'));
+    const nov = await billing.billingQueries.revenueForMonth('2026-11');
+    const dec = await billing.billingQueries.revenueForMonth('2026-12');
+    expect(nov.refunds.map((x) => x.refundedCents)).toEqual([4_000]);
+    expect(dec.refunds.map((x) => x.refundedCents)).toEqual([5_900]);
+  });
+
+  test('AC: the same event delivered twice leaves refunded_cents and the time unchanged', async () => {
+    const { refund, purchase } = await paidPurchase();
+    await refund('evt_r1', 2_600);
+    const first = structuredClone(purchase());
+    const again = await refund('evt_r1', 2_600, new Date('2026-12-09T00:00:00.000Z'));
+    expect(again.statusCode).toBe(200);
+    expect(purchase()).toEqual(first);
+  });
+
+  test('an unknown payment intent is acknowledged with 200 and changes nothing', async () => {
+    const { post, purchase } = await paidPurchase();
+    const before = structuredClone(purchase());
+    const res = await post(
+      FakePaymentGateway.refundedEvent({
+        eventId: 'evt_x',
+        paymentIntentId: 'pi_unknown',
+        amountRefundedCents: 2_600,
+        createdAt: refundAt,
+      }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(purchase()).toEqual(before);
+  });
+
+  test('a refund event with a bad signature is rejected', async () => {
+    const { app } = await paidPurchase();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks/stripe',
+      headers: { 'content-type': 'application/json', 'stripe-signature': 'v1=forged' },
+      payload: FakePaymentGateway.refundedEvent({
+        eventId: 'evt_x',
+        paymentIntentId: PI,
+        amountRefundedCents: 1,
+        createdAt: refundAt,
+      }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe('AJ-3 support: POST /api/test/stripe/complete/:sessionId', () => {
   test('is not registered without test hooks', async () => {
     const { app } = await setup({ actor: owner() });

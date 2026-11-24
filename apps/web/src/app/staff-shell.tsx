@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router';
 import { t } from '../shared/i18n';
 import { Badge, cx, IconButton, Logo } from '../shared/ui';
 import { useLogout } from './account-menu';
+import { useSupportWaitingCount } from '../features/support';
 import { staffNav } from './nav';
 import { useIsMobile } from './use-is-mobile';
 
@@ -21,6 +22,7 @@ function StaffNav({ onNavigate }: { onNavigate?: () => void }) {
           className={({ isActive }) => cx(link, isActive && 'bg-raised text-fg')}
         >
           {t(n.label)}
+          {n.badge === 'supportWaiting' && <WaitingBadge />}
         </NavLink>
       ))}
       <div className="mt-auto flex flex-col gap-0.5 border-t border-line pt-3">
@@ -36,6 +38,19 @@ function StaffNav({ onNavigate }: { onNavigate?: () => void }) {
         </button>
       </div>
     </nav>
+  );
+}
+
+function WaitingBadge() {
+  const { data: waiting } = useSupportWaitingCount();
+  if (!waiting) return null;
+  return (
+    <span
+      className="ml-auto rounded-full bg-accent px-2 font-mono text-xs text-accent-ink"
+      aria-label={t('staff.supportWaiting', { count: waiting })}
+    >
+      {waiting}
+    </span>
   );
 }
 
@@ -70,6 +85,7 @@ export function StaffShell() {
             onClick={() => setOpen((v) => !v)}
           />
           <Brand />
+          <WaitingBadge />
         </header>
         {open && (
           <div className="viper-fade absolute inset-x-0 top-14 z-40 flex min-h-[calc(100vh-56px)] flex-col bg-bg p-3">

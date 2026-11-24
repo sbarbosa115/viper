@@ -137,6 +137,7 @@ describe('PRD section 8a: identity seed', () => {
       members.map((m) => [m.email, m.business_id, m.is_staff, m.email_verified_at !== null]),
     ).toEqual([
       ['low@demo.test', demo.businesses.cornerCoffee, 0, true],
+      ['member@demo.test', demo.businesses.sweetSupply, 0, true],
       ['new@demo.test', demo.businesses.cleanDesk, 0, true],
       ['owner@demo.test', demo.businesses.sweetSupply, 0, true],
       ['staff@demo.test', demo.businesses.llynerInternal, 1, true],
@@ -159,6 +160,17 @@ describe('PRD section 8a: identity seed', () => {
       name: 'Sam Rivera',
       emailVerified: true,
     });
+    const jo = await db
+      .selectFrom('members')
+      .select(['name', 'role', 'business_id'])
+      .where('email', '=', 'member@demo.test')
+      .executeTakeFirstOrThrow();
+    expect(jo).toEqual({
+      name: 'Jo Kim',
+      role: 'member',
+      business_id: demo.businesses.sweetSupply,
+    });
+    expect(await db.selectFrom('members').select('id').execute()).toHaveLength(5);
   });
 
   test('AJ-6: staff@demo.test logs in with demo1234 and the TOTP code from the seeded secret, then acts as Sweet Supply Co', async () => {
@@ -217,6 +229,80 @@ describe('PRD section 8a: identity seed', () => {
       demo.businesses.sweetSupply,
     ]);
     expect(audit.entries.map((e) => e.action)).toEqual(['acting_as.started']);
+  });
+
+  test('prd-support: acting as with a ticketNumber stores it in the acting_as.started entry', async () => {
+    await seed({
+      db,
+      clock: new FixedClock(now),
+      ids: new Uuid7Generator(),
+      demo,
+      cipher: new FakeCipher(),
+    });
+    const { app, audit } = await realApp();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: ORIGIN },
+      payload: { email: 'staff@demo.test', password: 'demo1234' },
+    });
+    const sid = login.cookies.find((c) => c.name === 'sid')?.value ?? '';
+    const code = await generate({
+      secret: demo.staffTotpSecret,
+      epoch: Math.floor(now.getTime() / 1000),
+      guardrails: createGuardrails({ MIN_SECRET_BYTES: 10 }),
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/two-factor/verify',
+      headers: { origin: ORIGIN },
+      cookies: { sid },
+      payload: { code },
+    });
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/staff/acting-as',
+      headers: { origin: ORIGIN },
+      cookies: { sid },
+      payload: { businessId: demo.businesses.sweetSupply, ticketNumber: 12 },
+    });
+    expect(bad.statusCode).toBe(400);
+    const act = await app.inject({
+      method: 'POST',
+      url: '/api/staff/acting-as',
+      headers: { origin: ORIGIN },
+      cookies: { sid },
+      payload: { businessId: demo.businesses.sweetSupply, ticketNumber: 1001 },
+    });
+    expect(act.statusCode).toBe(200);
+    expect(audit.entries).toHaveLength(1);
+    expect(audit.entries[0]).toMatchObject({
+      action: 'acting_as.started',
+      businessId: demo.businesses.sweetSupply,
+      details: { ticketNumber: 1001 },
+    });
+  });
+
+  test('prd-support: the seeded member (role member) signs in and /me works', async () => {
+    await seed({
+      db,
+      clock: new FixedClock(now),
+      ids: new Uuid7Generator(),
+      demo,
+      cipher: new FakeCipher(),
+    });
+    const { app } = await realApp();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: ORIGIN },
+      payload: { email: 'member@demo.test', password: 'demo1234' },
+    });
+    expect(login.statusCode).toBe(200);
+    const body = meSchema.parse(login.json());
+    expect(body.member.email).toBe('member@demo.test');
+    expect(body.member.name).toBe('Jo Kim');
+    expect(body.business.name).toBe('Sweet Supply Co');
   });
 });
 

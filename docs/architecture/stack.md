@@ -45,7 +45,7 @@ _Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stac
 | Docker images | `node:24-slim`, `mysql:8.x` matching the cluster, `valkey/valkey:8`, `axllent/mailpit` (dev/e2e) | tests match production |
 | Lint/format/types | ESLint flat config (typescript-eslint, eslint-plugin-boundaries), Prettier, `tsc -b` with project references | |
 | Build/deploy | Docker image per component built by App Platform from the repo (root `Dockerfile`: default/`TARGET=api` for api and worker, `TARGET=web` for the static site; spec in `.do/app.yaml`); migrations run as a pre-deploy job | ADR 0006 |
-| CI | GitHub Actions running the same `./dev` commands (no `setup-node`): lint, typecheck, test, e2e, build, `npm audit --omit=dev` | local = CI |
+| CI | GitHub Actions running the same `./dev` commands (no `setup-node`): lint, typecheck, test, build, `npm audit --omit=dev`. E2E (`./dev e2e`) runs locally, before merging | local = CI |
 
 ## Commands (repo root)
 All through Docker (no Node on the host): `./dev install` · `./dev up` · `./dev seed` · `./dev test [paths]` · `./dev e2e [specs]` · `./dev lint` · `./dev typecheck` · `./dev build` · `./dev check` (all of them) · `./dev add <pkg> -w <workspace>`

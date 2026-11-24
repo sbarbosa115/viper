@@ -3,12 +3,14 @@ import { createTotpCipher } from '../composition.js';
 import { loadConfig } from '../config/env.js';
 import * as assistant from '../modules/assistant/index.js';
 import * as billing from '../modules/billing/index.js';
+import * as finance from '../modules/finance/index.js';
 import * as identity from '../modules/identity/index.js';
 import * as leads from '../modules/leads/index.js';
 import * as planning from '../modules/planning/index.js';
 import * as platform from '../modules/platform/index.js';
 import * as profile from '../modules/profile/index.js';
 import * as research from '../modules/research/index.js';
+import * as support from '../modules/support/index.js';
 import * as tools from '../modules/tools/index.js';
 import { createDatabase } from '../shared/infrastructure/db/database.js';
 import { SystemClock } from '../shared/infrastructure/time/system-clock.js';
@@ -43,6 +45,7 @@ const demo = {
     newOwner: id(0xd102),
     lowOwner: id(0xd103),
     staff: id(0xd104),
+    member: id(0xd105),
   },
   products: {
     caneSugar: id(0xd201),
@@ -74,12 +77,17 @@ const deps = {
  *   (Corner Coffee Roasters), staff@demo.test (Staff, "Llyner Leads (internal)" marked internal,
  *   TOTP secret JBSWY3DPEHPK3PXP); all verified, password demo1234.
  * platform: Platform settings (SMTP → Mailpit, fake provider keys, default models and ceilings).
- * billing: Credit packs Starter/Growth/Pro; wallets: Sweet Supply 863, Clean Desk 50, Corner 120.
- * tools: the Tool catalog with the seeded Rate card.
+ * billing: Credit packs Starter/Growth/Pro; wallets: Sweet Supply 863, Clean Desk 50, Corner 120;
+ *   paid November 2026 purchases $49 + $49 + $99 (prd-expenses 8a).
+ * tools: the Tool catalog with the seeded Rate card; November 2026 metered Tool calls.
+ * finance: November 2026 bills, the One-off legal review, Provider invoices, the $300 Budget and
+ *   its 80% and 100% alerts (prd-expenses 8a; the P&L shows net −$325.75).
  * research: Flow template "Local buyers" v1 and the completed demo run of "Bakeries near Austin".
  * profile: complete profiles for Sweet Supply Co and Corner Coffee Roasters; Clean Desk empty.
  * planning: "Bakeries near Austin" (Sweet Supply Co) and one Plan for Corner Coffee Roasters.
  * leads: 25 Leads for the demo run from the fake-Tool fixtures, Feedback on 5.
+ * support: Jo Kim (member@demo.test), a failed run and Tickets #1001 to #1005 (prd-support 8a;
+ *   a no-op until the support seed lands).
  * assistant and reporting have no demo data (assistant's seed is a no-op kept for symmetry).
  */
 const steps = [
@@ -87,10 +95,12 @@ const steps = [
   ['platform', platform.seed],
   ['billing', billing.seed],
   ['tools', tools.seed],
+  ['finance', finance.seed],
   ['research', research.seed],
   ['profile', profile.seed],
   ['planning', planning.seed],
   ['leads', leads.seed],
+  ['support', support.seed],
   ['assistant', assistant.seed],
 ] as const;
 

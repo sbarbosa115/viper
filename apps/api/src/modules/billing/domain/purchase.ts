@@ -6,11 +6,16 @@ export interface PurchaseSnapshot {
   credits: number;
   stripeSessionId: string;
   stripeEventId: string | null;
+  /** The Checkout Session's payment intent, stored when paid; null before the release that added it. */
+  stripePaymentIntentId: string | null;
   amountCents: number;
   taxCents: number;
+  /** The charge's cumulative refunded amount, tax included (Stripe `amount_refunded`). */
+  refundedCents: number;
   status: 'pending' | 'paid' | 'failed';
   createdAt: Date;
   paidAt: Date | null;
+  refundedAt: Date | null;
 }
 
 /** A Credit pack bought through Stripe Checkout; paid only by the webhook (FR-12). */
@@ -33,11 +38,14 @@ export class Purchase {
       credits: props.credits,
       stripeSessionId: props.stripeSessionId,
       stripeEventId: null,
+      stripePaymentIntentId: null,
       amountCents: props.amountCents,
       taxCents: 0,
+      refundedCents: 0,
       status: 'pending',
       createdAt: props.now,
       paidAt: null,
+      refundedAt: null,
     });
   }
 
@@ -60,6 +68,9 @@ export class Purchase {
   get amountCents(): number {
     return this.s.amountCents;
   }
+  get refundedCents(): number {
+    return this.s.refundedCents;
+  }
   get isPaid(): boolean {
     return this.s.status === 'paid';
   }
@@ -79,16 +90,34 @@ export class Purchase {
   }
 
   /** Returns false when already paid, so a repeated webhook changes nothing. */
-  markPaid(props: { eventId: string; taxCents: number; now: Date }): boolean {
+  markPaid(props: {
+    eventId: string;
+    taxCents: number;
+    now: Date;
+    paymentIntentId?: string | null;
+  }): boolean {
     if (this.isPaid) return false;
     this.s = {
       ...this.s,
       status: 'paid',
       stripeEventId: props.eventId,
       taxCents: Math.max(0, props.taxCents),
+      stripePaymentIntentId: props.paymentIntentId ?? null,
       paidAt: props.now,
     };
     return true;
+  }
+
+  /**
+   * A refund from Stripe's `charge.refunded` (FR-7). `refundedCents` is the charge's cumulative
+   * amount, so a repeated or older event changes nothing: it only ever grows. Credits stay.
+   * Returns the increase (the refund to record as a row), 0 when nothing changed.
+   */
+  recordRefund(props: { refundedCents: number; now: Date }): number {
+    if (!this.isPaid || props.refundedCents <= this.s.refundedCents) return 0;
+    const delta = props.refundedCents - this.s.refundedCents;
+    this.s = { ...this.s, refundedCents: props.refundedCents, refundedAt: props.now };
+    return delta;
   }
 
   toSnapshot(): PurchaseSnapshot {

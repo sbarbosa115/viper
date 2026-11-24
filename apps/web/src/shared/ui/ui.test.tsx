@@ -393,6 +393,7 @@ describe('ui: Icon and Logo', () => {
       'arrow-left',
       'external',
       'download',
+      'help',
     ] as const) {
       expect(iconNames).toContain(name);
     }

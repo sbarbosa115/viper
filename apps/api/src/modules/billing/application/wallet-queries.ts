@@ -6,6 +6,7 @@ import type {
   BillingUnitOfWork,
   CreditsSummary,
   LedgerCursor,
+  MonthlyRevenue,
   PaymentGateway,
 } from './ports.js';
 
@@ -146,6 +147,56 @@ export class WalletQueries {
     });
   }
 
+  /**
+   * Sales (paid in the UTC month) and refunds (refunded in it), raw for finance. `month` is
+   * 'YYYY-MM'.
+   */
+  async revenueForMonth(month: string): Promise<MonthlyRevenue> {
+    const { year, index } = parseMonth(month);
+    return await this.deps.readModel.revenueBetween({
+      from: new Date(Date.UTC(year, index, 1)),
+      to: new Date(Date.UTC(year, index + 1, 1)),
+    });
+  }
+
+  /**
+   * `revenueForMonth` for every UTC month from `fromMonth` to `toMonth` ('YYYY-MM', inclusive),
+   * oldest first, empty months included: one query for sales and one for refunds over the range
+   * (the P&L reads 12 months at once).
+   */
+  async revenueForMonths(
+    fromMonth: string,
+    toMonth: string,
+  ): Promise<
+    { month: string; sales: MonthlyRevenue['sales']; refunds: MonthlyRevenue['refunds'] }[]
+  > {
+    const first = parseMonth(fromMonth);
+    const last = parseMonth(toMonth);
+    const count = (last.year - first.year) * 12 + (last.index - first.index) + 1;
+    if (count < 1 || count > MAX_MONTHS_PER_RANGE) {
+      throw new ValidationError('Invalid month range', {
+        month: `From must not be after to, at most ${MAX_MONTHS_PER_RANGE} months`,
+      });
+    }
+    const buckets = Array.from({ length: count }, (_, i) => {
+      const start = new Date(Date.UTC(first.year, first.index + i, 1));
+      return {
+        month: start.toISOString().slice(0, 7),
+        sales: [] as MonthlyRevenue['sales'],
+        refunds: [] as MonthlyRevenue['refunds'],
+      };
+    });
+    const bucketOf = (at: Date) =>
+      buckets[(at.getUTCFullYear() - first.year) * 12 + (at.getUTCMonth() - first.index)];
+    const { sales, refunds } = await this.deps.readModel.revenueBetween({
+      from: new Date(Date.UTC(first.year, first.index, 1)),
+      to: new Date(Date.UTC(last.year, last.index + 1, 1)),
+    });
+    for (const s of sales) bucketOf(s.paidAt)?.sales.push(s);
+    for (const r of refunds) bucketOf(r.refundedAt)?.refunds.push(r);
+    return buckets;
+  }
+
   /** Customer list columns (FR-31): available credits and paying, batched. */
   availableByBusiness(businessIds: readonly string[]): Promise<Map<string, number>> {
     return this.deps.readModel.availableByBusiness(businessIds);
@@ -158,4 +209,13 @@ export class WalletQueries {
   ): Promise<Set<string>> {
     return this.deps.readModel.payingBusinessIds(businessIds, options);
   }
+}
+
+const MAX_MONTHS_PER_RANGE = 120;
+
+/** 'YYYY-MM' to a year and zero-based month index. */
+function parseMonth(month: string): { year: number; index: number } {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+  if (!match) throw new ValidationError('Invalid month', { month: 'Use YYYY-MM' });
+  return { year: Number(match[1]), index: Number(match[2]) - 1 };
 }

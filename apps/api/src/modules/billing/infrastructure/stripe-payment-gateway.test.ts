@@ -105,7 +105,12 @@ describe('FR-12: Stripe adapter', () => {
       object: 'event',
       type: 'checkout.session.completed',
       data: {
-        object: { id: 'cs_test_1', payment_status: 'paid', total_details: { amount_tax: 180 } },
+        object: {
+          id: 'cs_test_1',
+          payment_status: 'paid',
+          payment_intent: 'pi_test_1',
+          total_details: { amount_tax: 180 },
+        },
       },
     });
     const header = Stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET });
@@ -118,6 +123,28 @@ describe('FR-12: Stripe adapter', () => {
       sessionId: 'cs_test_1',
       paid: true,
       taxCents: 180,
+      paymentIntentId: 'pi_test_1',
+    });
+  });
+
+  test('FR-7: verifies a signed charge.refunded event: payment intent, cumulative refund, time', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_2',
+      object: 'event',
+      type: 'charge.refunded',
+      created: 1_796_288_400,
+      data: { object: { id: 'ch_1', payment_intent: 'pi_test_1', amount_refunded: 2_500 } },
+    });
+    const header = Stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET });
+
+    expect(
+      await new StripePaymentGateway(settings()).verifyWebhook(Buffer.from(payload), header),
+    ).toEqual({
+      id: 'evt_2',
+      type: 'charge.refunded',
+      paymentIntentId: 'pi_test_1',
+      amountRefundedCents: 2_500,
+      occurredAt: new Date(1_796_288_400_000),
     });
   });
 

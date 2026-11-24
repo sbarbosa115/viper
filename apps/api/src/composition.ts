@@ -4,11 +4,17 @@ import type { Logger } from 'pino';
 import type { AppDeps, AppModule } from './app.js';
 import type { Config } from './config/env.js';
 import { createAssistant } from './modules/assistant/index.js';
-import { createBilling, createPaymentGateway, type Billing } from './modules/billing/index.js';
+import {
+  createBilling,
+  createBillingSupportQueries,
+  createPaymentGateway,
+  type Billing,
+} from './modules/billing/index.js';
 import {
   createActorResolver,
   createIdentityModule,
   createIdentityQueries,
+  createIdentitySupportQueries,
   createIdentityUseCasesFor,
   type IdentityDeps,
   type IdentityQueries,
@@ -31,8 +37,11 @@ import {
 } from './modules/platform/index.js';
 import { createProfile, type Profile } from './modules/profile/index.js';
 import { createReporting } from './modules/reporting/index.js';
+import { createFinance, type Finance } from './modules/finance/index.js';
+import { createSupport, type Support } from './modules/support/index.js';
 import {
   createResearch,
+  createResearchSupportQueries,
   fakeResearchAgent,
   isResearchRequest,
   type Research,
@@ -188,6 +197,8 @@ export interface ComposedModules {
   planning: Planning;
   leads: Leads;
   research: Research;
+  finance: Finance;
+  support: Support;
   /** research's collaborators, for the worker's research workers. */
   researchCollaborators: ResearchCollaborators & { testHooks: boolean };
   testHooks: boolean;
@@ -396,6 +407,42 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     },
   });
 
+  const finance = createFinance({
+    db,
+    clock,
+    ids,
+    audit: auditLog,
+    analytics,
+    email,
+    appUrl: config.APP_URL,
+    logger,
+    testHooks,
+    billing: {
+      revenueForMonths: (from, to) => billing.billingQueries.revenueForMonths(from, to),
+    },
+    tools: {
+      meteredCostByProviderMonths: (from, to) =>
+        tools.toolQueries.meteredCostByProviderMonths(from, to),
+      providers: () => tools.toolQueries.providers(),
+    },
+    staff: { staffRecipients: () => identityQueries.staffRecipients() },
+    members: { memberEmails: (memberIds) => identityQueries.getMemberEmails(memberIds) },
+  });
+
+  const supportIdentity = createIdentitySupportQueries({ db, clock, ids });
+  const support = createSupport({
+    db,
+    clock,
+    ids,
+    identity: supportIdentity,
+    research: createResearchSupportQueries({ db, clock, ids }),
+    billing: createBillingSupportQueries({ db, clock, ids }),
+    audit: auditLog,
+    analytics,
+    testHooksEnv: testHooks ? config.NODE_ENV : null,
+    ownerOf: (businessId) => supportIdentity.ownerOf(businessId),
+  });
+
   return {
     core,
     email,
@@ -408,6 +455,8 @@ export function composeModules(config: Config, infra: ModuleInfra): ComposedModu
     planning,
     leads,
     research,
+    finance,
+    support,
     researchCollaborators,
     testHooks,
   };
@@ -430,7 +479,7 @@ export function composeApp(
   const { db, logger } = infra;
   const m = composeModules(config, infra);
   const { core, email, identityQueries, llm, geocoder, billing, tools } = m;
-  const { profile, planning, leads, research } = m;
+  const { profile, planning, leads, research, finance, support } = m;
   const { clock, ids, secretBox, settings, auditLog, analytics } = core;
 
   const identityDeps: IdentityDeps = {
@@ -528,6 +577,8 @@ export function composeApp(
     tools.module,
     leads.module,
     reporting.module,
+    finance.module,
+    support.module,
   ];
 
   return { core, deps, modules, billing, close: () => email.close() };

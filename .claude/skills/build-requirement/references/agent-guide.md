@@ -2,13 +2,11 @@
 
 You are implementing **one work package** of a PRD. Your brief says which package, which FRs, which files you own, and which test project name to use. The orchestrator handles everything outside your package. You never talk to the user.
 
-## Read
-- Your brief (the FRs and acceptance criteria are copied into it).
-- `docs/architecture/stack.md` and `docs/glossary.md`. Use glossary terms for names in code and UI.
-- PRD §7 (interfaces) and §8 (data), for your endpoints and tables only.
-- Backend: `.claude/skills/build-requirement/references/architecture.md`, plus `auth.md` if you touch permissions.
-- Web: `.claude/skills/build-requirement/references/frontend.md`.
-- `.claude/skills/build-requirement/references/testing.md`.
+## Read (only what your package needs; start coding soon)
+- Your brief. It has your FRs, endpoints, tables, events and port signatures; don't read the whole PRD. Open a PRD section only if the brief points to it.
+- `docs/glossary.md` for the terms you name things after. `docs/architecture/stack.md` only if you need a stack fact.
+- Backend packages: `.claude/skills/build-requirement/references/architecture.md`, plus `auth.md` if you touch permissions. Web packages: `frontend.md`. Both: `testing.md`.
+- The existing code the brief tells you to imitate. Prefer copying a nearby pattern over reading more docs.
 
 ## Hard rules
 - **Write only inside your `owns` globs.** Read anything. If you need a change outside them (a contract, a shared file, a `package.json`), don't make it. Report it instead (see *Early return*).
@@ -32,8 +30,14 @@ Name tests after requirements: `describe('FR-3: cancel order', …)`, `test('AJ-
 ## Commands
 ```bash
 # There is no Node on the host: every command goes through ./dev (Docker).
-# your tests, with your own MySQL and Valkey (the result that counts)
-COMPOSE_PROJECT_NAME=<project> ./dev test <your paths>
+# your tests only, with your own MySQL and Valkey kept warm between runs (the result that counts).
+# Never run the whole suite: it is slow, other agents' half-done work fails in it, and the
+# orchestrator runs it at each milestone.
+COMPOSE_PROJECT_NAME=<project> TEST_KEEP=1 ./dev test <your paths>
+# while iterating, narrow further: one file, or -t '<test name>'
+COMPOSE_PROJECT_NAME=<project> TEST_KEEP=1 ./dev test <one file> -t 'FR-3'
+# when you're finished, stop your warm stack
+COMPOSE_PROJECT_NAME=<project> ./dev test-down
 # lint only your files
 ./dev lint <your owned dirs>
 # typecheck; ignore errors in files you don't own

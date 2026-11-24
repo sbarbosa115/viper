@@ -27,16 +27,16 @@ The PRD's FRs and acceptance journeys (AJs) are the contract. Each one ends with
 - **Mocks:** the PRD's §6b links the approved Design canvas. Wave demos compare the built screens with its "after" artboards. If the build must differ from a mock, mock that difference (mobile and desktop, before and after; see `.claude/skills/new-requirement/references/visual-mocks.md`) and get approval before building it.
 - **Confirm:** show the waves, packages, models and demos, along with any fixes you made to the plan, and wait for the user's go. Don't re-present the whole design the PRD already contains; show only what changed.
 
-### 2. Run the waves
-For each wave, follow `references/orchestration.md`:
+### 2. Run the packages
+Follow `references/orchestration.md`. Packages are scheduled by their dependencies; waves are milestones.
 1. Note the starting commit.
-2. Start every package in the wave **in one message**, so they run in parallel, each with the brief template and its model.
+2. Start every **ready** package (all `depends_on` done) **in one message**, so they run in parallel, each with a self-contained brief and its model. Whenever a package finishes, check its ownership and its own tests, then immediately start whatever became ready; don't wait for the rest of its wave.
 3. Handle early returns (contract defects, missing dependencies) as they arrive.
-4. When all packages are done: verify ownership, wire in the new work, install requested dependencies, run the full checks, and fix failures by sending them back to the owning agent.
-5. **Demo**, then wait for the user's sign-off. A fix goes back to the owning agent; a changed requirement updates the PRD (version bump and change log).
-6. Commit the wave, then start the next one.
+4. When all packages of a wave are done (the milestone): wire in the new work, install requested dependencies, run the full checks, and fix failures by sending them back to the owning agent.
+5. **Demo**, then wait for the user's sign-off, unless the user asked for autopilot (then report at the end). A fix goes back to the owning agent; a changed requirement updates the PRD (version bump and change log).
+6. Commit the milestone.
 
-Never start a wave on a red build. Skip the demo pause only if the user explicitly asks for autopilot.
+Never start a package on code that fails its dependencies' tests.
 
 ### 3. Final wave: hardening and review
 Run the security checklist and the senior review in `references/orchestration.md`. Use an `opus` review agent that is given the diff and the PRD, not your conclusions. Route its findings to fixes, then run everything again:

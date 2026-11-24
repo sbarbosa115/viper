@@ -9,6 +9,7 @@ import type {
   CreditPackRepository,
   ExternalTransaction,
   LedgerRepository,
+  PurchaseRefund,
   PurchaseRepository,
   ReservationRepository,
   WalletRepository,
@@ -287,11 +288,22 @@ function toPack(row: {
 export class KyselyPurchaseRepository implements PurchaseRepository {
   constructor(private readonly db: Db) {}
 
-  async findBySessionIdForUpdate(sessionId: string): Promise<Purchase | null> {
+  findBySessionIdForUpdate(sessionId: string): Promise<Purchase | null> {
+    return this.findForUpdate('stripe_session_id', sessionId);
+  }
+
+  findByPaymentIntentIdForUpdate(paymentIntentId: string): Promise<Purchase | null> {
+    return this.findForUpdate('stripe_payment_intent_id', paymentIntentId);
+  }
+
+  private async findForUpdate(
+    column: 'stripe_session_id' | 'stripe_payment_intent_id',
+    value: string,
+  ): Promise<Purchase | null> {
     const row = await this.db
       .selectFrom('purchases')
       .selectAll()
-      .where('stripe_session_id', '=', sessionId)
+      .where(column, '=', value)
       .forUpdate()
       .executeTakeFirst();
     return row
@@ -302,13 +314,31 @@ export class KyselyPurchaseRepository implements PurchaseRepository {
           credits: row.credits,
           stripeSessionId: row.stripe_session_id,
           stripeEventId: row.stripe_event_id,
+          stripePaymentIntentId: row.stripe_payment_intent_id,
           amountCents: row.amount_cents,
           taxCents: row.tax_cents,
+          refundedCents: row.refunded_cents,
           status: row.status,
           createdAt: row.created_at,
           paidAt: row.paid_at,
+          refundedAt: row.refunded_at,
         })
       : null;
+  }
+
+  async addRefund(refund: PurchaseRefund): Promise<boolean> {
+    const result = await this.db
+      .insertInto('purchase_refunds')
+      .ignore()
+      .values({
+        id: refund.id,
+        purchase_id: refund.purchaseId,
+        stripe_event_id: refund.stripeEventId,
+        delta_cents: refund.deltaCents,
+        refunded_at: refund.refundedAt,
+      })
+      .executeTakeFirst();
+    return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
   }
 
   async save(purchase: Purchase): Promise<void> {
@@ -322,17 +352,23 @@ export class KyselyPurchaseRepository implements PurchaseRepository {
         credits: s.credits,
         stripe_session_id: s.stripeSessionId,
         stripe_event_id: s.stripeEventId,
+        stripe_payment_intent_id: s.stripePaymentIntentId,
         amount_cents: s.amountCents,
         tax_cents: s.taxCents,
+        refunded_cents: s.refundedCents,
         status: s.status,
         created_at: s.createdAt,
         paid_at: s.paidAt,
+        refunded_at: s.refundedAt,
       })
       .onDuplicateKeyUpdate({
         stripe_event_id: s.stripeEventId,
+        stripe_payment_intent_id: s.stripePaymentIntentId,
         tax_cents: s.taxCents,
+        refunded_cents: s.refundedCents,
         status: s.status,
         paid_at: s.paidAt,
+        refunded_at: s.refundedAt,
       })
       .execute();
   }

@@ -54,3 +54,20 @@ Use these exact terms in code, UI, tests and PRDs.
 | Platform settings | Staff-managed configuration: provider and model keys, SMTP, Stripe, analytics, run limits; secrets encrypted | platform | config, env |
 | Audit log | Append-only record of Staff access and changes, including everything done while Acting as | platform | history, activity |
 | Cost per lead | Credits spent on a run divided by the Leads it delivered | billing / leads | CPL (in UI) |
+| Expense | Anything Llyner Leads pays for, as a Recurring bill or a One-off expense, in one of ten fixed categories | finance | cost (in UI), spend item |
+| Recurring bill | An Expense charged monthly or yearly from a start date, with price versions effective from a date; it may cover a provider's usage | finance | subscription, recurring expense |
+| One-off expense | An Expense paid once, counted in the month of its date | finance | ad-hoc cost |
+| Charge | One due date of a Recurring bill and the price in effect then; derived, not stored | finance | payment, instance |
+| Provider invoice | What a provider actually billed for a month, entered by Staff; it replaces the metered estimate and any plan for that provider and month | finance | bill (for providers) |
+| Metered estimate | A provider's month of Tool-call provider cost, used when there's no invoice or plan | finance | usage cost |
+| Gap | How far a Provider invoice differs from the metered estimate, in %; flagged above 15% | finance | variance |
+| P&L | The monthly statement: revenue, cost of revenue, gross profit, operating expenses, net profit (cash basis, UTC months) | finance | report, income statement (in UI) |
+| Cost of revenue | Provider costs and Stripe fees (categories AI, Data providers, Payments fees) | finance | COGS (in UI) |
+| Fixed run-rate | Monthly total of active Recurring bills, yearly ones divided by 12 | finance | burn |
+| Budget | The platform-wide monthly spending limit (default $300); all Staff are emailed at 80% and 100% | finance | cap, limit |
+| Ticket | A support request a Member opens in Help, with a number (#1042), category, status and thread; optionally linked to a Research run | support | case, issue, request (in UI) |
+| Reply | A message on a Ticket's thread, from the customer or from Staff (shown to customers as "Llyner Leads Support") | support | comment, response |
+| Internal note | A Staff-only message on a Ticket; customers never see it and nobody is emailed | support | private comment, whisper |
+| Waiting queue | The Tickets waiting on Staff (open or in progress, and unassigned or with an unread customer reply), longest wait first | support | inbox, backlog |
+| Support desk | The back-office area where Staff work Tickets | support | helpdesk, admin inbox |
+| Report a problem | The link on a failed run or a Lead list that opens a new Ticket with that run attached | support | feedback (that's for Leads) |

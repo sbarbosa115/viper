@@ -27,6 +27,8 @@ export interface MemberRepository {
   findByEmail(email: string): Promise<Member | null>;
   findOwnerOf(businessId: string): Promise<Member | null>;
   findOwnersOf(businessIds: readonly string[]): Promise<Member[]>;
+  /** Every Staff Member, ordered by email. */
+  findStaff(): Promise<Member[]>;
   /** Inserting a second Member with the same email throws EMAIL_TAKEN. */
   save(member: Member): Promise<void>;
   /**

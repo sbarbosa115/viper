@@ -26,7 +26,7 @@ import {
   KyselyToolCallRepository,
   KyselyToolRepository,
 } from './infrastructure/kysely-tool-repositories.js';
-import { seedToolCatalog } from './infrastructure/seed-tools.js';
+import { seedDemoToolCalls, seedToolCatalog } from './infrastructure/seed-tools.js';
 
 export { TOOL_KEYS, ALL_TOOL_KEYS, CLAUDE_TOOLS } from './domain/tool-keys.js';
 export type { ToolKey, ClaudeRole } from './domain/tool-keys.js';
@@ -152,11 +152,17 @@ export interface Tools {
 }
 
 /** tools' public read side on MySQL alone (reporting's tests, scripts). */
-export function createToolQueries(deps: { db: Database; settings: ProviderSettings }): ToolQueries {
+export function createToolQueries(deps: {
+  db: Database;
+  settings: ProviderSettings;
+  /** Given, closed months' metered cost is cached (meteredCostByProviderMonths). */
+  clock?: Clock;
+}): ToolQueries {
   return new ToolQueries({
     tools: new KyselyToolRepository(deps.db),
     calls: new KyselyToolCallRepository(deps.db),
     settings: deps.settings,
+    ...(deps.clock ? { clock: deps.clock } : {}),
   });
 }
 
@@ -205,8 +211,14 @@ export function createTools(
 /**
  * Demo data (PRD section 8a), called by scripts/seed.ts in dependency order: every Tool with the
  * seeded Rate card, enabled (Apify Yelp included). Idempotent; keeps Staff's changes. Safe for
- * production too (release notes: seed the Tools and Rate card).
+ * production too (release notes: seed the Tools and Rate card). With `demo` (scripts/seed.ts,
+ * never production) it also adds the November 2026 metered Tool calls (prd-expenses 8a).
  */
-export async function seed(deps: { db: Database; clock: Clock }): Promise<void> {
+export async function seed(deps: {
+  db: Database;
+  clock: Clock;
+  demo?: { businesses: { sweetSupply: string } };
+}): Promise<void> {
   await seedToolCatalog(new KyselyToolRepository(deps.db), deps.clock.now());
+  if (deps.demo) await seedDemoToolCalls(deps.db, deps.demo.businesses.sweetSupply);
 }

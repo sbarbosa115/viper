@@ -52,7 +52,19 @@ export interface CreditPackRepository {
 
 export interface PurchaseRepository {
   findBySessionIdForUpdate(sessionId: string): Promise<Purchase | null>;
+  findByPaymentIntentIdForUpdate(paymentIntentId: string): Promise<Purchase | null>;
   save(purchase: Purchase): Promise<void>;
+  /** Adds one refund row; returns false (writing nothing) when its Stripe event id exists. */
+  addRefund(refund: PurchaseRefund): Promise<boolean>;
+}
+
+/** One increase of a Purchase's cumulative refunded amount, from one Stripe event. */
+export interface PurchaseRefund {
+  id: string;
+  purchaseId: string;
+  stripeEventId: string;
+  deltaCents: number;
+  refundedAt: Date;
 }
 
 /** Outbox events billing publishes (a subset of the shared outbox event map). */
@@ -113,11 +125,25 @@ export interface BillingReadModel {
     excludeBusinessIds: readonly string[];
   }): Promise<CreditsSummary>;
   availableByBusiness(businessIds: readonly string[]): Promise<Map<string, number>>;
+  /** Paid purchases with `paid_at` in [from, to) and refunds with `refunded_at` in it. */
+  revenueBetween(range: { from: Date; to: Date }): Promise<MonthlyRevenue>;
   /** Businesses with a paid purchase; `paidBefore` counts only purchases paid before it. */
   payingBusinessIds(
     businessIds: readonly string[],
     options?: { paidBefore?: Date },
   ): Promise<Set<string>>;
+}
+
+/** Sales and refunds in one UTC month, raw for the finance P&L (prd-expenses FR-7, FR-9). */
+export interface MonthlyRevenue {
+  sales: { purchaseId: string; amountCents: number; taxCents: number; paidAt: Date }[];
+  refunds: {
+    purchaseId: string;
+    refundedCents: number;
+    amountCents: number;
+    taxCents: number;
+    refundedAt: Date;
+  }[];
 }
 
 // Other ports ------------------------------------------------------------------------------------
@@ -149,6 +175,17 @@ export type PaymentEvent =
       /** `payment_status` is paid (or no payment was required). */
       paid: boolean;
       taxCents: number;
+      /** The session's payment intent, when Stripe sent one. */
+      paymentIntentId: string | null;
+    }
+  | {
+      id: string;
+      type: 'charge.refunded';
+      paymentIntentId: string;
+      /** The charge's cumulative `amount_refunded`. */
+      amountRefundedCents: number;
+      /** The event's `created` time. */
+      occurredAt: Date;
     }
   | { id: string; type: 'other' };
 

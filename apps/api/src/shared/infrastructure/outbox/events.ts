@@ -20,6 +20,25 @@ export interface OutboxEvents {
     credits: number;
     amountCents: number;
   };
+  /** finance → budget alert email to every Staff Member (prd-expenses FR-12). */
+  BudgetAlertRecorded: { month: string; threshold: 80 | 100 };
+  /** support → ticket emails (prd-support FR-11); payloads mirror SupportOutboxEvents. */
+  TicketOpened: SupportTicketEvent & { messageId: string };
+  CustomerReplied: SupportTicketEvent & {
+    messageId: string;
+    /** The status right after the reply (the email shows it, not the status at send time). */
+    status: 'open' | 'in_progress' | 'waiting_on_customer' | 'closed';
+  };
+  StaffReplied: SupportTicketEvent & { messageId: string };
+  TicketClosed: SupportTicketEvent & { messageId: string | null; closedBy: 'customer' | 'staff' };
+}
+
+interface SupportTicketEvent {
+  ticketId: string;
+  ticketNumber: number;
+  businessId: string;
+  openedByMemberId: string;
+  assigneeId: string | null;
 }
 
 interface RunEnded {
