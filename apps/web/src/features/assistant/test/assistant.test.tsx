@@ -214,4 +214,28 @@ describe('chat layout: the answer box stays in reach', () => {
       expect(scrolled).toHaveBeenCalledWith(expect.objectContaining({ top: expect.any(Number) })),
     );
   });
+
+  test('a reply that arrives while the reader has scrolled up does not move the page', async () => {
+    assistantState.next = { status: 200, reply: { text: 'Great, where are you located?' } };
+    let open!: () => void;
+    assistantState.gate = new Promise((r) => (open = r));
+    renderAssistant();
+    const sugar = await screen.findByRole('button', { name: 'Sugar' });
+    await userEvent.click(sugar);
+    await waitFor(() => expect(scrolled).toHaveBeenCalled()); // sending follows to the bottom
+    // The reader scrolls up to reread while the reply is on its way (jsdom has no layout: fake it).
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true,
+      value: 3000,
+    });
+    window.scrollY = 200;
+    window.dispatchEvent(new Event('scroll'));
+    scrolled.mockClear();
+    open();
+    await screen.findByText('Great, where are you located?');
+    expect(scrolled).not.toHaveBeenCalled();
+    // Undo the fake layout.
+    delete (document.documentElement as { scrollHeight?: number }).scrollHeight;
+    window.scrollY = 0;
+  });
 });

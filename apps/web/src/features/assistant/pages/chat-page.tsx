@@ -8,6 +8,9 @@ import { ProfilePanel, ProfileProgressLink } from '../components/profile-panel';
 import { Thread } from '../components/thread';
 import { copy } from '../copy';
 
+/** How close to the end of the page still counts as "reading the newest message". */
+const NEAR_BOTTOM_PX = 160;
+
 function Chat({ conversation }: { conversation: Conversation }) {
   const navigate = useNavigate();
   const profile = useProfile();
@@ -16,9 +19,12 @@ function Chat({ conversation }: { conversation: Conversation }) {
   const [failed, setFailed] = useState(false);
   const [limited, setLimited] = useState(false);
   const lastText = useRef('');
+  const nearBottom = useRef(true); // opens at the newest message
+  const justSent = useRef(false);
 
   const send = (text: string, retryOfMessageId?: string) => {
     lastText.current = text;
+    justSent.current = true;
     setFailed(false);
     setLimited(false);
     setDraft('');
@@ -52,8 +58,22 @@ function Chat({ conversation }: { conversation: Conversation }) {
   const pending = sendMutation.isPending ? sendMutation.variables : undefined;
   const pendingText = pending && !pending.retryOfMessageId ? pending.text : null;
 
-  // Keep the newest message in view: the page scrolls, and the answer form is pinned below it.
+  // Track whether the reader is at the newest message; scrolling up to reread turns following off.
   useEffect(() => {
+    const onScroll = () => {
+      const fromBottom =
+        document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+      nearBottom.current = fromBottom <= NEAR_BOTTOM_PX;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Keep the newest message in view (the answer form is pinned below it), but only when the reader
+  // is already near the bottom or has just sent a message, so rereading isn't interrupted.
+  useEffect(() => {
+    if (!nearBottom.current && !justSent.current) return;
+    justSent.current = false;
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
   }, [conversation.messages.length, pendingText, sendMutation.isPending, failed, limited]);
 
