@@ -1,0 +1,37 @@
+# Same routing as App Platform (ADR 0016): /api and / to the api, /app to the SPA.
+# k3s's bundled Traefik is the ingress; cert-manager issues the Let's Encrypt certificate.
+# The `web` image's nginx already serves the SPA under /app, so no prefix is stripped.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llyner-leads
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: llyner-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [leads.llyner.com]
+      secretName: leads-llyner-com-tls
+  rules:
+    - host: leads.llyner.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: api, port: { number: 80 } } }
+          - path: /app
+            pathType: Prefix
+            backend: { service: { name: web, port: { number: 80 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: api, port: { number: 80 } } }

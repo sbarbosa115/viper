@@ -1,0 +1,10 @@
+# The migration job, run by the deploy workflow BEFORE the new api and worker roll out (the same
+# role as App Platform's PRE_DEPLOY job). A failure stops the release.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llyner
+resources:
+  - job.yaml
+images:
+  - name: ghcr.io/sbarbosa115/viper-api
+    newTag: set-by-deploy

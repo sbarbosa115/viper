@@ -1,0 +1,79 @@
+# Nightly MySQL backup (03:00 UTC), also run by the deploy workflow before every migration.
+# 1. mysqldump into the `mysql-backups` volume on the server (kept 30 days).
+# 2. Copy it off the server with rclone when the optional secret `backup-offsite` exists
+#    (S3-compatible: DigitalOcean Spaces, AWS S3, Backblaze B2...). Without it a disk failure
+#    loses the data AND the backups: set it up (docs/ops/kubernetes-setup.md, step 4).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: { storage: 150Gi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mysql-backup
+spec:
+  schedule: '0 3 * * *'
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: dump
+              image: mysql:8.4
+              env:
+                - name: MYSQL_PWD
+                  valueFrom: { secretKeyRef: { name: mysql, key: root-password } }
+              command:
+                - sh
+                - -ec
+                - |
+                  name="viper-$(date -u +%Y%m%dT%H%M%SZ).sql"
+                  mysqldump -h mysql -uroot --single-transaction --routines --triggers \
+                    --set-gtid-purged=OFF --databases viper --result-file="/backups/$name.tmp"
+                  mv "/backups/$name.tmp" "/backups/$name"
+                  echo "$name" > /backups/latest
+                  echo "dumped $name ($(wc -c < "/backups/$name") bytes)"
+              resources:
+                requests: { cpu: 200m, memory: 256Mi }
+                limits: { memory: 1Gi }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+          containers:
+            - name: compress-and-ship
+              image: rclone/rclone:1
+              envFrom:
+                - secretRef: { name: backup-offsite, optional: true }
+              command:
+                - sh
+                - -ec
+                - |
+                  name=$(cat /backups/latest)
+                  gzip -f "/backups/$name"
+                  find /backups -name 'viper-*.sql.gz' -mtime +30 -delete
+                  if [ -n "${BACKUP_REMOTE_PATH:-}" ]; then
+                    rclone copy "/backups/$name.gz" "offsite:$BACKUP_REMOTE_PATH" --s3-no-check-bucket
+                    echo "copied $name.gz to offsite:$BACKUP_REMOTE_PATH"
+                  else
+                    echo "WARNING: no backup-offsite secret; $name.gz is only on this server"
+                  fi
+              resources:
+                requests: { cpu: 100m, memory: 128Mi }
+                limits: { memory: 512Mi }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+          volumes:
+            - name: backups
+              persistentVolumeClaim: { claimName: mysql-backups }

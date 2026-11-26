@@ -1,0 +1,8 @@
+# Guardrails for sharing the server with other apps, one namespace each. Applied as admin by
+# deploy/server/llyner-setup.sh, never by the GitHub deployer (which can't change them).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llyner
+resources:
+  - quota.yaml
+  - network.yaml

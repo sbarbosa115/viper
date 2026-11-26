@@ -1,21 +1,21 @@
 # Stack and hosting (source of truth)
 
-_Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stack. Changes need an ADR.
+_Last updated: 2026-11-26._ Every skill reads this file; none hardcodes the stack. Changes need an ADR.
 
 ## Hosting facts
 | Fact | Value |
 |---|---|
-| Host | DigitalOcean App Platform (ADR 0006) |
+| Host | k3s (single-node Kubernetes) on our own Ubuntu server, namespace `llyner`, manifests in `deploy/k8s` (ADR 0022). DigitalOcean App Platform (ADR 0006) stays live and both run side by side, each with its own database, until the server is proven; then one switch moves the data and DNS (`docs/ops/kubernetes-setup.md` steps 6–7) |
 | Components | `web` (static site, the SPA at `/app`), `api` (service: Fastify JSON API at `/api` and the server-rendered public site at `/`, ADR 0016), `worker` (worker, BullMQ consumers running research and other background jobs) |
 | Node | 24 LTS, **only inside containers** (`node:24-slim`); the developer machine needs only Docker, bash and git (ADR 0015). Pin the version in `engines` and the images. Move to the next LTS with an ADR |
-| Database | DigitalOcean Managed MySQL 8 (pin the cluster's exact version in `docker-compose` as `mysql:8.0` or `mysql:8.4` to match) (ADR 0002) |
-| Queue / cache | DigitalOcean Managed Caching (Valkey, Redis-compatible) for BullMQ (ADR 0008) |
+| Database | MySQL 8.4 StatefulSet in the cluster (`mysql:8.4`, same as dev and test), backed up nightly and before each release, copied off the server (ADR 0002, ADR 0022) |
+| Queue / cache | Valkey 8 StatefulSet in the cluster, `noeviction`, append-only file, for BullMQ (ADR 0008, ADR 0022) |
 | File storage | DigitalOcean Spaces (S3-compatible), not used in the first version (CSV is streamed) |
 | Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `leads.llyner.com` (primary; DNS by the founder, 2026-11-20) |
-| Region | NYC (`nyc`): customers are US-only. App, database and Valkey all in the same region |
-| Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
-| Staging | none for now (ADR 0018); add a second app from `.do/app.yaml` when needed. Setup and costs: `docs/ops/digitalocean-setup.md` |
-| Secrets | Infrastructure secrets (`DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, `SENTRY_DSN`) in App Platform encrypted env vars. Provider, model, SMTP and Stripe keys in Platform settings, encrypted with AES-256-GCM (ADR 0012). Never in the repo |
+| Region | wherever the server is; app, database and Valkey all on the same machine. Customers are US-only |
+| Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy-k8s.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
+| Staging | none for now (ADR 0018); add a second namespace when needed. Setup and operations: `docs/ops/kubernetes-setup.md` |
+| Secrets | Infrastructure secrets (`DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, `SENTRY_DSN`) in the Kubernetes secret `app-secrets`, created on the server by `deploy/server/llyner-setup.sh`. Provider, model, SMTP and Stripe keys in Platform settings, encrypted with AES-256-GCM (ADR 0012). Never in the repo |
 
 ## Stack
 | Concern | Choice | Why |
@@ -44,7 +44,7 @@ _Last updated: 2026-11-20._ Every skill reads this file; none hardcodes the stac
 | Acceptance tests | Playwright in Docker (`mcr.microsoft.com/playwright:v<x>-noble`, matching `@playwright/test`); the agent runs against fake Tools | |
 | Docker images | `node:24-slim`, `mysql:8.x` matching the cluster, `valkey/valkey:8`, `axllent/mailpit` (dev/e2e) | tests match production |
 | Lint/format/types | ESLint flat config (typescript-eslint, eslint-plugin-boundaries), Prettier, `tsc -b` with project references | |
-| Build/deploy | Docker image per component built by App Platform from the repo (root `Dockerfile`: default/`TARGET=api` for api and worker, `TARGET=web` for the static site; spec in `.do/app.yaml`); migrations run as a pre-deploy job | ADR 0006 |
+| Build/deploy | GitHub Actions builds `ghcr.io/sbarbosa115/viper-api` (api, worker, migrations) and `viper-web` (nginx serving the SPA) from the root `Dockerfile` targets, tagged with the commit SHA; the deploy runs a MySQL backup and the migrate Job before rolling out | ADR 0022 |
 | CI | GitHub Actions running the same `./dev` commands (no `setup-node`): lint, typecheck, test, build, `npm audit --omit=dev`. E2E (`./dev e2e`) runs locally, before merging | local = CI |
 
 ## Commands (repo root)
