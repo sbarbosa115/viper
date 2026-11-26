@@ -31,7 +31,7 @@ docker rm -f boot-api boot-db boot-valkey; docker network rm viper-boot
 
 ## Deploy
 ```bash
-gh workflow run deploy-k8s.yml --ref main -f reason="prd-x"
+gh workflow run deploy-k8s.yml --ref master -f reason="prd-x"
 gh run watch        # founder approves the production environment
 ```
 By hand (only if Actions is down, with the founder's OK, on the server): set `newTag` to an already pushed SHA in `deploy/k8s/app/kustomization.yaml` and `deploy/k8s/migrate/kustomization.yaml`, then

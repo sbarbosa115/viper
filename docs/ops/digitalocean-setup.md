@@ -55,7 +55,7 @@ Steps marked **Founder** need a login, a payment method or a secret; Claude guid
    - Valkey, Basic, 1 GiB, name `llyner-valkey`. In **Settings**, set the eviction policy to `noeviction` (BullMQ loses jobs under any other policy).
    - Leave trusted sources on: attaching the clusters in the app spec adds the app automatically.
 4. **Founder: connect GitHub.** App Platform → Create App → GitHub → authorize DigitalOcean on this repo (that installs the DigitalOcean GitHub app). Cancel the wizard once the repo is listed.
-5. **Claude: fill the spec.** In `.do/app.yaml`, replace `OWNER/viper` with the real repo, and set `branch:` to the branch to deploy (`main` by default). Commit and push.
+5. **Claude: fill the spec.** In `.do/app.yaml`, replace `OWNER/viper` with the real repo, and set `branch:` to the branch to deploy (`master` by default). Commit and push.
 6. **Create the app** (Claude, after asking): `doctl apps create --spec .do/app.yaml`. Note the app ID. The first deployment fails because the secrets are empty; that's expected.
 7. **Founder: secrets.** App → Settings → App-Level Environment Variables, each one **Encrypted**:
    - `SESSION_SECRET`: `openssl rand -base64 48`

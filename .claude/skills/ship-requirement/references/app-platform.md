@@ -27,7 +27,7 @@ docker rm -f boot-api boot-db boot-valkey; docker network rm viper-boot
 
 ## Deploy
 ```bash
-gh workflow run deploy.yml --ref main -f reason="prd-x"   # the ref must be the branch in .do/app.yaml
+gh workflow run deploy.yml --ref master -f reason="prd-x"   # the ref must be the branch in .do/app.yaml
 gh run watch                                               # founder approves the production environment
 ```
 By hand (only if Actions is down, with the founder's OK): `doctl apps create-deployment <app-id> --wait`.

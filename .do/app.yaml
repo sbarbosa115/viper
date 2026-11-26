@@ -64,7 +64,7 @@ services:
     source_dir: /
     github:
       repo: sbarbosa115/viper
-      branch: main
+      branch: master
       deploy_on_push: false # deploys are started by the approved GitHub Actions job only
     instance_size_slug: apps-s-1vcpu-0.5gb # $5/mo, smallest; fixed instances can't scale out
     instance_count: 1
@@ -86,7 +86,7 @@ workers:
     source_dir: /
     github:
       repo: sbarbosa115/viper
-      branch: main
+      branch: master
       deploy_on_push: false
     run_command: node --enable-source-maps dist/worker.js
     instance_size_slug: apps-s-1vcpu-0.5gb
@@ -99,7 +99,7 @@ jobs:
     source_dir: /
     github:
       repo: sbarbosa115/viper
-      branch: main
+      branch: master
       deploy_on_push: false
     run_command: node dist/scripts/migrate.js
     instance_size_slug: apps-s-1vcpu-0.5gb # billed only while it runs
@@ -110,7 +110,7 @@ static_sites:
     source_dir: /
     github:
       repo: sbarbosa115/viper
-      branch: main
+      branch: master
       deploy_on_push: false
     output_dir: /app/apps/web/dist # the built SPA
     catchall_document: index.html # client-side routes like /app/leads load the SPA

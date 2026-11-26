@@ -24,9 +24,9 @@ One k3s cluster on the founder's server (16 cores, 64 GB, 1 TB), **shared with a
 
 ## 1. Preflight
 (Side by side: do this once for the SHA; it covers both deploys.)
-- **E2E before merging:** CI doesn't run Playwright. Run `./dev e2e` locally on the branch and merge into `main` only when it's green.
-- **Clean tree:** `git status --porcelain` is empty, the work is merged into `main` and pushed. Note the commit SHA.
-- **Green checks:** the CI run for that SHA passed (`gh run list --branch main --limit 5`). Run `./dev check` locally if anything changed since. Stop if anything is red.
+- **E2E before merging:** CI doesn't run Playwright. Run `./dev e2e` locally on the branch and merge into `master` only when it's green.
+- **Clean tree:** `git status --porcelain` is empty, the work is merged into `master` and pushed. Note the commit SHA.
+- **Green checks:** the CI run for that SHA passed (`gh run list --branch master --limit 5`). Run `./dev check` locally if anything changed since. Stop if anything is red.
 - **Production image boots:** the boot check in `references/kubernetes.md` (build the `api` target, migrate, then `/api/health` and `/` against MySQL 8.4 and Valkey in Docker). This catches bundle errors that tests miss.
 - **Migrations:** list the migrations that will run (new files in `apps/api/migrations/` since the live SHA: `kubectl -n llyner get deploy api -o jsonpath='{.spec.template.spec.containers[0].image}'` shows it). Flag destructive ones (dropping or renaming columns or tables). Those need expand-and-contract: add the new column, deploy, backfill, and remove the old one in a later release. Otherwise a rollback breaks.
 - **Config:** new non-secret env vars go in `deploy/k8s/app/config.yaml` in the same change. New infrastructure secrets go into the `app-secrets` secret on the server, by the founder (`references/kubernetes.md`, "Add a secret"); the deployer account can't read or write secrets. Provider, Claude, SMTP and Stripe keys are Platform settings in the back office (ADR 0012): list the ones the founder must enter after the deploy.
@@ -44,8 +44,8 @@ The deploy workflow backs MySQL up before it migrates (a Job from the `mysql-bac
 No backup, no deploy.
 
 ## 4. Deploy
-Side by side: first deploy App Platform (`gh workflow run deploy.yml --ref main`, `references/app-platform.md`), wait for it to go live and pass its smoke test, then deploy the server as below. The founder approves each run.
-1. Start the workflow: `gh workflow run deploy-k8s.yml --ref main -f reason="<prd or summary>"`, then `gh run watch`.
+Side by side: first deploy App Platform (`gh workflow run deploy.yml --ref master`, `references/app-platform.md`), wait for it to go live and pass its smoke test, then deploy the server as below. The founder approves each run.
+1. Start the workflow: `gh workflow run deploy-k8s.yml --ref master -f reason="<prd or summary>"`, then `gh run watch`.
 2. It runs the full checks, builds and pushes `ghcr.io/sbarbosa115/viper-{api,web}:<sha>`, then waits on the `production` environment. Tell the founder to approve it (Actions → the run → Review deployments).
 3. The deploy job applies `deploy/k8s/platform` (MySQL, Valkey, backups, ingress), runs the backup Job, runs the `migrate` Job (a failure stops the release and the old version keeps serving), applies `deploy/k8s/app` with the new tag, waits for each rollout, and smoke-tests against `SERVER_IP`.
 4. **Smoke test** (the job does this; repeat by hand if it's unclear): `/api/health` returns 200 with `{"status":"ok"}` (database and cache), and `/`, `/terms`, `/robots.txt` and `/app/` return 200. Then log in at `/app` as a test user, and check the worker heartbeat in the back office.

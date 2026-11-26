@@ -90,7 +90,7 @@ Create the secret on the server (example for DigitalOcean Spaces in nyc3; for AW
 Set a lifecycle rule on the bucket to delete files older than 30 days. Copies on the server are kept for 30 days in the `mysql-backups` volume.
 
 ## Step 5. First deploy (15 minutes)
-Actions > **Deploy (Kubernetes)** > Run workflow on `main`. It:
+Actions > **Deploy (Kubernetes)** > Run workflow on `master`. It:
 1. Runs the full checks (`ci.yml`): lint, typecheck, tests, build, audit.
 2. Builds and pushes the two images, tagged with the commit SHA.
 3. **Waits for your approval** (the `production` environment).

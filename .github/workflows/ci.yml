@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [master, 'feat/**']
   pull_request:
   # deploy.yml runs these same checks before it deploys.
   workflow_call:
