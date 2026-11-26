@@ -1,0 +1,70 @@
+# MySQL 8.4 (matches the dev/test image), data on the server's SSD through k3s local-path.
+# Sized from Llyner's half of the server (namespace quota: deploy/k8s/namespace/quota.yaml):
+# an 8 GiB buffer pool keeps the whole working set in memory for a long time.
+# Credentials: secret `mysql` (root-password, password), created by deploy/server/llyner-setup.sh.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  clusterIP: None
+  selector: { app: mysql }
+  ports:
+    - { name: mysql, port: 3306 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels: { app: mysql }
+  template:
+    metadata:
+      labels: { app: mysql }
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          args:
+            - --innodb-buffer-pool-size=8G
+            - --binlog-expire-logs-seconds=604800
+            - --max-connections=300
+          env:
+            - { name: MYSQL_DATABASE, value: viper }
+            - { name: MYSQL_USER, value: viper }
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: mysql, key: root-password } }
+            - name: MYSQL_PASSWORD
+              valueFrom: { secretKeyRef: { name: mysql, key: password } }
+          ports:
+            - { name: mysql, containerPort: 3306 }
+          readinessProbe:
+            exec:
+              command: ['sh', '-c', 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot -e "SELECT 1"']
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ['sh', '-c', 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin -h127.0.0.1 -uroot ping']
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests: { cpu: '1', memory: 10Gi }
+            limits: { memory: 12Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/mysql }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests: { storage: 150Gi }

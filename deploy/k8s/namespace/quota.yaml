@@ -1,0 +1,30 @@
+# Llyner's half of the server. The server (16 cores, 64 GB, 1 TB SSD) hosts two small apps; after
+# about 1 CPU and 3 GiB for the system, each app gets the same share:
+#   7 CPU and 24 GiB reserved, a 30 GiB memory ceiling, 400 GiB of disk.
+# Llyner reserves about 5 CPU and 18 GiB at peak (during a release: one extra api and worker pod
+# plus the backup and migrate jobs), and its memory limits add up to about 28 GiB.
+# The other app gets its own namespace with the same quota.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: llyner
+spec:
+  hard:
+    requests.cpu: '7'
+    requests.memory: 24Gi
+    limits.memory: 30Gi
+    persistentvolumeclaims: '6'
+    requests.storage: 400Gi
+    pods: '40'
+---
+# Defaults for containers that don't set their own (cert-manager's challenge solver, one-off
+# pods), so the quota above never rejects them.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+      default: { memory: 512Mi }

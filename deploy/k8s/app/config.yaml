@@ -1,0 +1,14 @@
+# Non-secret settings. Secrets (DATABASE_URL, REDIS_URL, SESSION_SECRET, SETTINGS_ENCRYPTION_KEY,
+# SENTRY_DSN) are in secret `app-secrets`, created by deploy/server/llyner-setup.sh. Provider, Claude,
+# SMTP and Stripe keys stay in Platform settings (ADR 0012).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  NODE_ENV: production
+  APP_URL: https://leads.llyner.com
+  # Traefik drops X-Real-Ip / X-Forwarded-For sent by clients and sets them from the connection
+  # (k3s Traefik runs with externalTrafficPolicy: Local, so that is the real client address).
+  CLIENT_IP_HEADER: x-real-ip
+  TRUST_PROXY_HOPS: '1'

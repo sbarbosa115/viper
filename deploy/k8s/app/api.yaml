@@ -1,0 +1,52 @@
+# Fastify API at /api and the server-rendered public site at /. Two replicas so a release or a
+# pod restart never takes the site down.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector: { app: api }
+  ports:
+    - { name: http, port: 80, targetPort: 3000 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      imagePullSecrets: [{ name: ghcr }]
+      terminationGracePeriodSeconds: 30
+      securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+      containers:
+        - name: api
+          image: ghcr.io/sbarbosa115/viper-api
+          envFrom:
+            - configMapRef: { name: app-config }
+            - secretRef: { name: app-secrets }
+          ports:
+            - { name: http, containerPort: 3000 }
+          # 200 only when MySQL and Valkey answer. No liveness probe on purpose: a short database
+          # blip should take the pod out of rotation, not restart it.
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            # Let Traefik stop sending traffic before the process starts shutting down.
+            preStop: { exec: { command: ['sleep', '5'] } }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 1536Mi }

@@ -1,0 +1,12 @@
+# The long-lived parts of the cluster: MySQL, Valkey, backups and routing.
+# Applied by the deploy workflow before every release (no-op when unchanged).
+# k3s and cert-manager come from deploy/server/server-setup.sh; the namespace, its guardrails,
+# secrets and the deployer account from deploy/server/llyner-setup.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llyner
+resources:
+  - mysql.yaml
+  - valkey.yaml
+  - backup.yaml
+  - ingress.yaml

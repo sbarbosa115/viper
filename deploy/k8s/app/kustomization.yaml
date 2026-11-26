@@ -1,0 +1,15 @@
+# The app itself: api, worker and the SPA. The deploy workflow sets newTag to the commit SHA
+# it built, after the migrate job (deploy/k8s/migrate) has finished.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llyner
+resources:
+  - config.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+images:
+  - name: ghcr.io/sbarbosa115/viper-api
+    newTag: set-by-deploy
+  - name: ghcr.io/sbarbosa115/viper-web
+    newTag: set-by-deploy
