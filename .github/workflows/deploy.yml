@@ -100,7 +100,7 @@ jobs:
 
       - name: Back up MySQL before migrating
         run: |
-          job="backup-pre-${GITHUB_SHA::7}-${GITHUB_RUN_ATTEMPT}"
+          job="backup-pre-${GITHUB_SHA::7}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           kubectl -n "$NS" create job "$job" --from=cronjob/mysql-backup
           ./deploy/server/wait-job.sh "$NS" "$job" 1200
 
