@@ -1,6 +1,6 @@
 # 0006. Deploy containers on DigitalOcean App Platform
 
-- Status: Accepted
+- Status: Superseded by ADR 0022 (App Platform retired 2026-11-27)
 - Date: 2026-11-18
 
 ## Context

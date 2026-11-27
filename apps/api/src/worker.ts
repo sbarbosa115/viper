@@ -33,7 +33,7 @@ async function heartbeat(): Promise<void> {
 await heartbeat();
 const timer = setInterval(() => void heartbeat(), HEARTBEAT_MS);
 
-/** App Platform sends SIGKILL 30 s after SIGTERM: stop within about 25 s. */
+/** Kubernetes sends SIGKILL 30 s after SIGTERM: stop within about 25 s. */
 const SHUTDOWN_DEADLINE_MS = 25_000;
 /** After this, workers still busy are force-closed (their leases expire; the sweeper resumes). */
 const CLOSE_WAIT_MS = 20_000;

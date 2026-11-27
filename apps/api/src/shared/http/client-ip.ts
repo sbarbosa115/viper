@@ -13,13 +13,13 @@ declare module 'fastify' {
 
 export interface ClientIpOptions {
   /**
-   * A header the edge proxy sets and the client can't (App Platform: `do-connecting-ip`). When
+   * A header the edge proxy sets and the client can't (production: Traefik's `x-real-ip`). When
    * absent or not an IP, the address comes from the socket and the trusted proxy hops.
    */
   header?: string | undefined;
 }
 
-/** One proxy hop: App Platform's edge, or Vite's dev and preview proxy. */
+/** One proxy hop: Traefik in production, or Vite's dev and preview proxy. */
 export const DEFAULT_TRUST_PROXY_HOPS = 1;
 
 /**

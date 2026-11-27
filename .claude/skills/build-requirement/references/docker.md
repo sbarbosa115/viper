@@ -44,7 +44,7 @@ esac
 Exit codes pass through, so `./dev test` fails the shell when Vitest fails.
 
 ## Dockerfile (production images, also used by e2e)
-Multi-stage: `deps` (`npm ci`), `build` (`npm run build`), then slim runtime targets `api` (also the worker and the migrate job, with different commands) and `web` (the SPA's static files). App Platform can't choose a `--target`, so the file ends with `ARG TARGET=api` … `FROM ${TARGET} AS final`: the default build is the api, and the `web` static site sets `TARGET=web` at build time (`.do/app.yaml`). Locally, `docker build --target api .` and `--target web` still work.
+Multi-stage: `deps` (`npm ci`), `build` (`npm run build`), then slim runtime targets `api` (also the worker and the migrate job, with different commands) and `web` (the SPA's static files). The deploy workflow builds each with `--target api` / `--target web`; the file still ends with `ARG TARGET=api` … `FROM ${TARGET} AS final` so a plain `docker build .` yields the api.
 
 `.dockerignore`: `node_modules`, `**/node_modules`, `dist`, `coverage`, `playwright-report`, `test-results`, `.env*`, `.git`, `.build`, `.npm-cache`.
 

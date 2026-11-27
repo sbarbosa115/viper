@@ -7,7 +7,7 @@ Every `kubectl` call below touches production: ask the founder before running it
 - Namespace `llyner` (`deploy/server/llyner-setup.sh`): quota and isolation (`deploy/k8s/namespace/`), secrets `app-secrets`, `mysql`, `valkey`, `ghcr`, optional `backup-offsite`, and the `deployer` account GitHub uses (cannot read secrets).
 - `deploy/k8s/platform`: MySQL and Valkey StatefulSets, the `mysql-backup` CronJob, the Ingress for `leads.llyner.com`.
 - `deploy/k8s/app`: `api` (2), `worker` (1), `web` (2), ConfigMap `app-config`. `deploy/k8s/migrate`: Job `migrate`.
-- GitHub: `.github/workflows/deploy-k8s.yml`; `production` environment with secret `KUBE_CONFIG` and variables `APP_URL`, `SERVER_IP`, `PRE_CUTOVER`.
+- GitHub: `.github/workflows/deploy.yml`; `production` environment with secret `KUBE_CONFIG` and variables `APP_URL` and `SERVER_IP`.
 
 ## Boot check (preflight, local, no cloud)
 Same as before the move: build the `api` target and boot it against MySQL 8.4 and Valkey in Docker.
@@ -31,7 +31,7 @@ docker rm -f boot-api boot-db boot-valkey; docker network rm viper-boot
 
 ## Deploy
 ```bash
-gh workflow run deploy-k8s.yml --ref master -f reason="prd-x"
+gh workflow run deploy.yml --ref master -f reason="prd-x"
 gh run watch        # founder approves the production environment
 ```
 By hand (only if Actions is down, with the founder's OK, on the server): set `newTag` to an already pushed SHA in `deploy/k8s/app/kustomization.yaml` and `deploy/k8s/migrate/kustomization.yaml`, then

@@ -6,7 +6,7 @@
 3. How much DDD to apply
 4. Code patterns (value object, entity, port, use case, repository, route, errors, composition)
 5. Cross-module communication
-6. Hosting constraints (DigitalOcean App Platform)
+6. Hosting constraints (k3s on our own server)
 
 ## 1. Layout
 
@@ -204,12 +204,12 @@ Maps `AppError` subclasses to status codes (ValidationError and Zod errors 400 w
 - **Reacting to changes**: in-process domain events (simple typed event bus) dispatched after the transaction commits. If reliability matters (e.g. sending emails, payments), use a transactional **outbox** table drained by the worker into BullMQ queues (ADR 0008).
 - Never join across another module's tables in SQL; ask the module.
 
-## 6. Hosting constraints that shape the code (DigitalOcean App Platform)
-- **Stateless containers.** App Platform replaces api and worker containers on every deploy, restart or crash, and may run more than one: no in-memory sessions, caches you depend on (Valkey or MySQL instead; small TTL caches like Platform settings are fine), or in-process schedulers.
+## 6. Hosting constraints that shape the code (k3s on our own server, ADR 0022)
+- **Stateless containers.** Kubernetes replaces api and worker containers on every deploy, restart or crash, and may run more than one: no in-memory sessions, caches you depend on (Valkey or MySQL instead; small TTL caches like Platform settings are fine), or in-process schedulers.
 - **Background work runs in the worker** (`apps/api/src/worker.ts`, BullMQ on Valkey, ADR 0008). Jobs must be idempotent and resumable (ADR 0017): a deploy sends `SIGTERM` and the job may run again on another container.
 - **Graceful shutdown.** Handle `SIGTERM`: stop taking work, close servers, queues and pools, exit.
 - **One bundle, no `node_modules` at runtime.** The image runs `dist/` only (`node:24-slim`). Pure-JS dependencies by preference; a native module must build on `node:24-slim` and be listed in the build's `external`. Files read at runtime are copied into `dist/` by `build.mjs`.
 - **Config from env, validated at boot** (`config/env.ts`): only infrastructure secrets (database, Valkey, session secret, encryption key, Sentry). Provider, Claude, SMTP and Stripe keys come from Platform settings (ADR 0012).
-- **Managed MySQL rules:** every table has a primary key (`sql_require_primary_key` is on), connections use TLS, and migrations run as a pre-deploy job before new code goes live, so they must be compatible with the code already running (expand and contract).
-- **One origin** (ADR 0016): the public site at `/` and the API under `/api` (all API routes use the `/api` prefix) come from the api service; the SPA is a static site at `/app`. The health check is `GET /api/health`.
+- **MySQL rules:** every table has a primary key, and migrations run as a Job before new code goes live before new code goes live, so they must be compatible with the code already running (expand and contract).
+- **One origin** (ADR 0016): the public site at `/` and the API under `/api` (all API routes use the `/api` prefix) come from the api service; the SPA is served by nginx at `/app`. The health check is `GET /api/health`.
 - Deployment itself: `/ship-requirement`.

@@ -1,6 +1,5 @@
-# Production images. Targets: api (also the worker and the migration job), web.
-# App Platform can't pick a --target, so the last stage is chosen by the TARGET build arg
-# (default api); the web static site sets TARGET=web as a BUILD_TIME variable (.do/app.yaml).
+# Production images. Targets: api (also the worker and the migration job), web (nginx + the SPA).
+# The deploy workflow builds each with --target; a plain `docker build .` yields the api.
 ARG TARGET=api
 
 FROM node:24-slim AS deps
@@ -28,12 +27,11 @@ EXPOSE 3000
 # The worker uses this image with: node dist/worker.js. Migrations: node dist/scripts/migrate.js
 CMD ["node", "--enable-source-maps", "dist/main.js"]
 
-# The SPA under /app. App Platform serves it as a static site from /usr/share/nginx/html/app
-# (output_dir); locally the same files run behind nginx.
+# The SPA under /app, served by nginx (the `web` Deployment, deploy/k8s/app/web.yaml).
 FROM nginx:1.29-alpine AS web
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html/app
 RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  location = /app { return 301 /app/; }\n  location /app/assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; try_files $uri =404; }\n  location /app/ { try_files $uri /app/index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
-# Default image: `docker build .` (what App Platform runs) yields the api unless TARGET says otherwise.
+# Default image: `docker build .` yields the api unless TARGET says otherwise.
 FROM ${TARGET} AS final

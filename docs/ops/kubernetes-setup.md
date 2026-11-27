@@ -1,6 +1,6 @@
 # Running Llyner Leads on Kubernetes (k3s on our own server)
 
-_Last updated: 2026-11-26._ How Llyner Leads runs on a single Ubuntu server with k3s, the one-time setup, the move from DigitalOcean App Platform, and day-to-day operations. **App Platform stays live, and both run side by side, until the server is proven** (step 6); then one switch moves the data and DNS (step 7). Decision: ADR 0022. Releases: `.github/workflows/deploy-k8s.yml`.
+_Last updated: 2026-11-27._ How Llyner Leads runs on a single Ubuntu server with k3s: the one-time setup (also the recipe to rebuild the server from scratch) and day-to-day operations. Releases: `/ship-requirement`. Decision: ADR 0022. Releases: `.github/workflows/deploy.yml`.
 
 ## What runs where
 
@@ -26,7 +26,7 @@ Images are built by GitHub Actions and stored in GitHub's container registry: `g
 - The server's public IP, and SSH access as a user with `sudo`.
 - A GitHub **classic** personal access token with only `read:packages` (Settings > Developer settings > Personal access tokens > Tokens (classic)). The cluster uses it to pull the private images.
 - An S3-compatible bucket for off-server backups: DigitalOcean Spaces, AWS S3 or Backblaze B2. An access key that can write to it.
-- The current `SETTINGS_ENCRYPTION_KEY` and `SESSION_SECRET` from App Platform (App Platform > llyner-leads > Settings > App-Level Environment Variables). Without the same encryption key, every provider key saved in Platform settings becomes unreadable; without the same session secret, everyone has to log in again.
+- When rebuilding with existing data: the `SETTINGS_ENCRYPTION_KEY` and `SESSION_SECRET` from your password manager (saved in step 2). Without the same encryption key, every provider key saved in Platform settings becomes unreadable; without the same session secret, everyone has to log in again.
 
 ## Step 1. Harden SSH (5 minutes)
 On the server:
@@ -53,10 +53,10 @@ It updates Ubuntu and turns on automatic security updates and fail2ban; opens th
 
 Check: `sudo kubectl get nodes` shows the server `Ready`.
 
-**2b. Llyner Leads' namespace.** Prefix the command with a space so the token isn't kept in shell history. Pass App Platform's `SETTINGS_ENCRYPTION_KEY` and `SESSION_SECRET`: the live data copied over at the switch (step 7) only works with the same keys.
+**2b. Llyner Leads' namespace.** Prefix the command with a space so the token isn't kept in shell history. Leave out the `SETTINGS_ENCRYPTION_KEY` / `SESSION_SECRET` line on a brand-new install; when rebuilding from a backup, pass the saved ones, because the restored data only works with the same keys.
 ```bash
  sudo PUBLIC_HOST=<server-ip> GHCR_USER=sbarbosa115 GHCR_TOKEN=<read:packages token> \
-      SETTINGS_ENCRYPTION_KEY='<existing key>' SESSION_SECRET='<existing secret>' \
+      SETTINGS_ENCRYPTION_KEY='<saved key>' SESSION_SECRET='<saved secret>' \
       bash deploy/server/llyner-setup.sh
 ```
 It:
@@ -65,7 +65,7 @@ It:
 3. Adds the pull secret for the private images.
 4. Creates a `deployer` account limited to the `llyner` namespace that **cannot read secrets or change the quota**, and writes its kubeconfig to `/root/llyner-deployer.kubeconfig.b64`.
 
-**Save the `SETTINGS_ENCRYPTION_KEY` in your password manager now** (the script prints the command). Re-running either script is safe: they never replace an existing secret.
+**Save the `SETTINGS_ENCRYPTION_KEY` and `SESSION_SECRET` in your password manager now** (the script prints the command). Re-running either script is safe: they never replace an existing secret.
 
 Check: `sudo kubectl get nodes` shows the server `Ready`.
 
@@ -74,7 +74,6 @@ GitHub > the `viper` repo > Settings > Environments > `production` (it already e
 - **Secret** `KUBE_CONFIG`: the contents of `/root/llyner-deployer.kubeconfig.b64` (`sudo cat` it on the server). Then delete the file: `sudo shred -u /root/llyner-deployer.kubeconfig.b64`.
 - **Variable** `APP_URL`: `https://leads.llyner.com`
 - **Variable** `SERVER_IP`: the server's public IP. The smoke test always checks this server, even before DNS points at it.
-- **Variable** `PRE_CUTOVER`: `true` (until step 7).
 
 ## Step 4. Off-server backups (10 minutes)
 Create the secret on the server (example for DigitalOcean Spaces in nyc3; for AWS use `RCLONE_CONFIG_OFFSITE_PROVIDER=AWS` and the region's endpoint):
@@ -90,7 +89,7 @@ Create the secret on the server (example for DigitalOcean Spaces in nyc3; for AW
 Set a lifecycle rule on the bucket to delete files older than 30 days. Copies on the server are kept for 30 days in the `mysql-backups` volume.
 
 ## Step 5. First deploy (15 minutes)
-Actions > **Deploy (Kubernetes)** > Run workflow on `master`. It:
+Actions > **Deploy** > Run workflow on `master`. It:
 1. Runs the full checks (`ci.yml`): lint, typecheck, tests, build, audit.
 2. Builds and pushes the two images, tagged with the commit SHA.
 3. **Waits for your approval** (the `production` environment).
@@ -102,58 +101,10 @@ The first time it pushes, GitHub creates the two packages as private. That's wha
 
 Check on the server: `sudo kubectl -n llyner get pods` shows everything `Running`.
 
-## Step 6. Run both side by side until the server is proven
-App Platform stays **live** (DNS points at it, customers use it) while the server runs the same releases on its **own, separate database**. Nothing is shared between them.
+Then point the `leads.llyner.com` DNS record (an **A record**) at the server's IP. Within a few minutes cert-manager gets the Let's Encrypt certificate: `sudo kubectl -n llyner get certificate` shows `READY True`. Make yourself Staff after signing up at `/app`: `sudo kubectl -n llyner exec deploy/api -- node dist/scripts/staff.js grant <your email>`.
 
-**Every release goes to both**, same commit: `deploy.yml` (App Platform, live) and then `deploy-k8s.yml` (the server). They share a concurrency group, so they run one after the other, never at once. `/ship-requirement` does both.
-
-**The server starts with an empty database**, never a copy of the live one. With live data and Platform settings, its worker would send the same scheduled emails, run the same research and spend the same credits as App Platform's worker, so customers would get everything twice. The live data moves over once, at the switch (step 7).
-
-**To try the server**, add `<server-ip> leads.llyner.com` to your computer's hosts file and open the site (accept the certificate warning: Let's Encrypt can't issue the certificate until DNS points at the server). Remove the line afterwards. Then:
-1. Sign up at `/app`, and make yourself Staff: `sudo kubectl -n llyner exec deploy/api -- node dist/scripts/staff.js grant <your email>`.
-2. In the back office, enter **test** keys only: a Claude key with a low spend limit, fake or test provider keys, Stripe **test** keys, and SMTP pointed at a test inbox. Never the live Stripe keys or the live SMTP: they'd email real people and take real payments.
-3. Run a research run end to end, buy a credit pack with a Stripe test card, check emails arrive, and leave it for a few days. Check backups reach the bucket (step 4) and practise one restore ("Restore a backup" below).
-
-**It's ready to switch when:** releases deploy cleanly for at least a week, a research run completes and survives a deploy in the middle (FR-19), the nightly backup reaches the bucket, and a restore has worked once.
-
-## Step 7. The switch (one evening, about an hour)
-A day before: lower the TTL of the `leads.llyner.com` DNS record to 300 seconds, and tell customers about a short maintenance window if anyone is active.
-
-1. **Ship the same commit to both** so the code and migrations match.
-2. **Freeze App Platform:** turn on maintenance mode (App Platform > llyner-leads > Settings > Maintenance mode) so no one writes. Wait until no research run is in progress.
-3. **Copy the live database to the server:**
-```bash
-# a. Dump the managed database (connection details: DigitalOcean > Databases > llyner-mysql).
-mysqldump -h <do-host> -P 25060 -u doadmin -p --ssl-mode=REQUIRED --single-transaction \
-  --set-gtid-purged=OFF --routines --triggers --databases viper > viper-from-do.sql
-# b. On the server: stop the app, replace the test data, start again.
-scp viper-from-do.sql deploy@<server-ip>:~
-ssh deploy@<server-ip>
-sudo kubectl -n llyner scale deploy/api deploy/worker --replicas=0
-sudo kubectl -n llyner exec -i statefulset/mysql -- \
-  sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE viper"'
-sudo kubectl -n llyner exec -i statefulset/mysql -- \
-  sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' < viper-from-do.sql
-sudo kubectl -n llyner exec -i statefulset/mysql -- \
-  sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "GRANT ALL ON viper.* TO viper"'
-shred -u viper-from-do.sql
-# c. Clear the test jobs out of the queue, then start the app on the live data.
-sudo kubectl -n llyner exec statefulset/valkey -- sh -c 'valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning FLUSHALL'
-sudo kubectl -n llyner scale deploy/api --replicas=2 && sudo kubectl -n llyner scale deploy/worker --replicas=1
-```
-   The live Platform settings (real keys) come over with the database, and they only decrypt because step 2b used App Platform's `SETTINGS_ENCRYPTION_KEY`. People stay logged in because `SESSION_SECRET` matches too.
-4. **Point DNS at the server:** change the `leads.llyner.com` record to an **A record** with the server's IP. Within a few minutes cert-manager gets the certificate: `sudo kubectl -n llyner get certificate` shows `READY True`.
-5. **Stop App Platform's worker** so the old copy can't send anything: leave maintenance mode **on**, and archive the app (App Platform > llyner-leads > Settings > Archive app) or, if archiving isn't offered, delete only the `worker` component in the control panel. The managed MySQL and Valkey clusters stay, untouched, as the fallback.
-6. Set the GitHub variable `PRE_CUTOVER` to `false` and run `deploy-k8s.yml` once more, so the smoke test checks the real certificate. From now on, releases go to the server only.
-7. Check the site as a customer: log in, open leads, start a research run, and check the Stripe webhook deliveries in the Stripe dashboard (same URL, so nothing to change).
-
-**Going back** (if the server fails in the first days): turn the server's worker off (`kubectl -n llyner scale deploy/worker --replicas=0`), restore the App Platform app (unarchive, or re-add the worker), point DNS back at it, and turn maintenance mode off. Anything written on the server since the switch is not on App Platform: dump it first if you'll need it.
-
-## Step 8. Retire App Platform (two weeks after the switch)
-When the server has run cleanly for two weeks:
-1. Take a last manual backup of the managed MySQL cluster and keep it in the bucket.
-2. Delete the `llyner-leads` app and the `llyner-mysql` and `llyner-valkey` clusters in the DigitalOcean control panel. This stops about $40 a month.
-3. Delete `.do/app.yaml`, `.github/workflows/deploy.yml`, `docs/ops/digitalocean-setup.md` and `.claude/skills/ship-requirement/references/app-platform.md`; rename `deploy-k8s.yml` to `deploy.yml`; remove the side-by-side notes from `/ship-requirement`, `stack.md` and `CLAUDE.md`.
+## History
+Until 2026-11-27 Llyner Leads ran on DigitalOcean App Platform with managed MySQL and Valkey (ADR 0006). The server went live that day; there was no customer data to move, so DNS was pointed at it and App Platform, `llyner-mysql` and `llyner-valkey` were deleted (ADR 0022).
 
 ## Day-to-day operations
 All on the server with `sudo` (or copy `/etc/rancher/k3s/k3s.yaml` to your machine, replacing `127.0.0.1` with the server IP, for full admin access).

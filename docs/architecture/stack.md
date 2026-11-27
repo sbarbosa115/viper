@@ -5,7 +5,7 @@ _Last updated: 2026-11-26._ Every skill reads this file; none hardcodes the stac
 ## Hosting facts
 | Fact | Value |
 |---|---|
-| Host | k3s (single-node Kubernetes) on our own Ubuntu server, namespace `llyner`, manifests in `deploy/k8s` (ADR 0022). DigitalOcean App Platform (ADR 0006) stays live and both run side by side, each with its own database, until the server is proven; then one switch moves the data and DNS (`docs/ops/kubernetes-setup.md` steps 6–7) |
+| Host | k3s (single-node Kubernetes) on our own Ubuntu server, shared with one other app; namespace `llyner`, manifests in `deploy/k8s` (ADR 0022). DigitalOcean App Platform (ADR 0006) was retired on 2026-11-27 |
 | Components | `web` (static site, the SPA at `/app`), `api` (service: Fastify JSON API at `/api` and the server-rendered public site at `/`, ADR 0016), `worker` (worker, BullMQ consumers running research and other background jobs) |
 | Node | 24 LTS, **only inside containers** (`node:24-slim`); the developer machine needs only Docker, bash and git (ADR 0015). Pin the version in `engines` and the images. Move to the next LTS with an ADR |
 | Database | MySQL 8.4 StatefulSet in the cluster (`mysql:8.4`, same as dev and test), backed up nightly and before each release, copied off the server (ADR 0002, ADR 0022) |
@@ -13,7 +13,7 @@ _Last updated: 2026-11-26._ Every skill reads this file; none hardcodes the stac
 | File storage | DigitalOcean Spaces (S3-compatible), not used in the first version (CSV is streamed) |
 | Domains | one domain: `https://<domain>` with the site at `/`, the SPA at `/app` and the API at `/api` (ADR 0016); domain `leads.llyner.com` (primary; DNS by the founder, 2026-11-20) |
 | Region | wherever the server is; app, database and Valkey all on the same machine. Customers are US-only |
-| Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy-k8s.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
+| Deploy gates | One environment to start (ADR 0018). Deploys are manual (`.github/workflows/deploy.yml`, `workflow_dispatch`) and wait for the founder's approval (GitHub environment `production` with a required reviewer). No auto-deploy |
 | Staging | none for now (ADR 0018); add a second namespace when needed. Setup and operations: `docs/ops/kubernetes-setup.md` |
 | Secrets | Infrastructure secrets (`DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `SETTINGS_ENCRYPTION_KEY`, `SENTRY_DSN`) in the Kubernetes secret `app-secrets`, created on the server by `deploy/server/llyner-setup.sh`. Provider, model, SMTP and Stripe keys in Platform settings, encrypted with AES-256-GCM (ADR 0012). Never in the repo |
 
@@ -28,7 +28,7 @@ _Last updated: 2026-11-26._ Every skill reads this file; none hardcodes the stac
 | Validation / contracts | Zod schemas in `packages/contracts`, shared by API and web | no drift |
 | DB | MySQL 8 via `mysql2` + Kysely, Kysely migrations (`allowUnorderedMigrations`) | type-safe, pure JS; ADR 0002 |
 | Auth | DB-backed sessions, httpOnly `SameSite=Lax` cookie, `bcryptjs`; TOTP two-factor (`otplib`) for Staff; Acting as on the session | ADR 0004, ADR 0014 |
-| Origin layout | one origin: public site at `/` (server-rendered by the api), SPA at `/app`, API at `/api` (App Platform routes); Vite proxy in dev and e2e | no CORS, cookies just work; ADR 0003, ADR 0016 |
+| Origin layout | one origin: public site at `/` (server-rendered by the api), SPA at `/app`, API at `/api` (Traefik routes); Vite proxy in dev and e2e | no CORS, cookies just work; ADR 0003, ADR 0016 |
 | AI | Anthropic API (Claude) via `@anthropic-ai/sdk`, behind ports: the strongest model for planning and scoring, a fast model for extraction | ADR 0008 |
 | Data providers | Apify (scrapers), Google Places API, Overpass (OpenStreetMap), Overture/Foursquare open places, Firecrawl (website reader), Apollo/Hunter (enrichment), ZeroBounce (email), Twilio Lookup (phone), each a Tool adapter in `modules/tools` | ADR 0007 |
 | Payments | Stripe Checkout for credit packs (Stripe Tax on), Stripe webhooks for fulfilment | |

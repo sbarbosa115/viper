@@ -34,4 +34,4 @@ Features never import another feature's internals. Anything shared goes to `shar
 - Route-level code splitting with `React.lazy`. Keep components small and presentational, with logic in hooks.
 
 ## Build
-`vite build` (with `base: '/app/'`) produces `apps/web/dist/`. App Platform serves it as the `web` static site at `/app`; `/ship-requirement` deploys it.
+`vite build` (with `base: '/app/'`) produces `apps/web/dist/`. nginx (the `web` image) serves it as the `web` static site at `/app`; `/ship-requirement` deploys it.
