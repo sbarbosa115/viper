@@ -6,7 +6,7 @@
 #
 #   sudo PUBLIC_HOST=<server public IP or DNS name> \
 #        GHCR_USER=<github user> GHCR_TOKEN=<PAT with read:packages> \
-#        [SETTINGS_ENCRYPTION_KEY=<existing key> SESSION_SECRET=<existing secret>  (when moving data from App Platform)] \
+#        [SETTINGS_ENCRYPTION_KEY=<existing key> SESSION_SECRET=<existing secret>  (when restoring data from a backup)] \
 #        [SENTRY_DSN=<dsn>] bash deploy/server/llyner-setup.sh
 #
 # Safe to re-run: it never replaces an existing secret. It writes the kubeconfig for GitHub
@@ -124,6 +124,6 @@ cat <<EOF
 Next (docs/ops/kubernetes-setup.md):
   1. GitHub > Settings > Environments > production > add secret KUBE_CONFIG with the contents of
      $out   (then delete that file: shred -u $out)
-  2. Point DNS for leads.llyner.com at this server when you are ready to switch (step 7).
-  3. Run Actions > Deploy (Kubernetes) > Run workflow.
+  2. Point DNS for leads.llyner.com at this server (step 5).
+  3. Run Actions > Deploy > Run workflow.
 EOF

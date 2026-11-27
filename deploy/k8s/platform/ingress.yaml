@@ -1,4 +1,4 @@
-# Same routing as App Platform (ADR 0016): /api and / to the api, /app to the SPA.
+# One origin (ADR 0016): /api and / to the api, /app to the SPA.
 # k3s's bundled Traefik is the ingress; cert-manager issues the Let's Encrypt certificate.
 # The `web` image's nginx already serves the SPA under /app, so no prefix is stripped.
 apiVersion: traefik.io/v1alpha1

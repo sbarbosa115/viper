@@ -30,4 +30,4 @@ Everything runs in Docker through `./dev`. The host has no Node: never run `node
 
 ## Workflow
 New feature: /new-requirement → /build-requirement → /ship-requirement. Small change or bug fix: /small-change.
-Deploys: k3s on our own server (ADR 0022): manifests in `deploy/k8s`, workflow `.github/workflows/deploy-k8s.yml`, guide `docs/ops/kubernetes-setup.md`. App Platform (`.do/app.yaml`) stays live and both run side by side until the server is proven; releases go to both until the switch (guide steps 6–7). Never deploy without the founder's explicit OK.
+Deploys: k3s on our own server (ADR 0022): manifests in `deploy/k8s`, workflow `.github/workflows/deploy.yml`, guide `docs/ops/kubernetes-setup.md`. Never deploy without the founder's explicit OK.

@@ -23,7 +23,7 @@ const schema = z
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),
     /**
      * A header the edge sets with the client's address and overwrites when a client sends it
-     * (`do-connecting-ip` on App Platform). Preferred over `X-Forwarded-For` when present.
+     * (`x-real-ip` from Traefik in production). Preferred over `X-Forwarded-For` when present.
      */
     CLIENT_IP_HEADER: z
       .string()

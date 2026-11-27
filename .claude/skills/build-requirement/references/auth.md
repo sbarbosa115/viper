@@ -3,7 +3,7 @@
 Nearly every product needs this, so it's standardised here. The first PRD's Wave 0 or Wave 1 must include the `identity` module.
 
 ## Model
-- **Sessions in the database, not JWTs.** App Platform may run several containers and replace them at any time, so nothing can live in memory. With DB sessions, logout and revocation are trivial.
+- **Sessions in the database, not JWTs.** Kubernetes may run several containers and replace them at any time, so nothing can live in memory. With DB sessions, logout and revocation are trivial.
 - Table `sessions`: `id`, `user_id`, `token_hash` (SHA-256 of a random 32-byte token), `expires_at`, `last_seen_at`, `user_agent`, `ip`. Expiry slides: 30 days, extended when the session is used, written at most once an hour.
 - Cookie `sid`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` in production. It's only the raw token; only its hash is stored.
 - **CSRF:** one origin plus `SameSite=Lax` blocks cross-site form posts. In addition, every non-GET request must carry `Origin` (or `Referer`) equal to `WEB_ORIGIN`, otherwise 403.
