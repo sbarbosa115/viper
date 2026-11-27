@@ -106,6 +106,8 @@ jobs:
 
       - name: Migrate (a failure stops the release; the old version keeps running)
         run: |
+          # The job reads app-config, which must exist before it starts (on the first deploy it doesn't yet).
+          kubectl -n "$NS" apply -f deploy/k8s/app/config.yaml
           kubectl -n "$NS" delete job migrate --ignore-not-found --wait=true
           kubectl apply -k deploy/k8s/migrate
           ./deploy/server/wait-job.sh "$NS" migrate 900
